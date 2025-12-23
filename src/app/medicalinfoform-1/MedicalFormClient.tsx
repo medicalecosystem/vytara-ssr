@@ -9,6 +9,9 @@ import Image from "next/image";
 export default function MedicalInfoFormUI() {
   const router = useRouter();
 
+  const [user, setUser] = useState<any>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+
   const [fullName, setFullName] = useState("");
   const [contactNumber, setContactNumber] = useState("");
   const [dob, setDob] = useState("");
@@ -23,6 +26,21 @@ export default function MedicalInfoFormUI() {
   const [emergencyContact, setEmergencyContact] = useState([
     { name: "", phone: "", relation: "" },
   ]);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data, error } = await supabase.auth.getUser();
+
+      if (error) { 
+        console.log("Auth Error", erorr)
+      }
+
+      setUser(data.user);
+      setLoadingUser(false);
+    };
+
+    fetchUser();
+  }, []);
 
   // BMI calculation
   useEffect(() => {
@@ -47,10 +65,8 @@ export default function MedicalInfoFormUI() {
     e.preventDefault();
 
     // 🔐 Always get auth user directly
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      alert("User session not ready. Please try again.");
+    if (!user){
+      alert("Session is still loading. Please wait a moment");
       return;
     }
 
