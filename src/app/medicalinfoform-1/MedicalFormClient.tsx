@@ -116,22 +116,7 @@ export default function MedicalInfoFormUI() {
 
   const [userId , setUserId] = useState('');
   const router = useRouter();
-
-  useEffect(() => {
-    async function getUser() {
-      const { data } = await supabase.auth.getUser();
-      
-      if (!data.user){
-        router.replace("/login");
-        return;
-      }
-
-      setUserId(data.user.id);
-      setLoadingUser(false);
-    }
-    getUser();
-  }, [router])
-
+  
   const [fullName, setFullName] = useState("");
   const [dob, setDob] = useState("");
   const [gender, setGender] = useState("");
