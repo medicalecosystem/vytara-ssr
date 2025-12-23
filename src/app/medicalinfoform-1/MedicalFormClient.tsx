@@ -3,7 +3,7 @@
 import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/createClient";
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Image from "next/image";
 
 export default function MedicalInfoFormUI() {
@@ -28,18 +28,26 @@ export default function MedicalInfoFormUI() {
   ]);
 
   useEffect(() => {
-    const fetchUser = async () => {
-      const { data, error } = await supabase.auth.getUser();
-
-      if (error) { 
-        console.log("Auth Error", error)
-      }
-
-      setUser(data.user);
+    if (!loadingUser && !user){
+      router.replace("/login");
+    }
+  }, [loadingUser, user, router]);
+  
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null);
       setLoadingUser(false);
-    };
+    })
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoadingUser(false);
+    });
 
-    fetchUser();
+    return() => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   // BMI calculation
@@ -65,8 +73,14 @@ export default function MedicalInfoFormUI() {
     e.preventDefault();
 
     // 🔐 Always get auth user directly
+    if (loadingUser){
+      alert("Session is initializing. Please Wait.");
+      return;
+    }
+
     if (!user){
-      alert("Session is still loading. Please wait a moment");
+      alert("You are not logged in. Please Sign in again");
+      router.replace("/login");
       return;
     }
 
@@ -334,9 +348,11 @@ export default function MedicalInfoFormUI() {
 
           <button
             type="submit"
-            className="flex items-center gap-2 bg-[#FF8000] text-white px-6 py-2 rounded-lg hover:bg-[#309898]"
+            disabled={loadingUser}
+            className="flex items-center gap-2 bg-[#FF8000] text-white px-6 py-2 rounded-lg
+                      hover:bg-[#309898] disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Next <ChevronRight />
+            {loadingUser ? "Checking session..." : <>Next <ChevronRight /></>}
           </button>
         </div>
       </form>
