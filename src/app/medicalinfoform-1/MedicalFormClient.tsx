@@ -6,109 +6,188 @@ import { supabase } from "@/lib/createClient";
 import { use, useEffect, useState } from "react";
 import Image from "next/image";
 
-export default function MedicalInfoFormUI() {
+// export default function MedicalInfoFormUI() {
+//   const router = useRouter();
+
+//   const [user, setUser] = useState<any>(null);
+//   const [loadingUser, setLoadingUser] = useState(true);
+
+//   const [fullName, setFullName] = useState("");
+//   const [contactNumber, setContactNumber] = useState("");
+//   const [dob, setDob] = useState("");
+//   const [gender, setGender] = useState("");
+//   const [address, setAddress] = useState("");
+//   const [bloodGroup, setBloodGroup] = useState("");
+
+//   const [height, setHeight] = useState("");
+//   const [weight, setWeight] = useState("");
+//   const [bmi, setBmi] = useState("");
+
+//   const [emergencyContact, setEmergencyContact] = useState([
+//     { name: "", phone: "", relation: "" },
+//   ]);
+
+//   // useEffect(() => {
+//   //   if (!loadingUser && !user){
+//   //     router.replace("/login");
+//   //   }
+//   // }, [loadingUser, user, router]);
+  
+//   useEffect(() => {
+//     supabase.auth.getSession().then(({ data }) => {
+//       setUser(data.session?.user ?? null);
+//       setLoadingUser(false);
+//     })
+//     const {
+//       data: { subscription },
+//     } = supabase.auth.onAuthStateChange((_event, session) => {
+//       setUser(session?.user ?? null);
+//       setLoadingUser(false);
+//     });
+
+//     return() => {
+//       subscription.unsubscribe();
+//     };
+//   }, []);
+
+//   // BMI calculation
+//   useEffect(() => {
+//     const h = Number(height);
+//     const w = Number(weight);
+
+//     if (!h || !w) {
+//       setBmi("");
+//       return;
+//     }
+
+//     const heightInMeters = h / 100;
+//     const calculatedBMI = w / (heightInMeters * heightInMeters);
+
+//     if (!isNaN(calculatedBMI) && isFinite(calculatedBMI)) {
+//       setBmi(calculatedBMI.toFixed(1));
+//     }
+//   }, [height, weight]);
+
+//   // Submit handler
+//   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+//     e.preventDefault();
+
+//     // 🔐 Always get auth user directly
+//     if (loadingUser){
+//       alert("Session is initializing. Please Wait.");
+//       return;
+//     }
+
+//     if (!user){
+//       alert("You are not logged in. Please Sign in again");
+//       router.replace("/login");
+//       return;
+//     }
+
+//     const personalData = {
+//       fullName,
+//       dob,
+//       gender,
+//       address,
+//       emergencyContact,
+//       contactNumber,
+//       height,
+//       weight,
+//       bmi,
+//       bloodGroup,
+//     };
+
+//     const { error } = await supabase
+//       .from("profiles")
+//       .upsert({
+//         user_id: user.id,   // ✅ ALWAYS VALID
+//         personal: personalData,
+//       });
+
+//     if (error) {
+//       console.error(error);
+//       alert(error.message);
+//     } else {
+//       router.push("/medicalinfoform-2");
+//     }
+//   };
+
+export function MedicalInfoFormUI() {
+
+  const [userId , setUserId] = useState('');
+
+  useEffect(() => {
+    async function getUser() {
+      const { data } = await supabase.auth.getUser();
+      if (data.user){
+        setUserId(data.user.id)
+      } 
+    }
+    getUser();
+  }, [])
+  
   const router = useRouter();
 
-  const [user, setUser] = useState<any>(null);
-  const [loadingUser, setLoadingUser] = useState(true);
-
   const [fullName, setFullName] = useState("");
-  const [contactNumber, setContactNumber] = useState("");
   const [dob, setDob] = useState("");
   const [gender, setGender] = useState("");
-  const [address, setAddress] = useState("");
   const [bloodGroup, setBloodGroup] = useState("");
-
   const [height, setHeight] = useState("");
   const [weight, setWeight] = useState("");
   const [bmi, setBmi] = useState("");
-
+  const [contactNumber, setContactNumber] = useState("");
+  const [address, setAddress] = useState("");
   const [emergencyContact, setEmergencyContact] = useState([
     { name: "", phone: "", relation: "" },
   ]);
 
-  // useEffect(() => {
-  //   if (!loadingUser && !user){
-  //     router.replace("/login");
-  //   }
-  // }, [loadingUser, user, router]);
-  
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null);
-      setLoadingUser(false);
-    })
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setLoadingUser(false);
-    });
-
-    return() => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  // BMI calculation
   useEffect(() => {
     const h = Number(height);
     const w = Number(weight);
-
-    if (!h || !w) {
+    if (!h || !w){
       setBmi("");
       return;
     }
-
-    const heightInMeters = h / 100;
-    const calculatedBMI = w / (heightInMeters * heightInMeters);
-
-    if (!isNaN(calculatedBMI) && isFinite(calculatedBMI)) {
-      setBmi(calculatedBMI.toFixed(1));
+    const height_in_m = h / 100;
+    const calc_bmi = w / (height_in_m * height_in_m);
+    if(!isNaN(calc_bmi) && isFinite(calc_bmi)){
+      setBmi(calc_bmi.toFixed(1));
     }
   }, [height, weight]);
 
-  // Submit handler
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    // 🔐 Always get auth user directly
-    if (loadingUser){
-      alert("Session is initializing. Please Wait.");
-      return;
-    }
+    // const height_in_m = Number(height) / 100;
+    // const calc_bmi = Number(weight) / (height_in_m * height_in_m);
+    // setBmi(calc_bmi.toFixed(1));
 
-    if (!user){
-      alert("You are not logged in. Please Sign in again");
-      router.replace("/login");
-      return;
-    }
+    const birthDate = new Date(dob);
 
     const personalData = {
       fullName,
-      dob,
+      dob: birthDate.toString(),
       gender,
-      address,
-      emergencyContact,
-      contactNumber,
+      bloodGroup,
       height,
       weight,
       bmi,
-      bloodGroup,
+      contactNumber,
+      emergencyContact,
+      address
     };
 
     const { error } = await supabase
       .from("profiles")
-      .upsert({
-        user_id: user.id,   // ✅ ALWAYS VALID
-        personal: personalData,
-      });
+      .insert({
+        uid: userId, 
+        personal: personalData 
+      })
 
     if (error) {
-      console.error(error);
-      alert(error.message);
+      alert("Error: " + error.message);
     } else {
-      router.push("/medicalinfoform-2");
+      router.push("/healthinfoform");
     }
   };
 
