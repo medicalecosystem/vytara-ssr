@@ -181,7 +181,7 @@ export default function MedicalInfoFormUI() {
     const { error } = await supabase
       .from("profiles")
       .insert({
-        uid: userId, 
+        user_id: userId, 
         personal: personalData 
       })
 
