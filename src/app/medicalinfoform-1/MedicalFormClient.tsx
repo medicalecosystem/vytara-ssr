@@ -114,7 +114,6 @@ import Image from "next/image";
 
 export default function MedicalInfoFormUI() {
 
-  const [userId , setUserId] = useState('');
   const router = useRouter();
   
   const [fullName, setFullName] = useState("");
@@ -144,42 +143,27 @@ export default function MedicalInfoFormUI() {
     }
   }, [height, weight]);
 
-  useEffect(() => {
-    const getUser = async () => {
-      const { data, error } = await supabase.auth.getUser();
-
-      if (error) {
-        console.error("Auth error:", error);
-        return;
-      }
-
-      if (data?.user) {
-        setUserId(data.user.id);
-      }
-    };
-
-    getUser();
-  }, []);
-
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
-    console.log("SUBMIT FIRED")
 
-    if (!userId) {
-      alert("User session not ready, Please wait");
+    console.log("SUBMIT FIRED");
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      alert("Authentication expired. Please login again.");
+      router.replace("/login");
       return;
     }
-
-    // const height_in_m = Number(height) / 100;
-    // const calc_bmi = Number(weight) / (height_in_m * height_in_m);
-    // setBmi(calc_bmi.toFixed(1));
 
     const birthDate = new Date(dob);
 
     const personalData = {
       fullName,
-      dob: birthDate.toString(),
+      dob: birthDate.toISOString(),
       gender,
       bloodGroup,
       height,
@@ -187,14 +171,13 @@ export default function MedicalInfoFormUI() {
       bmi,
       contactNumber,
       emergencyContact,
-      address
+      address,
     };
 
-    const { error } = await supabase
-      .from("profiles")
-      .upsert({
-        user_id: userId, 
-        personal: personalData 
+    const { error } = await supabase.from("profiles").upsert(
+      {
+        user_id: user.id, // ✅ GUARANTEED
+        personal: personalData,
       },
       { onConflict: "user_id" }
     );
@@ -206,6 +189,7 @@ export default function MedicalInfoFormUI() {
       router.push("/healthinfoform");
     }
   };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#309898]/20 via-white to-[#FF8000]/10 flex items-center justify-center p-4">
