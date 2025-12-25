@@ -7,8 +7,11 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/createClient';
 import { useRef, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function ProfilePageUI() {
+
+  const router = useRouter();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -204,7 +207,10 @@ export default function ProfilePageUI() {
                 <div className='absolute right-0 mt-2 w-44 rounded-xl border border-white/20 bg-black/70 backdrop-blur-md shadow-lg overflow-hidden z-50'>
 
                   <button
-                    onClick={() => setMenuOpen(false)}
+                    onClick={() => {
+                      setMenuOpen(false) 
+                      router.push('/homepage')
+                    }}
                     className='w-full px-4 py-3 text-left text-white hover:bg-white/10 transition'
                   >
                     Home
