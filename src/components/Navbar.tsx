@@ -4,6 +4,7 @@ import { Menu, X, LogOut } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/createClient';
+import Image from 'next/image';
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -37,10 +38,17 @@ export default function Navbar() {
           {/* Logo */}
           <div
             className="flex items-center gap-3 cursor-pointer"
-            onClick={() => router.push('/')}
+            onClick={() => router.push('/app/homepage')}
           >
-            <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-md p-2">
-              <div className="w-full h-full bg-teal-600 rounded-full"></div>
+            <div className="w-12 h-12 flex items-center justify-center">
+              <Image
+                src="/vytara-logo.png"
+                alt="Vytara Logo"
+                width={48}
+                height={48}
+                className="w-12 h-12 object-contain"
+                priority
+              />
             </div>
             <h1 className="text-xl font-bold text-white tracking-wide">
               Vytara
