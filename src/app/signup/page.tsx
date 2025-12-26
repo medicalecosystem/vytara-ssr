@@ -52,7 +52,7 @@ export default function SignupPage() {
       const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: "http://vytara-official/medicalinfoform-1",
+        redirectTo: "http://vytara-official.vercel.app/medicalinfoform-1",
           
       },
     });
