@@ -25,6 +25,7 @@ export default function CallbackClient() {
       // 🚫 Block access unless login_check === true
       if (!profile || error || profile.login_check !== true) {
         await supabase.auth.signOut();
+        alert("No Account found please Sign Up first")
         router.replace('/signup');
         return;
       }
