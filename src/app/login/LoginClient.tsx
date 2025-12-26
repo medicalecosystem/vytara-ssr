@@ -31,19 +31,6 @@ export default function LoginSignupModal() {
 
     const user = data.user;
 
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('user_id')
-      .eq('user_id', user.id)
-      .single();
-
-    if (!profile || profileError) {
-      await supabase.auth.signOut();
-      setLoading(false);
-      alert('No account found. Please Sign Up First');
-      return;
-    }
-
     setLoading(false);
     alert('Login Successful');
     router.push('/homepage');

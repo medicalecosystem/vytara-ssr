@@ -24,7 +24,7 @@ export default function CallbackClient() {
       } = await supabase.auth.getUser();
 
       if (!user) {
-        router.replace('/app/login');
+        router.replace('/login');
         return;
       }
 
