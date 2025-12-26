@@ -35,7 +35,10 @@ export default function FamilyMedicalHistoryUI() {
 
     const { error } = await supabase
         .from("profiles")
-        .update( {family_history: familyData} )
+        .update( {
+          family_history: familyData,
+          login_check: true
+        } )
         .eq("user_id", user.id)
 
     if (error) {

@@ -12,24 +12,24 @@ export default function CallbackClient() {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
-        router.push('/login');
+        router.replace('/login');
         return;
       }
 
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('user_id')
+        .select('login_check')
         .eq('user_id', user.id)
         .single();
 
-      if (!profile || error) {
+      // 🚫 Block access unless login_check === true
+      if (!profile || error || profile.login_check !== true) {
         await supabase.auth.signOut();
-        alert("Your account does not exist. Please sign up first");
-        router.push("/signup");
+        router.replace('/signup');
         return;
       }
 
-      router.push('/homepage');
+      router.replace('/homepage');
     }
 
     checkProfile();
