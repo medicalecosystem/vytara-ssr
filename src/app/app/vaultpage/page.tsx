@@ -179,4 +179,8 @@ export default function StaticVaultPage() {
       </main>
     </div>
   );
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> d691f591826da69abd5b5bb08dc043b4dd11a45d
