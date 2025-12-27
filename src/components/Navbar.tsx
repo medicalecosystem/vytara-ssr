@@ -66,7 +66,7 @@ export default function Navbar() {
                 <button
                   onClick={() => {
                     setMenuOpen(false);
-                    router.push('/');
+                    router.push('/app/homepage');
                   }}
                   className="w-full px-4 py-3 text-left text-white hover:bg-white/10 transition"
                 >
@@ -76,7 +76,7 @@ export default function Navbar() {
                 <button
                   onClick={() => {
                     setMenuOpen(false);
-                    router.push('/profile');
+                    router.push('/app/profilepage');
                   }}
                   className="w-full px-4 py-3 text-left text-white hover:bg-white/10 transition"
                 >
@@ -86,7 +86,7 @@ export default function Navbar() {
                 <button
                   onClick={() => {
                     setMenuOpen(false);
-                    router.push('/vault');
+                    router.push('/app/vaultpage');
                   }}
                   className="w-full px-4 py-3 text-left text-white hover:bg-white/10 transition"
                 >
