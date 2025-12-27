@@ -26,7 +26,7 @@ interface FeatureStackCardProps {
 
 /* ========================= ScrollFloat ========================= */
 const ScrollFloat: React.FC<ChildrenProps> = ({ children }) => {
-  const ref = useRef(null);
+  const ref = useRef<HTMLHeadingElement | null>(null);
 
   const chars = useMemo(() => {
     const text = typeof children === 'string' ? children : '';
@@ -38,10 +38,11 @@ const ScrollFloat: React.FC<ChildrenProps> = ({ children }) => {
   }, [children]);
 
   useLayoutEffect(() => {
-    if (!ref.current) return;
+    const el = ref.current;
+    if (!el) return;
 
     const ctx = gsap.context(() => {
-      const chars = ref.current.querySelectorAll('span');
+      const chars = el.querySelectorAll('span');
 
       gsap.fromTo(
         chars,
@@ -84,7 +85,7 @@ const ScrollFloat: React.FC<ChildrenProps> = ({ children }) => {
 
 /* ========================= ScrollReveal With Title Pin + Color Sync ========================= */
 const ScrollReveal: React.FC<ChildrenProps> = ({ children }) => {
-  const ref = useRef(null);
+  const ref = useRef<HTMLHeadingElement | null>(null);
 
   const words = useMemo(
     () =>
@@ -97,10 +98,11 @@ const ScrollReveal: React.FC<ChildrenProps> = ({ children }) => {
   );
 
   useLayoutEffect(() => {
-    if (!ref.current) return;
+    const el = ref.current;
+    if (!el) return;
 
     const ctx = gsap.context(() => {
-      const wordsEl = ref.current.querySelectorAll('.word');
+      const wordsEl = el.querySelectorAll('.word');
 
       // reveal animation
       gsap.fromTo(
@@ -198,6 +200,7 @@ const FeatureStackCard: React.FC<FeatureStackCardProps> = ({
 
 /* ========================= PLASMA BACKGROUND ========================= */
 import { Renderer, Program, Mesh, Triangle } from 'ogl';
+import { redirect } from 'next/dist/server/api-utils';
 
 interface PlasmaProps {
   color?: string;
