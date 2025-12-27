@@ -79,7 +79,8 @@ export default function ForgotPassword() {
                 focus:ring-[#FF8000]/40
                 focus:outline-none
                 transition
-                placeholder:text-black
+                placeholder:text-gray-500
+                text-gray-500
                 "
             />
             </div>
