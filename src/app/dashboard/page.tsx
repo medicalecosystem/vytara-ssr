@@ -50,7 +50,7 @@ export default function Landing() {
               onClick={() => router.push('/login')}
               className="text-sm px-5 py-2 rounded-full border border-black/10 hover:border-black transition font-semibold"
             >
-              Sign In
+              Log In
             </button>
 
             <button
