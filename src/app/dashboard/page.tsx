@@ -490,7 +490,6 @@ export default function Landing() {
 
             {/* LOGO */}
             <div className="flex gap-2 items-center md:justify-start">
-              <div className="w-8 h-8 bg-gradient-to-r from-[#14b8a6] to-[#134E4A] rounded-lg" />
               <p className="font-bold text-[#14b8a6] text-xl">Vytara</p>
             </div>
 
