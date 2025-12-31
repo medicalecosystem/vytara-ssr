@@ -18,6 +18,15 @@ import {
    TYPES (DEFINE FIRST)
 ======================= */
 
+type Appointment = {
+  id: string;
+  date: string;
+  time: string;
+  title: string;
+  type: string;
+  [key: string]: string;
+};
+
 type EmergencyContact = {
   name: string;
   phone: number;
@@ -43,7 +52,7 @@ type Medication = {
 
 export default function HomePage() {
   const router = useRouter();
-
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [userId, setUserId] = useState<string>("");
@@ -52,6 +61,20 @@ export default function HomePage() {
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [medicalTeam, setMedicalTeam] = useState<Doctor[]>([]);
   const [medications, setMedications] = useState<Medication[]>([]);
+
+  const handleAddAppointment = (appointment: Appointment) => {
+    setAppointments(prev => {
+      const exists = prev.find(a => a.id === appointment.id);
+      if (exists) {
+        return prev.map(a => (a.id === appointment.id ? appointment : a));
+      }
+      return [...prev, appointment];
+    });
+  };
+
+  const handleDeleteAppointment = (id: string) => {
+    setAppointments(prev => prev.filter(a => a.id !== id));
+  };
 
   /* =======================
      AUTH USER
@@ -192,7 +215,14 @@ export default function HomePage() {
         {/* MODAL */}
         {activeSection && (
           <Modal onClose={() => setActiveSection(null)}>
-            {activeSection === "calendar" && <DemoCalendar />}
+            {activeSection === "calendar" && (
+            <CalendarView
+              appointments={appointments}
+              onAddAppointment={handleAddAppointment}
+              onDeleteAppointment={handleDeleteAppointment}
+              onClose={() => setActiveSection(null)}
+            />
+          )}
             {activeSection === "emergency" && (
               <EmergencyModal data={emergencyContacts} />
             )}
@@ -247,8 +277,25 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
    MODAL CONTENTS
 ======================= */
 
-function DemoCalendar() {
-  return <p>Calendar coming soon.</p>;
+function CalendarView({
+  appointments,
+  onAddAppointment,
+  onDeleteAppointment,
+  onClose,
+}: {
+  appointments: Appointment[];
+  onAddAppointment: (appointment: Appointment) => void;
+  onDeleteAppointment: (id: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <AppointmentsModal
+      appointments={appointments}
+      onClose={onClose}
+      onAddAppointment={onAddAppointment}
+      onDeleteAppointment={onDeleteAppointment}
+    />
+  );
 }
 
 function EmergencyModal({ data }: { data: EmergencyContact[] }) {
