@@ -159,11 +159,9 @@ export default function MedicalInfoFormUI() {
       return;
     }
 
-    const birthDate = new Date(dob);
-
     const personalData = {
       fullName,
-      dob: birthDate.toISOString(),
+      dob,
       gender,
       bloodGroup,
       height,

@@ -175,7 +175,7 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
   const currentTypeFields = eventForm.type ? appointmentTypeFields[eventForm.type as keyof typeof appointmentTypeFields] || [] : [];
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-slate-200">
         <div className="sticky top-0 bg-white p-6 border-b border-slate-200 flex justify-between items-center rounded-t-3xl">
           <h2 className="text-2xl font-bold text-slate-900">Upcoming Appointments</h2>
@@ -253,7 +253,7 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
 
       {/* Add/Edit Event Modal */}
       {showEventModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-[60] overflow-y-auto">
+        <div className="fixed inset-0 flex items-center justify-center p-4 z-[60] overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 my-8">
             <div className="p-6 border-b border-slate-200 flex justify-between items-center">
               <h3 className="text-xl font-bold text-slate-900">{selectedEvent ? 'Edit Appointment' : 'Add Appointment'}</h3>
@@ -381,7 +381,7 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirmation && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-[70]">
+        <div className="fixed inset-0 flex items-center justify-center p-4 z-[70]">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200">
             <div className="p-6 border-b border-slate-200">
               <h3 className="text-xl font-bold text-slate-900">Confirm Deletion</h3>

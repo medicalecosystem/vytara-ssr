@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/createClient";
 import { useRouter } from "next/navigation";
+import { AppointmentsModal } from '@/components/AppointmentsModal'
 import {
   Calendar,
   Users,
