@@ -136,7 +136,15 @@ export default function HomePage() {
               Health Companion
             </span>
 
-            <h2 className="text-5xl lg:text-6xl font-bold mb-4 leading-tight">
+            <h2
+              className="text-5xl lg:text-6xl font-bold mb-4 leading-tight"
+              style={{
+                background: `linear-gradient(90deg, #4FD1A6, #FFBF69)`,
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                color: 'transparent'
+              }}
+            >
               A Guiding Star for Health
             </h2>
 
