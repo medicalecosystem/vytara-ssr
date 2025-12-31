@@ -47,6 +47,7 @@ export default function HomePage() {
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [userId, setUserId] = useState<string>("");
 
+  const [name, setName] = useState("");
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [medicalTeam, setMedicalTeam] = useState<Doctor[]>([]);
   const [medications, setMedications] = useState<Medication[]>([]);
@@ -54,6 +55,28 @@ export default function HomePage() {
   /* =======================
      AUTH USER
   ======================= */
+
+  useEffect(() => {
+    async function fetchProfileData() {
+      if (userId) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('personal')
+          .eq('user_id', userId)
+          .single();
+        
+        if ( data && data.personal ) {
+          const profile = data.personal;
+          setName(profile.fullName || "");
+        }
+
+        if ( error ){
+          console.log("Error: ", error);
+        }
+      }
+    }
+    fetchProfileData();
+  }, [userId]);
 
   useEffect(() => {
     async function getUser() {
@@ -145,7 +168,7 @@ export default function HomePage() {
                 color: 'transparent'
               }}
             >
-              A Guiding Star for Health
+              Welcome, {name}
             </h2>
 
             <p className="text-slate-600 text-lg max-w-md">
