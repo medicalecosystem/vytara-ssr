@@ -55,7 +55,7 @@ export default function HomePage() {
   /* =======================
      AUTH USER
   ======================= */
-
+  
   useEffect(() => {
     async function fetchProfileData() {
       if (userId) {

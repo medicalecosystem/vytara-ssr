@@ -307,6 +307,9 @@ export default function ProfilePageUI() {
                 <Activity className="w-5 h-5" />
               </div>
               <h3 className="font-bold text-gray-800">Current Medical Status</h3>
+              <button className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition">
+                <Edit2 className="w-4 h-4" />
+              </button>
             </div>
             
             <div className="space-y-6">
@@ -399,6 +402,9 @@ export default function ProfilePageUI() {
                 <History className="w-5 h-5" />
               </div>
               <h3 className="font-bold text-gray-800">Past Medical History</h3>
+              <button className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition">
+                <Edit2 className="w-4 h-4" />
+              </button>
             </div>
             
             <div className="space-y-6">
@@ -490,6 +496,9 @@ export default function ProfilePageUI() {
               <Users className="w-5 h-5" />
             </div>
             <h3 className="font-bold text-gray-800">Family Medical History</h3>
+            <button className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition">
+              <Edit2 className="w-4 h-4" />
+            </button>
           </div>
           
           <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 hover:border-green-300 transition">

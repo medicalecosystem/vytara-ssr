@@ -1,81 +1,150 @@
-'use client';
+ 'use client';
 
 import React, {
   useState,
   useRef,
   useMemo,
   useLayoutEffect,
-  useEffect,
-  type ReactNode
+  useEffect
 } from 'react';
-
 
 import { Menu, X, Lock, AlertCircle, Users, Brain } from 'lucide-react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 gsap.registerPlugin(ScrollTrigger);
-interface ChildrenProps {
-  children: ReactNode;
+
+function BeamsBackground() {
+  return (
+    <>
+      <style jsx global>{`
+        .beams-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #134e4a 0%, #14b8a6 50%, #134e4a 100%);
+  overflow: hidden;
+  z-index: 0;
 }
 
-interface TextChildrenProps {
+
+        .beam {
+          position: absolute;
+          width: 2px;
+          height: 100%;
+          background: linear-gradient(
+            to bottom,
+            transparent,
+            rgba(20, 184, 166, 0.3),
+            transparent
+          );
+          animation: beam-animation 8s ease-in-out infinite;
+          filter: blur(1px);
+        }
+
+        @keyframes beam-animation {
+          0%, 100% {
+            opacity: 0.3;
+            transform: translateY(0px);
+          }
+          50% {
+            opacity: 0.8;
+            transform: translateY(-50px);
+          }
+        }
+
+        .beam:nth-child(1) {
+          left: 10%;
+          animation-delay: 0s;
+          height: 150%;
+        }
+
+        .beam:nth-child(2) {
+          left: 20%;
+          animation-delay: 1s;
+          height: 200%;
+        }
+
+        .beam:nth-child(3) {
+          left: 30%;
+          animation-delay: 2s;
+          height: 180%;
+        }
+
+        .beam:nth-child(4) {
+          left: 50%;
+          animation-delay: 3s;
+          height: 200%;
+        }
+
+        .beam:nth-child(5) {
+          left: 70%;
+          animation-delay: 2s;
+          height: 180%;
+        }
+
+        .beam:nth-child(6) {
+          left: 80%;
+          animation-delay: 1s;
+          height: 200%;
+        }
+
+        .beam:nth-child(7) {
+          left: 90%;
+          animation-delay: 0s;
+          height: 150%;
+        }
+
+        .radial-gradient-overlay {
+          position: absolute;
+          inset: 0;
+          background: radial-gradient(
+            ellipse at center,
+            transparent 0%,
+            rgba(255, 255, 255, 0.8) 100%
+          );
+          pointer-events: none;
+          z-index: 1;
+        }
+      `}</style>
+
+      <div className="beams-gradient">
+        <div className="beam"></div>
+        <div className="beam"></div>
+        <div className="beam"></div>
+        <div className="beam"></div>
+        <div className="beam"></div>
+        <div className="beam"></div>
+        <div className="beam"></div>
+        <div className="radial-gradient-overlay"></div>
+      </div>
+    </>
+  );
+}
+
+type TextChildrenProps = {
   children: string;
-}
+};
 
-interface FeatureStackCardProps {
-  children: ReactNode;
+type FeatureStackCardProps = {
+  children: React.ReactNode;
   color: string;
   top?: string;
-}
+};
 
 /* ========================= ScrollFloat ========================= */
-const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
+type ScrollFloatProps = {
+  children: string;
+};
+
+const ScrollFloat = ({ children }: ScrollFloatProps) => {
   const ref = useRef<HTMLHeadingElement | null>(null);
 
   const chars = useMemo(() => {
-    const text = typeof children === 'string' ? children : '';
-    return text.split('').map((c, i) => (
+    return children.split('').map((c, i) => (
       <span key={i} className="inline-block">
         {c === ' ' ? '\u00A0' : c}
       </span>
     ));
   }, [children]);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    const ctx = gsap.context(() => {
-      const chars = el.querySelectorAll('span');
-
-      gsap.fromTo(
-        chars,
-        {
-          opacity: 0,
-          yPercent: 120,
-          scaleY: 2,
-          scaleX: 0.6
-        },
-        {
-          opacity: 1,
-          yPercent: 0,
-          scaleY: 1,
-          scaleX: 1,
-          stagger: 0.05,
-          ease: 'back.inOut(2)',
-          scrollTrigger: {
-            trigger: ref.current,
-            start: 'top 85%',
-            end: 'bottom 60%',
-            scrub: 2
-          }
-        }
-      );
-    });
-
-    ScrollTrigger.refresh();
-    return () => ctx.revert();
-  }, []);
 
   return (
     <h2
@@ -88,7 +157,7 @@ const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
 };
 
 /* ========================= ScrollReveal With Title Pin + Color Sync ========================= */
-const ScrollReveal: React.FC<TextChildrenProps> = ({ children }) => {
+const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean }> = ({ children, menuOpen = false }) => {
   const ref = useRef<HTMLHeadingElement | null>(null);
 
   const words = useMemo(
@@ -134,8 +203,8 @@ const ScrollReveal: React.FC<TextChildrenProps> = ({ children }) => {
         pinSpacing: false
       });
 
-      // CARD COLOR SYNC on desktop only
-      if (window.innerWidth >= 768) {
+      // CARD COLOR SYNC: desktop (>= 768px) OR mobile when menu is open
+      if (window.innerWidth >= 768 || menuOpen) {
         const cards = document.querySelectorAll('.feature-card');
 
         ScrollTrigger.create({
@@ -143,10 +212,13 @@ const ScrollReveal: React.FC<TextChildrenProps> = ({ children }) => {
           start: 'top center',
           end: 'bottom center',
           scrub: true,
-          onEnter: () =>
-            gsap.to(ref.current, { color: '#ffffff', duration: 0.3 }),
-          onLeaveBack: () =>
-            gsap.to(ref.current, { color: '#000000', duration: 0.3 })
+          onUpdate: (self) => {
+            if (self.isActive) {
+              gsap.to(ref.current, { color: '#ffffff', duration: 0.3 });
+            } else {
+              gsap.to(ref.current, { color: '#000000', duration: 0.3 });
+            }
+          }
         });
 
         ScrollTrigger.create({
@@ -154,10 +226,13 @@ const ScrollReveal: React.FC<TextChildrenProps> = ({ children }) => {
           start: 'top center',
           end: 'bottom center',
           scrub: true,
-          onEnter: () =>
-            gsap.to(ref.current, { color: '#000000', duration: 0.3 }),
-          onLeaveBack: () =>
-            gsap.to(ref.current, { color: '#ffffff', duration: 0.3 })
+          onUpdate: (self) => {
+            if (self.isActive) {
+              gsap.to(ref.current, { color: '#000000', duration: 0.3 });
+            } else {
+              gsap.to(ref.current, { color: '#ffffff', duration: 0.3 });
+            }
+          }
         });
 
         ScrollTrigger.create({
@@ -165,11 +240,17 @@ const ScrollReveal: React.FC<TextChildrenProps> = ({ children }) => {
           start: 'top center',
           end: 'bottom center',
           scrub: true,
-          onEnter: () =>
-            gsap.to(ref.current, { color: '#ffffff', duration: 0.3 }),
-          onLeaveBack: () =>
-            gsap.to(ref.current, { color: '#000000', duration: 0.3 })
+          onUpdate: (self) => {
+            if (self.isActive) {
+              gsap.to(ref.current, { color: '#ffffff', duration: 0.3 });
+            } else {
+              gsap.to(ref.current, { color: '#000000', duration: 0.3 });
+            }
+          }
         });
+      } else {
+        // Ensure title remains black on mobile/tablet (< 768px) when menu is closed
+        gsap.set(ref.current, { color: '#000000' });
       }
 
     });
@@ -181,7 +262,9 @@ const ScrollReveal: React.FC<TextChildrenProps> = ({ children }) => {
   return (
     <h2
       ref={ref}
-      className="text-[clamp(1.8rem,4vw,3rem)] font-serif text-black text-center leading-tight z-50 whitespace-nowrap"
+      className={`text-[clamp(1.8rem,4vw,3rem)] font-serif text-black text-center leading-tight whitespace-nowrap z-50 ${
+        menuOpen && window.innerWidth < 768 ? 'hidden' : 'block'
+      }`}
     >
       {words}
     </h2>
@@ -202,218 +285,13 @@ const FeatureStackCard: React.FC<FeatureStackCardProps> = ({
   </div>
 );
 
-/* ========================= PLASMA BACKGROUND ========================= */
-import { Renderer, Program, Mesh, Triangle } from 'ogl';
-import { redirect } from 'next/dist/server/api-utils';
-
-interface PlasmaProps {
-  color?: string;
-  speed?: number;
-  direction?: 'forward' | 'reverse' | 'pingpong';
-  scale?: number;
-  opacity?: number;
-  mouseInteractive?: boolean;
-}
-
-const hexToRgb = (hex: string): [number, number, number] => {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result) return [1, 0.5, 0.2];
-  return [parseInt(result[1], 16) / 255, parseInt(result[2], 16) / 255, parseInt(result[3], 16) / 255];
-};
-
-const vertex = `#version 300 es
-precision highp float;
-in vec2 position;
-in vec2 uv;
-out vec2 vUv;
-void main() {
-  vUv = uv;
-  gl_Position = vec4(position, 0.0, 1.0);
-}
-`;
-
-const fragment = `#version 300 es
-precision highp float;
-uniform vec2 iResolution;
-uniform float iTime;
-uniform vec3 uCustomColor;
-uniform float uUseCustomColor;
-uniform float uSpeed;
-uniform float uDirection;
-uniform float uScale;
-uniform float uOpacity;
-uniform vec2 uMouse;
-uniform float uMouseInteractive;
-out vec4 fragColor;
-
-void mainImage(out vec4 o, vec2 C) {
-  vec2 center = iResolution.xy * 0.5;
-  C = (C - center) / uScale + center;
-
-  vec2 mouseOffset = (uMouse - center) * 0.0002;
-  C += mouseOffset * length(C - center) * step(0.5, uMouseInteractive);
-
-  float i, d, z, T = iTime * uSpeed * uDirection;
-  vec3 O, p, S;
-
-  for (vec2 r = iResolution.xy, Q; ++i < 60.; O += o.w/d*o.xyz) {
-    p = z*normalize(vec3(C-.5*r,r.y));
-    p.z -= 4.;
-    S = p;
-    d = p.y-T;
-
-    p.x += .4*(1.+p.y)*sin(d + p.x*0.1)*cos(.34*d + p.x*0.05);
-    Q = p.xz *= mat2(cos(p.y+vec4(0,11,33,0)-T));
-    z+= d = abs(sqrt(length(Q*Q)) - .25*(5.+S.y))/3.+8e-4;
-    o = 1.+sin(S.y+p.z*.5+S.z-length(S-p)+vec4(2,1,0,8));
-  }
-
-  o.xyz = tanh(O/1e4);
-}
-
-bool finite1(float x){ return !(isnan(x) || isinf(x)); }
-vec3 sanitize(vec3 c){
-  return vec3(
-    finite1(c.r) ? c.r : 0.0,
-    finite1(c.g) ? c.g : 0.0,
-    finite1(c.b) ? c.b : 0.0
-  );
-}
-
-void main() {
-  vec4 o = vec4(0.0);
-  mainImage(o, gl_FragCoord.xy);
-  vec3 rgb = sanitize(o.rgb);
-
-  float intensity = (rgb.r + rgb.g + rgb.b) / 3.0;
-  vec3 customColor = intensity * uCustomColor;
-  vec3 finalColor = mix(rgb, customColor, step(0.5, uUseCustomColor));
-
-  float alpha = length(rgb) * uOpacity;
-  fragColor = vec4(finalColor, alpha);
-}`;
-
-export const Plasma: React.FC<PlasmaProps> = ({
-  color = '#ffffff',
-  speed = 1,
-  direction = 'forward',
-  scale = 1,
-  opacity = 1,
-  mouseInteractive = true
-}) => {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const mousePos = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const useCustomColor = color ? 1.0 : 0.0;
-    const customColorRgb = color ? hexToRgb(color) : [1, 1, 1];
-
-    const directionMultiplier = direction === 'reverse' ? -1.0 : 1.0;
-
-    const renderer = new Renderer({
-      webgl: 2,
-      alpha: true,
-      antialias: false,
-      dpr: Math.min(window.devicePixelRatio || 1, 2)
-    });
-    const gl = renderer.gl;
-    const canvas = gl.canvas as HTMLCanvasElement;
-    canvas.style.display = 'block';
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
-    containerRef.current.appendChild(canvas);
-
-    const geometry = new Triangle(gl);
-
-    const program = new Program(gl, {
-      vertex: vertex,
-      fragment: fragment,
-      uniforms: {
-        iTime: { value: 0 },
-        iResolution: { value: new Float32Array([1, 1]) },
-        uCustomColor: { value: new Float32Array(customColorRgb) },
-        uUseCustomColor: { value: useCustomColor },
-        uSpeed: { value: speed * 0.4 },
-        uDirection: { value: directionMultiplier },
-        uScale: { value: scale },
-        uOpacity: { value: opacity },
-        uMouse: { value: new Float32Array([0, 0]) },
-        uMouseInteractive: { value: mouseInteractive ? 1.0 : 0.0 }
-      }
-    });
-
-    const mesh = new Mesh(gl, { geometry, program });
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!mouseInteractive) return;
-      const rect = containerRef.current!.getBoundingClientRect();
-      mousePos.current.x = e.clientX - rect.left;
-      mousePos.current.y = e.clientY - rect.top;
-      const mouseUniform = program.uniforms.uMouse.value as Float32Array;
-      mouseUniform[0] = mousePos.current.x;
-      mouseUniform[1] = mousePos.current.y;
-    };
-
-    if (mouseInteractive) {
-      containerRef.current.addEventListener('mousemove', handleMouseMove);
-    }
-
-    const setSize = () => {
-      const rect = containerRef.current!.getBoundingClientRect();
-      const width = Math.max(1, Math.floor(rect.width));
-      const height = Math.max(1, Math.floor(rect.height));
-      renderer.setSize(width, height);
-      const res = program.uniforms.iResolution.value as Float32Array;
-      res[0] = gl.drawingBufferWidth;
-      res[1] = gl.drawingBufferHeight;
-    };
-
-    const ro = new ResizeObserver(setSize);
-    ro.observe(containerRef.current);
-    setSize();
-
-    let raf = 0;
-    const t0 = performance.now();
-    const loop = (t: number) => {
-      let timeValue = (t - t0) * 0.001;
-      if (direction === 'pingpong') {
-        const pingpongDuration = 10;
-        const segmentTime = timeValue % pingpongDuration;
-        const isForward = Math.floor(timeValue / pingpongDuration) % 2 === 0;
-        const u = segmentTime / pingpongDuration;
-        const smooth = u * u * (3 - 2 * u);
-        const pingpongTime = isForward ? smooth * pingpongDuration : (1 - smooth) * pingpongDuration;
-        (program.uniforms.uDirection as any).value = 1.0;
-        (program.uniforms.iTime as any).value = pingpongTime;
-      } else {
-        (program.uniforms.iTime as any).value = timeValue;
-      }
-      renderer.render({ scene: mesh });
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      if (mouseInteractive && containerRef.current) {
-        containerRef.current.removeEventListener('mousemove', handleMouseMove);
-      }
-      try {
-        containerRef.current?.removeChild(canvas);
-      } catch {}
-    };
-  }, [color, speed, direction, scale, opacity, mouseInteractive]);
-
-  return <div ref={containerRef} className="w-full h-full relative overflow-hidden" />;
-};
 
 /* ========================= MAIN PAGE ========================= */
 export default function Landing() {
   const [menu, setMenu] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
+
+  
 
   /* ----- MISSION ANIMATION ----- */
   useEffect(() => {
@@ -471,25 +349,24 @@ export default function Landing() {
   };
 
   return (
-    <div className="bg-white relative">
-      <div className="fixed inset-0 z-0">
-        <Plasma
-          color="#14b8a6"
-          speed={0.6}
-          direction="forward"
-          scale={1.1}
-          opacity={0.8}
-          mouseInteractive={true}
-        />
-      </div>
-      <div className="relative z-10">
+  <div className="relative">
+    
+    {/* BACKGROUND */}
+    <BeamsBackground />
 
+    {/* PAGE CONTENT ABOVE BACKGROUND */}
+    <div className="relative z-10">
+
+
+          
+    <div className="relative z-10 bg-transparent"></div>
         {/* NAV */}
-        <nav className="sticky top-0 z-50 bg-white border-b">
+        <nav className="sticky top-0 z-50 bg-white">
           <div className="flex items-center justify-between px-6 py-4 md:grid md:grid-cols-3 md:gap-0">
 
             {/* LOGO */}
             <div className="flex gap-2 items-center md:justify-start">
+              <div className="w-8 h-8 bg-gradient-to-r from-[#14b8a6] to-[#134E4A] rounded-lg" />
               <p className="font-bold text-[#14b8a6] text-xl">Vytara</p>
             </div>
 
@@ -519,7 +396,7 @@ export default function Landing() {
               </button>
 
               <button onClick={() => setMenu(!menu)} className="md:hidden">
-                {menu ? <X /> : <Menu />}
+                {menu ? <X className="text-[#134e4a]" /> : <Menu className="text-[#134e4a]" />}
               </button>
             </div>
 
@@ -527,29 +404,37 @@ export default function Landing() {
 
           {/* MOBILE DROPDOWN */}
           {menu && (
-            <div className="bg-white shadow-md md:hidden">
+            <div className="bg-white shadow-md md:hidden z-[60]">
               {[
                 ['Get Started', 'login'],
                 ['Watch Demo', 'demo'],
                 ['Mission', 'mission'],
                 ['Features', 'features'],
                 ['Contact', 'footer'],
-              ].map(([t, id]) => (
-                <button
-                  key={id}
-                  onClick={() => nav(id)}
-                  className="block px-6 py-4 border-b text-left"
-                >
-                  {t}
-                </button>
+              ].map(([t, id], index, array) => (
+                <div key={id}>
+                  <button
+                    onClick={() => nav(id)}
+                    className="block px-6 py-4 text-left text-[#134E4A] w-full"
+                  >
+                    {t}
+                  </button>
+                  {index < array.length - 1 && <hr className="w-full border-gray-300" />}
+                </div>
               ))}
             </div>
           )}
         </nav>
 
+        {/* WHAT IS VYTARA */}
+        <div className="px-4 pt-12 pb-8 max-w-6xl mx-auto">
+          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">What Is Vytara?</h1>
+          <p className="text-center text-gray-600 italic text-2xl mt-4">Vytara is your one stop destination to have full control over your medical status and care for your loved one's wellness better</p>
+        </div>
+
         {/* HERO TITLE */}
         <div className="px-4 pt-12 pb-8 max-w-6xl mx-auto">
-          <h1 className="text-4xl md:text-6xl font-bold text-black text-center">Why Use Vytara?</h1>
+          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">Why Use Vytara?</h1>
         </div>
 
         {/* ===== HERO ===== */}
@@ -575,13 +460,19 @@ export default function Landing() {
                   expandedText: 'Freely monitor the wellness of your loved ones with Vytara'
                 }
               ].map(({ title, icon: Icon, expandedText }, i) => (
-                <button key={i} onClick={() => setExpanded(expanded === i ? null : i)} className="md:flex-1">
+                <button
+                  key={i}
+                  onClick={() => window.innerWidth < 768 && setExpanded(expanded === i ? null : i)}
+                  onMouseEnter={() => window.innerWidth >= 768 && setExpanded(i)}
+                  onMouseLeave={() => window.innerWidth >= 768 && setExpanded(null)}
+                  className="md:flex-1"
+                >
                   <div
                     className={`rounded-2xl p-5 w-[120px] md:w-[320px] md:ml-[-100px] transition h-full flex flex-col justify-center md:flex md:flex-col md:justify-center ${
                       expanded === i
   ? `fixed left-1/2 transform -translate-x-1/2 -translate-y-1/2
      top-[40%] md:top-[50%]
-     w-[95vw] md:w-full
+     w-[95vw] md:w-96 md:h-96
      h-auto max-h-[85vh] md:max-h-[25vh]
      shadow-xl z-50 p-8
      transition-all duration-300 ease-out
@@ -681,8 +572,8 @@ export default function Landing() {
         </section>
 
         {/* ===== FEATURES ===== */}
-        <section id="features" className="px-4 py-8 bg-gray-50 max-w-6xl mx-auto">
-          <ScrollReveal>So what do we do exactly?</ScrollReveal>
+        <section id="features" className="px-4 py-8 max-w-5xl mx-auto">
+          <ScrollReveal menuOpen={menu}>So what do we do exactly?</ScrollReveal>
 
           <div className="mt-[18vh]">
 
@@ -696,7 +587,7 @@ export default function Landing() {
                     Your emergency contacts and emergency services receive instant notifications including your location sharing.
                   </p>
                 </div>
-                <img src="images/vytara/sosfeature.jpg" className="rounded-2xl flex-shrink-0 md:order-2 order-1" alt="Emergency SOS" />
+                <img src="images/sosfeature.jpg" className="rounded-2xl flex-shrink-0 md:order-2 order-1" alt="Emergency SOS" />
               </div>
             </FeatureStackCard>
 
@@ -714,7 +605,7 @@ export default function Landing() {
               </div>
             </FeatureStackCard>
 
-            <FeatureStackCard color="#14b8a6" top="md:top-[15vh] top-[25vh]">
+            <FeatureStackCard color="#14b8a6" top="md:top-[15vh] top-[20vh]">
               <div className="feature-card flex w-full justify-between items-center gap-8 md:flex-row flex-col">
                 <div className="flex-1 text-left md:order-1 order-2">
                   <p className="text-2xl font-bold text-white mb-3">
@@ -734,10 +625,11 @@ export default function Landing() {
         {/* FOOTER */}
         <footer
           id="footer"
-          className="bg-gray-900 text-white py-12"
+          className="bg-gray-900 text-white py-8 md:py-12"
         >
           <div className="max-w-6xl mx-auto px-4">
-            <div className="grid md:grid-cols-3 gap-8">
+            {/* DESKTOP FOOTER */}
+            <div className="hidden md:grid md:grid-cols-3 gap-8">
               {/* BRAND */}
               <div className="md:col-span-1">
                 <div className="flex gap-2 items-center mb-4">
@@ -750,17 +642,17 @@ export default function Landing() {
               </div>
 
               {/* CONTACT US */}
-              <div className="md:col-span-1 hidden md:block">
+              <div className="md:col-span-1">
                 <h3 className="font-semibold text-lg mb-4">Contact Us</h3>
                 <div className="space-y-2 text-gray-400 text-sm">
                   <p>Email: hello@vytara.com</p>
-                  <p>Phone: +1 (555) 123-4567</p>
-                  <p>Address: 123 Health St, Medical City, MC 12345</p>
+                  <p>Phone: 07738322228</p>
+                  <p>Address: 327, 3rd Floor, Ajmera Sikova, ICRC, Ghatkopar West, Mumbai 400086</p>
                 </div>
               </div>
 
               {/* LEGAL */}
-              <div className="md:col-span-1 hidden md:block">
+              <div className="md:col-span-1">
                 <h3 className="font-semibold text-lg mb-4">Legal</h3>
                 <div className="space-y-2 text-gray-400 text-sm">
                   <a href="#" className="block hover:text-white transition">Privacy Policy</a>
@@ -769,8 +661,39 @@ export default function Landing() {
                   <a href="#" className="block hover:text-white transition">HIPAA Compliance</a>
                 </div>
               </div>
+            </div>
 
+            {/* MOBILE FOOTER */}
+            <div className="md:hidden">
+              {/* BRAND */}
+              <div className="flex gap-2 items-center mb-2">
+                <div className="w-6 h-6 bg-gradient-to-r from-[#14b8a6] to-[#134E4A] rounded-lg" />
+                <p className="font-bold text-[#14b8a6] text-lg">Vytara</p>
+              </div>
 
+              {/* CONTACT US AND LEGAL SIDE BY SIDE */}
+              <div className="flex gap-4">
+                {/* CONTACT US */}
+                <div className="flex-1">
+                  <h3 className="font-semibold text-xs mb-1">Contact Us</h3>
+                  <div className="space-y-0.5 text-gray-400 text-xs">
+                    <p>Email: hello@vytara.com</p>
+                    <p>Phone: 07738322228</p>
+                    <p>Address: 327, 3rd Floor, Ajmera Sikova, ICRC, Ghatkopar West, Mumbai 400086</p>
+                  </div>
+                </div>
+
+                {/* LEGAL */}
+                <div className="flex-1">
+                  <h3 className="font-semibold text-xs mb-1">Legal</h3>
+                  <div className="space-y-0.5 text-gray-400 text-xs">
+                    <a href="#" className="block hover:text-white transition">Privacy Policy</a>
+                    <a href="#" className="block hover:text-white transition">Terms of Service</a>
+                    <a href="#" className="block hover:text-white transition">Cookie Policy</a>
+                    <a href="#" className="block hover:text-white transition">HIPAA Compliance</a>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="border-t border-gray-800 mt-8 pt-8 text-center hidden md:block">
