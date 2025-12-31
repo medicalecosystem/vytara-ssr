@@ -1,147 +1,287 @@
-'use client';
+"use client";
 
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/createClient";
+import { useRouter } from "next/navigation";
 import {
-  Calendar, Users, Stethoscope, Pill, AlertCircle, Phone, Sparkles, Menu
-} from 'lucide-react';
-import Image from 'next/image';
+  Calendar,
+  Users,
+  Stethoscope,
+  Pill,
+  AlertCircle,
+  Menu,
+  X,
+} from "lucide-react";
+
+/* =======================
+   TYPES (DEFINE FIRST)
+======================= */
+
+type EmergencyContact = {
+  name: string;
+  phone: number;
+  relation: string;
+};
+
+type Doctor = {
+  name: string;
+  number: number;
+  speciality: string;
+};
+
+type Medication = {
+  name: string;
+  dosage: string;
+  purpose: string;
+  frequency: string;
+};
+
+/* =======================
+   PAGE COMPONENT
+======================= */
 
 export default function HomePage() {
+  const router = useRouter();
+
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string>("");
+
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
+  const [medicalTeam, setMedicalTeam] = useState<Doctor[]>([]);
+  const [medications, setMedications] = useState<Medication[]>([]);
+
+  /* =======================
+     AUTH USER
+  ======================= */
+
+  useEffect(() => {
+    async function getUser() {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user) {
+        setUserId(data.user.id);
+      }
+    }
+    getUser();
+  }, []);
+
+  /* =======================
+     FETCH EMERGENCY CONTACTS
+  ======================= */
+
+  useEffect(() => {
+    if (!userId) return;
+
+    async function fetchContacts() {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("personal")
+        .eq("user_id", userId)
+        .single();
+
+      if (error) {
+        console.error("Emergency fetch error:", error);
+        return;
+      }
+
+      if (data?.personal?.emergencyContact) {
+        setEmergencyContacts(data.personal.emergencyContact);
+      }
+    }
+
+    fetchContacts();
+  }, [userId]);
+
+  /* =======================
+     FETCH HEALTH DATA
+  ======================= */
+
+  useEffect(() => {
+    if (!userId) return;
+
+    async function fetchHealthData() {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("health")
+        .eq("user_id", userId)
+        .single();
+
+      if (error) {
+        console.error("Health fetch error:", error);
+        return;
+      }
+
+      if (data?.health) {
+        setMedications(data.health.currentMedications || []);
+        setMedicalTeam(data.health.doctor || []);
+      }
+    }
+
+    fetchHealthData();
+  }, [userId]);
+
+  /* =======================
+     UI
+  ======================= */
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#003B46] via-[#006770] via-[#00838B] to-[#00A3A9] pb-10 font-sans">
-{/* bg-gradient-to-r
-from-[hsla(169,100%,50%,1)]
-via-[hsla(150,75%,70%,1)]
-to-[hsla(67,70%,75%,1)] */}
-      {/* Header */}
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-slate-50 text-slate-900">
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-6 py-12">
 
-        {/* SOS Button */}
-        <div className="flex justify-center mb-8">
-          <button className="w-32 h-32 sm:w-40 sm:h-40 bg-gradient-to-br from-red-500 to-red-700 text-white rounded-full shadow-2xl flex flex-col items-center justify-center hover:scale-110 transition-transform duration-200">
-            <AlertCircle className="w-10 h-10 sm:w-14 sm:h-14 mb-1" />
-            <span className="text-lg sm:text-2xl font-bold">SOS</span>
-          </button>
-        </div>
+        {/* HERO */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center mb-20">
+          <div>
+            <span className="inline-block bg-teal-500 text-white px-4 py-1 rounded-full text-sm font-semibold mb-6">
+              Health Companion
+            </span>
 
-        {/* <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            <h2 className="text-5xl lg:text-6xl font-bold mb-4 leading-tight">
+              A Guiding Star for Health
+            </h2>
 
-          <div className="cursor-pointer">
-            <div className="bg-white rounded-3xl shadow-xl p-6 border-2 hover:shadow-2xl transition-all" style={{ borderColor: '#006770' }}>
-              <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 mx-auto" style={{ backgroundColor: 'rgba(255, 127, 80, 0.2)' }}>
-                <Calendar className="w-8 h-8" style={{ color: '#006770' }} />
-              </div>
-              <h3 className="text-center font-semibold text-gray-800 text-sm sm:text-base">Upcoming Appointments</h3>
-            </div>
+            <p className="text-slate-600 text-lg max-w-md">
+              Designed with empathy. Built for clarity. Ready when you need it.
+            </p>
           </div>
 
-          <div className="cursor-pointer">
-            <div className="bg-white rounded-3xl shadow-xl p-6 border-2 hover:shadow-2xl transition-all" style={{ borderColor: '#00838B' }}>
-              <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 mx-auto" style={{ backgroundColor: 'rgba(255, 127, 80, 0.2)' }}>
-                <Users className="w-8 h-8" style={{ color: '#00838B' }} />
-              </div>
-              <h3 className="text-center font-semibold text-gray-800 text-sm sm:text-base">Emergency Contacts</h3>
-            </div>
-          </div>
-
-          <div className="cursor-pointer">
-            <div className="bg-white rounded-3xl shadow-xl p-6 border-2 hover:shadow-2xl transition-all" style={{ borderColor: '#006770' }}>
-              <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 mx-auto" style={{ backgroundColor: 'rgba(255, 127, 80, 0.2)' }}>
-                <Stethoscope className="w-8 h-8" style={{ color: '#006770' }} />
-              </div>
-              <h3 className="text-center font-semibold text-gray-800 text-sm sm:text-base">Medical Team</h3>
-            </div>
-          </div>
-
-          <div className="cursor-pointer">
-            <div className="bg-white rounded-3xl shadow-xl p-6 border-2 hover:shadow-2xl transition-all" style={{ borderColor: '#00838B' }}>
-              <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 mx-auto" style={{ backgroundColor: 'rgba(255, 127, 80, 0.2)' }}>
-                <Pill className="w-8 h-8" style={{ color: '#00838B' }} />
-              </div>
-              <h3 className="text-center font-semibold text-gray-800 text-sm sm:text-base">Current Medication</h3>
-            </div>
-          </div>
-
-        </div> */}
-
-        {/* Calendar Section */}
-        <div className="mt-10 bg-gray-50 p-4 sm:p-6 rounded-xl border border-gray-100">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-3 bg-teal-100 rounded-xl">
-              <Calendar className="w-8 h-8 text-teal-700" />
-            </div>
-            <h2 className="text-2xl font-bold text-gray-800">Calendar</h2>
-          </div>
-
-          <div className="grid grid-cols-7 gap-2 text-center mb-4">
-            <div className="text-xs sm:text-sm font-bold text-gray-400 uppercase">Su</div>
-            <div className="text-xs sm:text-sm font-bold text-gray-400 uppercase">Mo</div>
-            <div className="text-xs sm:text-sm font-bold text-gray-400 uppercase">Tu</div>
-            <div className="text-xs sm:text-sm font-bold text-gray-400 uppercase">We</div>
-            <div className="text-xs sm:text-sm font-bold text-gray-400 uppercase">Th</div>
-            <div className="text-xs sm:text-sm font-bold text-gray-400 uppercase">Fr</div>
-            <div className="text-xs sm:text-sm font-bold text-gray-400 uppercase">Sa</div>
-          </div>
-
-          <div className="grid grid-cols-7 gap-2 sm:gap-3">
-            <div className="h-16 sm:h-20 bg-white border border-gray-100 rounded-lg"></div>
-            <div className="h-16 sm:h-20 bg-white border border-gray-100 rounded-lg"></div>
-            <div className="h-16 sm:h-20 bg-white border border-gray-100 rounded-lg"></div>
-            <div className="h-16 sm:h-20 bg-white border border-gray-100 rounded-lg"></div>
-            <div className="h-16 sm:h-20 bg-white border border-gray-100 rounded-lg"></div>
-            <div className="h-16 sm:h-20 bg-white border border-gray-100 rounded-lg"></div>
-            <div className="h-16 sm:h-20 bg-white border border-gray-100 rounded-lg"></div>
+          {/* SOS */}
+          <div className="hidden lg:flex justify-center">
+            <button
+              onClick={() => alert("SOS Triggered")}
+              className="w-48 h-48 rounded-full bg-red-500 hover:bg-red-600 text-white shadow-2xl flex flex-col items-center justify-center transition hover:scale-110"
+            >
+              <AlertCircle size={64} />
+              <span className="text-4xl font-bold mt-4">SOS</span>
+            </button>
           </div>
         </div>
 
-        {/* Emergency Contacts Section */}
-        <div className="mt-10 bg-gray-50 p-4 sm:p-6 rounded-xl border border-gray-100">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-3 bg-red-100 rounded-xl">
-              <Phone className="w-8 h-8 text-red-600" />
-            </div>
-            <h2 className="text-2xl font-bold text-gray-800">Emergency Contacts</h2>
-          </div>
+        {/* MODAL */}
+        {activeSection && (
+          <Modal onClose={() => setActiveSection(null)}>
+            {activeSection === "calendar" && <DemoCalendar />}
+            {activeSection === "emergency" && (
+              <EmergencyModal data={emergencyContacts} />
+            )}
+            {activeSection === "doctors" && (
+              <DoctorsModal data={medicalTeam} />
+            )}
+            {activeSection === "medications" && (
+              <MedicationsModal data={medications} />
+            )}
+          </Modal>
+        )}
 
-          <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-            <div className="p-4 border border-gray-100 rounded-xl bg-white"></div>
-            <div className="p-4 border border-gray-100 rounded-xl bg-white"></div>
-          </div>
+        {/* CARDS */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <Card title="Calendar" icon={Calendar} onClick={() => setActiveSection("calendar")} />
+          <Card title="Emergency Contacts" icon={Users} onClick={() => setActiveSection("emergency")} />
+          <Card title="Medical Team" icon={Stethoscope} onClick={() => setActiveSection("doctors")} />
+          <Card title="Medications" icon={Pill} onClick={() => setActiveSection("medications")} />
         </div>
-
-        {/* Doctors Section */}
-        <div className="mt-10 bg-gray-50 p-4 sm:p-6 rounded-xl border border-gray-100">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-3 bg-teal-100 rounded-xl">
-              <Stethoscope className="w-8 h-8 text-teal-600" />
-            </div>
-            <h2 className="text-2xl font-bold text-gray-800">Medical Team</h2>
-          </div>
-
-          <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-            <div className="p-4 border border-gray-100 rounded-xl bg-white"></div>
-            <div className="p-4 border border-gray-100 rounded-xl bg-white"></div>
-          </div>
-        </div>
-
-        {/* Medications Section */}
-        <div className="mt-10 bg-gray-50 p-4 sm:p-6 rounded-xl border border-gray-100">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-3 bg-orange-100 rounded-xl">
-              <Pill className="w-8 h-8 text-orange-600" />
-            </div>
-            <h2 className="text-2xl font-bold text-gray-800">Current Medications</h2>
-          </div>
-
-          <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-            <div className="p-4 border border-gray-100 rounded-xl bg-white"></div>
-            <div className="p-4 border border-gray-100 rounded-xl bg-white"></div>
-          </div>
-        </div>
-
       </main>
+    </div>
+  );
+}
 
+/* =======================
+   MODAL
+======================= */
+
+function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div
+      onClick={onClose}
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl relative"
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-2 rounded-full hover:bg-slate-100"
+        >
+          <X />
+        </button>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* =======================
+   MODAL CONTENTS
+======================= */
+
+function DemoCalendar() {
+  return <p>Calendar coming soon.</p>;
+}
+
+function EmergencyModal({ data }: { data: EmergencyContact[] }) {
+  if (!data.length) return <p>No emergency contacts found.</p>;
+
+  return (
+    <>
+      <h2 className="text-2xl font-bold mb-4">Emergency Contacts</h2>
+      {data.map((c, i) => (
+        <DemoItem key={i} title={c.name} subtitle={`${c.relation} • ${c.phone}`} />
+      ))}
+    </>
+  );
+}
+
+function DoctorsModal({ data }: { data: Doctor[] }) {
+  if (!data.length) return <p>No doctors added.</p>;
+
+  return (
+    <>
+      <h2 className="text-2xl font-bold mb-4">Medical Team</h2>
+      {data.map((d, i) => (
+        <DemoItem key={i} title={d.name} subtitle={d.speciality} />
+      ))}
+    </>
+  );
+}
+
+function MedicationsModal({ data }: { data: Medication[] }) {
+  if (!data.length) return <p>No medications found.</p>;
+
+  return (
+    <>
+      <h2 className="text-2xl font-bold mb-4">Current Medications</h2>
+      {data.map((m, i) => (
+        <DemoItem key={i} title={m.name} subtitle={`${m.dosage} • ${m.frequency}`} />
+      ))}
+    </>
+  );
+}
+
+/* =======================
+   SHARED UI
+======================= */
+
+function DemoItem({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div className="p-4 rounded-xl bg-slate-50 border hover:bg-slate-100 transition mb-2">
+      <p className="font-semibold">{title}</p>
+      <p className="text-sm text-slate-500">{subtitle}</p>
+    </div>
+  );
+}
+
+function Card({ title, icon: Icon, onClick }: any) {
+  return (
+    <div
+      onClick={onClick}
+      className="bg-white rounded-3xl p-6 shadow-lg hover:shadow-xl hover:scale-105 transition cursor-pointer border"
+    >
+      <div className="w-14 h-14 mx-auto mb-4 bg-teal-100 rounded-full flex items-center justify-center">
+        <Icon size={24} className="text-teal-600" />
+      </div>
+      <h3 className="font-bold text-center">{title}</h3>
+      <p className="text-xs text-slate-500 text-center mt-2">View details</p>
     </div>
   );
 }
