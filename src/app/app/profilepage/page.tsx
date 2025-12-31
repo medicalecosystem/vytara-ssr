@@ -273,36 +273,28 @@ export default function ProfilePageUI() {
           </div>
 
           {/* Right: Historical Visits */}
-          {/* <div className="bg-white rounded-3xl p-6 shadow-xl shadow-teal-900/20 border border-white/20 flex flex-col h-full">
+          <div className="bg-white rounded-3xl p-6 shadow-xl shadow-teal-900/20 border border-white/20 flex flex-col h-full">
             <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
               <h3 className="font-bold text-gray-800 flex items-center gap-2">
                 <div className="p-1.5 rounded-lg bg-blue-100 text-blue-600">
-                  <History className="w-4 h-4"/>
-                </div> 
+                  <History className="w-4 h-4" />
+                </div>
                 Historical Visits
               </h3>
-              <button className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-md transition">View All</button>
+
+              <button className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-md transition">
+                View All
+              </button>
             </div>
-            
-            <div className="flex-1 overflow-y-auto space-y-3 max-h-[300px] pr-2">
-              {[
-                { title: 'Annual Physical Checkup', doctor: 'Dr. Sarah Smith', date: '15', month: 'Nov' },
-                { title: 'Dental Cleaning', doctor: 'Dr. Emily Chen', date: '02', month: 'Oct' },
-                { title: 'Viral Fever Consultation', doctor: 'Dr. Sarah Smith', date: '20', month: 'Aug' }
-              ].map((event, index) => (
-                <div key={index} className="flex items-start gap-4 p-3 hover:bg-gray-50 rounded-2xl transition cursor-pointer group border border-transparent hover:border-gray-100">
-                  <div className="w-12 h-12 rounded-xl bg-gray-100 group-hover:bg-white group-hover:shadow-md flex flex-col items-center justify-center text-gray-500 group-hover:text-blue-600 shrink-0 transition duration-300">
-                    <span className="text-lg font-bold leading-none">{event.date}</span>
-                    <span className="text-[10px] font-bold uppercase">{event.month}</span>
-                  </div>
-                  <div className="pt-0.5">
-                    <p className="text-sm font-bold text-gray-900 line-clamp-1 group-hover:text-blue-600 transition">{event.title}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{event.doctor}</p>
-                  </div>
-                </div>
-              ))}
+
+            {/* EMPTY STATE */}
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-sm text-gray-400 italic">
+                No historical visits
+              </p>
             </div>
-          </div> */}
+          </div>
+
         </div>
 
         {/* Medical Information Cards */}
