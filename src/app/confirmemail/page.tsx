@@ -43,9 +43,9 @@ export default function ConfirmationEmailPage() {
              Open Gmail
           </button>
 
-          <p className="text-gray-600 mt-4 text-sm">
+          {/* <p className="text-gray-600 mt-4 text-sm">
             Didn’t receive the mail? <span className="text-[#309898] hover:underline cursor-pointer">Resend</span>
-          </p>
+          </p> */}
         </div>
 
       </div>
