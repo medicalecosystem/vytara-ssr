@@ -293,7 +293,7 @@ export default function SignUpPage() {
         email, 
         password,
         options: {
-          emailRedirectTo: "https://vytara-official.vercel.app/verified"
+          emailRedirectTo: "https://vytara-official.vercel.app/auth/callback"
         }
       });
       if (error) throw error;
