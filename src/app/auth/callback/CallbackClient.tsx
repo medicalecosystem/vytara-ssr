@@ -22,7 +22,7 @@ export default function CallbackClient() {
       // 🔍 Fetch profile
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('login_check')
+        .select('profile_complete')
         .eq('user_id', user.id)
         .single();
 
@@ -32,7 +32,7 @@ export default function CallbackClient() {
       }
 
       // ✅ IF medical form NOT completed → go there
-      if (profile.login_check === false) {
+      if (profile.profile_complete === false) {
         router.replace('/medicalinfoform-1');
         return;
       }
