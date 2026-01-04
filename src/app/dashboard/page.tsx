@@ -17,7 +17,10 @@ function BeamsBackground() {
   return (
     <>
       <style jsx global>{`
-        .beams-gradient {
+        html, body {
+          overflow-x: hidden !important;
+        }
+          .beams-gradient {
   position: absolute;
   inset: 0;
   background: linear-gradient(135deg, #134e4a 0%, #14b8a6 50%, #134e4a 100%);
