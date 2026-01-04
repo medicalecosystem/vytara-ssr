@@ -1,40 +1,41 @@
 'use client';
 
-import { supabase } from '@/lib/createClient';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { supabase } from "@/lib/createClient";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
-export default function CallbackClient() {
+export default function CallbackClient(){
   const router = useRouter();
 
   useEffect(() => {
-    async function checkProfile() {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
+    const handleAuth = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      
+      if ( error || !data.session ) {
         router.replace('/login');
         return;
       }
 
-      const { data: profile, error } = await supabase
+      const user = data.session.user;
+
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('login_check')
         .eq('user_id', user.id)
         .single();
 
-      // 🚫 Block access unless login_check === true
-      if (!profile || error || profile.login_check !== true) {
+      if (profileError || !profile || profile.login_check !== true) {
         await supabase.auth.signOut();
-        alert("No Account found please Sign Up first")
+        alert("No account found. Please Sign up First");
         router.replace('/signup');
         return;
       }
 
       router.replace('/app/homepage');
-    }
+    };
 
-    checkProfile();
-  }, [router]);
+    handleAuth();
+  }, [router])
 
-  return <p>Checking account...</p>;
+  return <p>Finalizing Authentication</p>;
 }
