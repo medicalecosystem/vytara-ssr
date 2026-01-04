@@ -1,41 +1,48 @@
 'use client';
 
-import { supabase } from "@/lib/createClient";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { supabase } from '@/lib/createClient';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
-export default function CallbackClient(){
+export default function CallbackClient() {
   const router = useRouter();
 
   useEffect(() => {
-    const handleAuth = async () => {
+    const finalizeAuth = async () => {
+      // 🔑 VERY IMPORTANT: initialize session from email link
       const { data, error } = await supabase.auth.getSession();
-      
-      if ( error || !data.session ) {
+
+      if (error || !data.session) {
         router.replace('/login');
         return;
       }
 
       const user = data.session.user;
 
+      // 🔍 Fetch profile
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('login_check')
         .eq('user_id', user.id)
         .single();
 
-      if (profileError || !profile || profile.login_check !== true) {
-        await supabase.auth.signOut();
-        alert("No account found. Please Sign up First");
+      if (profileError || !profile) {
         router.replace('/signup');
         return;
       }
 
+      // ✅ IF medical form NOT completed → go there
+      if (profile.login_check === false) {
+        router.replace('/medicalinfoform-1');
+        return;
+      }
+
+      // ✅ IF completed → homepage
       router.replace('/app/homepage');
     };
 
-    handleAuth();
-  }, [router])
+    finalizeAuth();
+  }, [router]);
 
-  return <p>Finalizing Authentication</p>;
+  return <p>Finalizing your account...</p>;
 }
