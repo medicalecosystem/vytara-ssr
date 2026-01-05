@@ -307,14 +307,13 @@ export default function SignUpPage() {
       setLoading(false);
     }
   }
-  
+
   const signInWithGoogle = async(e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
       const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: "http://vytara-official.vercel.app/medicalinfoform-1",
-          
+        redirectTo: "http://vytara-official.vercel.app/auth/callback",
       },
     });
   
