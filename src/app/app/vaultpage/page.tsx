@@ -313,7 +313,7 @@ export default function VaultPage() {
   return (
     <div className="min-h-screen bg-[#f4f7f8]">
       {/* HEADER */}
-      <header className="bg-gradient-to-r from-teal-700 to-teal-500 shadow-md">
+      {/* <header className="bg-gradient-to-r from-teal-700 to-teal-500 shadow-md">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
           <h1 className="text-xl font-semibold text-white">
             Vytara – Vault
@@ -327,7 +327,7 @@ export default function VaultPage() {
             </button>
           </div>
         </div>
-      </header>
+      </header> */}
 
       <main className="max-w-7xl mx-auto px-6 py-8 grid lg:grid-cols-3 gap-8">
         {/* LEFT */}
