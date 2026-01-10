@@ -357,7 +357,7 @@ const RotatingCardsCarousel = () => {
     if (pos === 0) return 1;
     return 0.65;
   };
-
+  // demo commit
   const getOpacity = (pos) => {
     if (pos === 0) return 1;
     if (pos === 1) return 0.7;
