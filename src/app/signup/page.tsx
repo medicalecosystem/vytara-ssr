@@ -325,6 +325,23 @@ export default function SignUpPage() {
     <main className="min-h-screen w-full flex items-center justify-center relative bg-slate-950 overflow-hidden py-12">
       {/* Animated Background */}
       <Plasma />
+      <button 
+        className='
+            absolute top-4 left-4 z-20
+            flex items-center gap-1
+            px-4 py-2
+            text-sm font-bold
+            text-white
+            bg-gradient-to-br from-[#14b8a6] to-[#0f766e]
+            rounded-lg
+            shadow-lg shadow-teal-900/20
+            hover:scale-[1.02]
+            active:scale-95
+            transition-all
+        '
+      onClick={() => router.push('/dashboard')}>
+        ← Back
+      </button>
 
       {/* Static Sign Up Card */}
       <div className="relative z-10 w-full max-w-md px-4">
