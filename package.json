@@ -17,16 +17,18 @@
     "next": "16.0.10",
     "ogl": "^1.0.11",
     "react": "19.2.1",
-    "react-dom": "19.2.1"
+    "react-dom": "19.2.1",
+    "twilio": "^5.11.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/react": "^19",
+    "@types/react": "^19.2.7",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.0.10",
+    "supabase": "^2.70.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

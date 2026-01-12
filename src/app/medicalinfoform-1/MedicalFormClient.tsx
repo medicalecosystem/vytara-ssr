@@ -29,7 +29,7 @@ import Image from "next/image";
 
 //   // useEffect(() => {
 //   //   if (!loadingUser && !user){
-//   //     router.replace("/login");
+//   //     router.replace("/auth/login");
 //   //   }
 //   // }, [loadingUser, user, router]);
   
@@ -80,7 +80,7 @@ import Image from "next/image";
 
 //     if (!user){
 //       alert("You are not logged in. Please Sign in again");
-//       router.replace("/login");
+//       router.replace("/auth/login");
 //       return;
 //     }
 
@@ -155,7 +155,7 @@ export default function MedicalInfoFormUI() {
 
     if (authError || !user) {
       alert("Authentication expired. Please login again.");
-      router.replace("/login");
+      router.replace("/auth/login");
       return;
     }
 
@@ -417,7 +417,7 @@ export default function MedicalInfoFormUI() {
         <div className="flex justify-between mt-8">
           <button
             type="button"
-            onClick={() => router.push("/signup")}
+            onClick={() => router.push("/auth/signup")}
             className="flex items-center gap-2 text-[#309898]"
           >
             <ChevronLeft /> Previous

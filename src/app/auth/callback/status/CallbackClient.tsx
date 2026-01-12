@@ -1,3 +1,4 @@
+/*
 'use client';
 
 import { supabase } from '@/lib/createClient';
@@ -9,17 +10,17 @@ export default function CallbackClient() {
 
   useEffect(() => {
     const finalizeAuth = async () => {
-      // 🔑 VERY IMPORTANT: initialize session from email link
+      // ?? VERY IMPORTANT: initialize session from email link
       const { data, error } = await supabase.auth.getSession();
 
       if (error || !data.session) {
-        router.replace('/login');
+        router.replace('/auth/login');
         return;
       }
 
       const user = data.session.user;
 
-      // 🔍 Fetch profile
+      // ?? Fetch profile
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('profile_complete')
@@ -27,17 +28,17 @@ export default function CallbackClient() {
         .single();
 
       if (profileError || !profile) {
-        router.replace('/signup');
+        router.replace('/auth/signup');
         return;
       }
 
-      // ✅ IF medical form NOT completed → go there
+      // ? IF medical form NOT completed ? go there
       if (profile.profile_complete === false) {
         router.replace('/medicalinfoform-1');
         return;
       }
 
-      // ✅ IF completed → homepage
+      // ? IF completed ? homepage
       router.replace('/app/homepage');
     };
 
@@ -46,3 +47,4 @@ export default function CallbackClient() {
 
   return <p>Finalizing your account...</p>;
 }
+*/
