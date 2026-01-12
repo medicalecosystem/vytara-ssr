@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import twilio from "twilio";
 
 const client = twilio(
-  process.env.TWILIO_ACCOUNT_SID!,
-  process.env.TWILIO_AUTH_TOKEN!
+  process.env.TWILIO_ACCOUNT_SID_VERIFY!,
+  process.env.TWILIO_AUTH_TOKEN_VERIFY!
 );
 
 export async function POST(req: Request) {
