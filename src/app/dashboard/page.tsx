@@ -1,4 +1,4 @@
- 'use client';
+'use client';
 
 import React, {
   useState,
@@ -17,17 +17,14 @@ function BeamsBackground() {
   return (
     <>
       <style jsx global>{`
-        html, body {
-          overflow-x: hidden !important;
+        
+        .beams-gradient {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(135deg, #134e4a 0%, #14b8a6 50%, #134e4a 100%);
+          overflow: hidden;
+          z-index: 0;
         }
-          .beams-gradient {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, #134e4a 0%, #14b8a6 50%, #134e4a 100%);
-  overflow: hidden;
-  z-index: 0;
-}
-
 
         .beam {
           position: absolute;
@@ -123,31 +120,53 @@ function BeamsBackground() {
   );
 }
 
-type TextChildrenProps = {
-  children: string;
-};
-
-type FeatureStackCardProps = {
-  children: React.ReactNode;
-  color: string;
-  top?: string;
-};
-
 /* ========================= ScrollFloat ========================= */
-type ScrollFloatProps = {
-  children: string;
-};
-
-const ScrollFloat = ({ children }: ScrollFloatProps) => {
-  const ref = useRef<HTMLHeadingElement | null>(null);
+const ScrollFloat = ({ children }) => {
+  const ref = useRef(null);
 
   const chars = useMemo(() => {
-    return children.split('').map((c, i) => (
+    const text = typeof children === 'string' ? children : '';
+    return text.split('').map((c, i) => (
       <span key={i} className="inline-block">
         {c === ' ' ? '\u00A0' : c}
       </span>
     ));
   }, [children]);
+
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+
+    const ctx = gsap.context(() => {
+      const chars = ref.current.querySelectorAll('span');
+
+      gsap.fromTo(
+        chars,
+        {
+          opacity: 0,
+          yPercent: 120,
+          scaleY: 2,
+          scaleX: 0.6
+        },
+        {
+          opacity: 1,
+          yPercent: 0,
+          scaleY: 1,
+          scaleX: 1,
+          stagger: 0.05,
+          ease: 'back.inOut(2)',
+          scrollTrigger: {
+            trigger: ref.current,
+            start: 'top 85%',
+            end: 'bottom 60%',
+            scrub: 2
+          }
+        }
+      );
+    });
+
+    ScrollTrigger.refresh();
+    return () => ctx.revert();
+  }, []);
 
   return (
     <h2
@@ -160,7 +179,12 @@ const ScrollFloat = ({ children }: ScrollFloatProps) => {
 };
 
 /* ========================= ScrollReveal With Title Pin + Color Sync ========================= */
-const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean }> = ({ children, menuOpen = false }) => {
+const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean; isMobile?: boolean }> = ({
+    children,
+    menuOpen = false,
+    isMobile = false
+  }) => {
+
   const ref = useRef<HTMLHeadingElement | null>(null);
 
   const words = useMemo(
@@ -200,14 +224,14 @@ const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean }> = ({ ch
       // pin title
       ScrollTrigger.create({
         trigger: '#features',
-        start: window.innerWidth >= 768 ? 'top top+=90' : 'top top+=60',
+        start: !isMobile ? 'top top+=90' : 'top top+=60',
         end: 'bottom top',
         pin: ref.current,
         pinSpacing: false
       });
 
       // CARD COLOR SYNC: desktop (>= 768px) OR mobile when menu is open
-      if (window.innerWidth >= 768 || menuOpen) {
+      if (!isMobile || menuOpen) {
         const cards = document.querySelectorAll('.feature-card');
 
         ScrollTrigger.create({
@@ -266,7 +290,7 @@ const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean }> = ({ ch
     <h2
       ref={ref}
       className={`text-[clamp(1.8rem,4vw,3rem)] font-serif text-black text-center leading-tight whitespace-nowrap z-50 ${
-        menuOpen && window.innerWidth < 768 ? 'hidden' : 'block'
+        menuOpen && isMobile ? 'hidden' : 'block'
       }`}
     >
       {words}
@@ -275,6 +299,12 @@ const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean }> = ({ ch
 };
 
 /* ========================= SIMPLE STICKY FEATURE CARD ========================= */
+interface FeatureStackCardProps {
+  children: React.ReactNode;
+  color: string;
+  top?: string;
+}
+
 const FeatureStackCard: React.FC<FeatureStackCardProps> = ({
   children,
   color,
@@ -288,13 +318,141 @@ const FeatureStackCard: React.FC<FeatureStackCardProps> = ({
   </div>
 );
 
+/* ========================= ROTATING CARDS CAROUSEL ========================= */
+interface Card {
+  id: number;
+  image: string;
+}
+
+const RotatingCardsCarousel = () => {
+  const cards: Card[] = [
+    { id: 1, image: '/images/vytara/homepagess.png' },
+    { id: 2, image: '/images/vytara/vaulpagess.png' },
+    { id: 3, image: '/images/vytara/profilepagess.png' },
+  ];
+
+  const [rotation, setRotation] = useState(0);
+  const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+
+  // Rotation effect
+  useEffect(() => {
+    if (selectedCard !== null) return;
+
+    const interval = setInterval(() => {
+      setRotation((prev) => (prev + 1) % 3);
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [selectedCard]);
+
+  const getCardPosition = (index) => {
+    const adjustedIndex = (index - rotation + 3) % 3;
+    const distance = (adjustedIndex + 1) % 3;
+    return distance;
+  };
+
+  const getZIndex = (pos) => {
+    if (pos === 0) return 30;
+    if (pos === 1) return 20;
+    return 10;
+  };
+
+  const getScale = (pos) => {
+    if (pos === 0) return 1;
+    return 0.65;
+  };
+
+  const getOpacity = (pos) => {
+    if (pos === 0) return 1;
+    if (pos === 1) return 0.7;
+    return 0.7;
+  };
+
+  const getYOffset = (pos) => {
+    if (pos === 0) return 0;
+    if (pos === 1) return -70;
+    return 70;
+  };
+
+  return (
+    <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+      {/* Rotating Cards Container */}
+      {!selectedCard && (
+        <div className="relative w-full h-full flex items-center justify-center">
+          {cards.map((card, index) => {
+            const position = getCardPosition(index);
+            const zIndex = getZIndex(position);
+            const scale = getScale(position);
+            const opacity = getOpacity(position);
+            const yOffset = getYOffset(position);
+
+            return (
+              <div
+                key={card.id}
+                className="absolute w-64 h-48 md:w-[40rem] md:h-[21rem] cursor-pointer transition-all duration-700 ease-out"
+                style={{
+                  zIndex: zIndex,
+                  transform: `translateY(${yOffset}px) scale(${scale})`,
+                  opacity: opacity,
+                  left: '50%',
+                  marginLeft: '-128px',
+                  marginTop: '-96px',
+                  pointerEvents: position === 0 ? 'auto' : 'none',
+                }}
+                onClick={() => setSelectedCard(card)}
+              >
+                <img
+                  src={card.image}
+                  className="w-full h-full object-cover rounded-2xl shadow-2xl hover:shadow-3xl transition-shadow duration-300"
+                  alt={`Card ${card.id}`}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Enlarged Card Modal */}
+      {selectedCard && (
+        <div className="fixed top-1/2 left-[66.67%] transform -translate-x-1/2 -translate-y-1/2 w-[50rem] h-[30rem] bg-black bg-opacity-50 rounded-3xl flex items-center justify-center z-50">
+          <div className="relative w-[50rem] h-[30rem] rounded-3xl">
+            <img
+              src={selectedCard.image}
+              className="w-full h-full object-cover rounded-3xl shadow-2xl"
+              alt={`Enlarged Card ${selectedCard.id}`}
+            />
+
+            {/* Close Button */}
+            <button
+              onClick={() => setSelectedCard(null)}
+              className="absolute -top-4 -right-4 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition-colors duration-200 z-60"
+            >
+              <X size={24} className="text-gray-900" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 /* ========================= MAIN PAGE ========================= */
 export default function Landing() {
+
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkScreen = () => setIsMobile(window.innerWidth < 768);
+
+    checkScreen(); // initial
+    window.addEventListener('resize', checkScreen);
+
+    return () => window.removeEventListener('resize', checkScreen);
+  }, []);
+
   const [menu, setMenu] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
-
-  
+  const [heroExpanded, setHeroExpanded] = useState<number | null>(null);
 
   /* ----- MISSION ANIMATION ----- */
   useEffect(() => {
@@ -430,22 +588,22 @@ export default function Landing() {
         </nav>
 
         {/* WHAT IS VYTARA */}
-        <div className="px-4 pt-12 pb-8 max-w-6xl mx-auto">
+        <div className="px-4 pt-12 pb-4 md:pb-8 w-full">
           <h1 className="text-4xl md:text-5xl font-bold text-black text-center">What Is Vytara?</h1>
-          <p className="text-center text-gray-600 italic text-2xl mt-4">Vytara is your one stop destination to have full control over your medical status and care for your loved one's wellness better</p>
+          <p className="text-center text-gray-600 italic text-base mt-4">Vytara is your one stop destination to have full control over your medical status and care for your loved one's wellness better</p>
         </div>
 
         {/* HERO TITLE */}
-        <div className="px-4 pt-12 pb-8 max-w-6xl mx-auto">
+        <div className="px-4 pt-6 md:pt-12 pb-8 w-full">
           <h1 className="text-4xl md:text-5xl font-bold text-black text-center">Why Use Vytara?</h1>
         </div>
 
         {/* ===== HERO ===== */}
-        <section id="hero" className="px-4 pt-6 pb-2 md:pt-12 max-w-6xl mx-auto min-h-[60vh]">
-          <div className="grid grid-cols-3 gap-4 scale-[0.9] md:scale-100">
+        <section id="hero" className="px-8 pt-6 md:pt-20 pb-12 md:pb-20 w-full min-h-[80vh] relative">
+          <div className="grid grid-cols-6 gap-4 scale-[0.9] md:scale-100">
 
             {/* LEFT CARDS */}
-            <div className="col-span-1 flex flex-col gap-4 relative z-10 right-4 md:h-[55vh]">
+            <div className="col-span-1 md:col-span-1 flex flex-col gap-4 relative z-10 md:right-4 absolute -left-24 md:left-8 top-0 h-[55vh] md:h-[55vh] md:relative">
               {[
                 {
                   title: 'Disorganized Documents?',
@@ -453,66 +611,46 @@ export default function Landing() {
                   expandedText: 'No more scattered documents, Vytara has all your medical documents securely stored in one place'
                 },
                 {
-                  title: 'Need On-Hand Emergency Service?',
+                  title: 'Emergency Requirements?',
                   icon: AlertCircle,
                   expandedText: 'Emergency services are one click away from reaching you at your most vulnerable times.'
                 },
                 {
-                  title: 'Unmonitored Family Health?',
+                  title: 'Unmonitored Wellness?',
                   icon: Users,
                   expandedText: 'Freely monitor the wellness of your loved ones with Vytara'
                 }
               ].map(({ title, icon: Icon, expandedText }, i) => (
-                <button
+                <div
                   key={i}
-                  onClick={() => window.innerWidth < 768 && setExpanded(expanded === i ? null : i)}
-                  onMouseEnter={() => window.innerWidth >= 768 && setExpanded(i)}
-                  onMouseLeave={() => window.innerWidth >= 768 && setExpanded(null)}
-                  className="md:flex-1"
+                  onClick={() => isMobile && setHeroExpanded(heroExpanded === i ? null : i)}
+                  className={`group relative w-48 h-48 flex-1 rounded-2xl cursor-pointer transition-all duration-300 origin-bottom-right hover:w-96 hover:h-96 md:hover:w-96 md:hover:h-96 ${
+                    i % 2 === 0 ? 'bg-[#14b8a6]' : 'bg-[#134E4A]'
+                  } ${isMobile && heroExpanded === i ? 'w-96 h-96' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
                 >
+                  <div className="flex flex-col items-center justify-center h-full p-4">
+                    <h3 className="text-sm font-normal text-center mb-2">{title}</h3>
+                    <Icon className="w-20 h-20 scale-[110%] mx-auto" />
+                  </div>
                   <div
-                    className={`rounded-2xl p-5 w-[120px] md:w-[320px] md:ml-[-100px] transition h-full flex flex-col justify-center md:flex md:flex-col md:justify-center ${
-                      expanded === i
-  ? `fixed left-1/2 transform -translate-x-1/2 -translate-y-1/2
-     top-[40%] md:top-[50%]
-     w-[95vw] md:w-96 md:h-96
-     h-auto max-h-[85vh] md:max-h-[25vh]
-     shadow-xl z-50 p-8
-     transition-all duration-300 ease-out
-     ${i % 2 === 0 ? 'bg-[#14b8a6]' : 'bg-[#134E4A]'}`
-  : i % 2 === 0
-  ? 'bg-[#14b8a6] text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)]'
-  : 'bg-[#134E4A] text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)]'
-
+                    className={`absolute left-0 top-0 h-full w-80 bg-blue-200 flex items-center justify-center p-4 transition-all duration-300 ${
+                      !isMobile
+                        ? 'opacity-0 group-hover:opacity-100'
+                        : heroExpanded === i
+                        ? 'opacity-100'
+                        : 'opacity-0'
                     }`}
                   >
-                    {expanded === i ? (
-                      <div className="flex flex-col text-left">
-                        <div className="flex items-center gap-3 mb-4">
-                          <Icon size={36} className="flex-shrink-0" />
-                          
-                        </div>
-                        <p className="text-sm leading-relaxed">
-                          {expandedText}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center">
-                        <p className="font-semibold text-xs md:text-sm leading-tight text-center">{title}</p>
-                      </div>
-                    )}
                   </div>
-                </button>
+                </div>
               ))}
             </div>
 
-            {/* SPLINE */}
-            <div className="col-span-2 rounded-2xl overflow-hidden bg-gray-200 h-[55vh]">
-              <iframe
-                src="https://my.spline.design/pillanddnaanimation-LwakakaJapFBlJVIbImUzQUG/"
-                className="w-full h-full"
-              />
+            {/* ROTATING CARDS CAROUSEL - Not limited to columns to prevent cutoff */}
+            <div className="col-span-5 md:col-span-5 rounded-2xl overflow-hidden bg-transparent h-[64vh] md:ml-0 ml-12 md:relative absolute top-5 -right-5 md:top-auto md:left-auto md:w-auto w-full">
+              <RotatingCardsCarousel />
             </div>
+
           </div>
         </section>
 
@@ -576,8 +714,9 @@ export default function Landing() {
 
         {/* ===== FEATURES ===== */}
         <section id="features" className="px-4 py-8 max-w-5xl mx-auto">
-          <ScrollReveal menuOpen={menu}>So what do we do exactly?</ScrollReveal>
-
+          <ScrollReveal menuOpen={menu} isMobile={isMobile}>
+            So what do we do exactly?
+          </ScrollReveal>
           <div className="mt-[18vh]">
 
             <FeatureStackCard color="#14b8a6" top="md:top-[15vh] top-[20vh]">
@@ -590,7 +729,7 @@ export default function Landing() {
                     Your emergency contacts and emergency services receive instant notifications including your location sharing.
                   </p>
                 </div>
-                <img src="images/sosfeature.jpg" className="rounded-2xl flex-shrink-0 md:order-2 order-1" alt="Emergency SOS" />
+                <img src="images/vytara/sosfeature.jpg" className="rounded-2xl flex-shrink-0 md:order-2 order-1" alt="Emergency SOS" />
               </div>
             </FeatureStackCard>
 
