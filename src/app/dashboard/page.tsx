@@ -121,7 +121,11 @@ function BeamsBackground() {
 }
 
 /* ========================= ScrollFloat ========================= */
-const ScrollFloat = ({ children }) => {
+interface TextChildrenProps {
+  children: string;
+}
+
+const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
   const ref = useRef(null);
 
   const chars = useMemo(() => {
