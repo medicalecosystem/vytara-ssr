@@ -99,7 +99,7 @@ export default function ForgotPassword() {
             <button
               type="button"
               className="text-[#309898] hover:underline text-sm"
-              onClick={() => router.replace('/login')}
+              onClick={() => router.replace('/auth/login')}
             >
               Back to Login
             </button>
