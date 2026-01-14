@@ -16,7 +16,7 @@ gsap.registerPlugin(ScrollTrigger);
 function BeamsBackground() {
   return (
     <>
-      <style jsx global>{`
+      <style>{`
         
         .beams-gradient {
           position: absolute;
@@ -848,7 +848,7 @@ export default function Landing() {
           </div>
         </footer>
 
-        <style jsx>{`
+        <style>{`
           @keyframes slide-in-left {
             from { opacity: 0; transform: translateX(-50px); }
             to { opacity: 1; transform: translateX(0); }
