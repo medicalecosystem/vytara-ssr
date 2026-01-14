@@ -15,109 +15,19 @@ gsap.registerPlugin(ScrollTrigger);
 
 function BeamsBackground() {
   return (
-    <>
-      <style jsx global>{`
-        
-        .beams-gradient {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, #134e4a 0%, #14b8a6 50%, #134e4a 100%);
-  overflow: hidden;
-  z-index: 0;
-}
-
-
-        .beam {
-          position: absolute;
-          width: 2px;
-          height: 100%;
-          background: linear-gradient(
-            to bottom,
-            transparent,
-            rgba(20, 184, 166, 0.3),
-            transparent
-          );
-          animation: beam-animation 8s ease-in-out infinite;
-          filter: blur(1px);
-        }
-
-        @keyframes beam-animation {
-          0%, 100% {
-            opacity: 0.3;
-            transform: translateY(0px);
-          }
-          50% {
-            opacity: 0.8;
-            transform: translateY(-50px);
-          }
-        }
-
-        .beam:nth-child(1) {
-          left: 10%;
-          animation-delay: 0s;
-          height: 150%;
-        }
-
-        .beam:nth-child(2) {
-          left: 20%;
-          animation-delay: 1s;
-          height: 200%;
-        }
-
-        .beam:nth-child(3) {
-          left: 30%;
-          animation-delay: 2s;
-          height: 180%;
-        }
-
-        .beam:nth-child(4) {
-          left: 50%;
-          animation-delay: 3s;
-          height: 200%;
-        }
-
-        .beam:nth-child(5) {
-          left: 70%;
-          animation-delay: 2s;
-          height: 180%;
-        }
-
-        .beam:nth-child(6) {
-          left: 80%;
-          animation-delay: 1s;
-          height: 200%;
-        }
-
-        .beam:nth-child(7) {
-          left: 90%;
-          animation-delay: 0s;
-          height: 150%;
-        }
-
-        .radial-gradient-overlay {
-          position: absolute;
-          inset: 0;
-          background: radial-gradient(
-            ellipse at center,
-            transparent 0%,
-            rgba(255, 255, 255, 0.8) 100%
-          );
-          pointer-events: none;
-          z-index: 1;
-        }
-      `}</style>
-
-      <div className="beams-gradient">
-        <div className="beam"></div>
-        <div className="beam"></div>
-        <div className="beam"></div>
-        <div className="beam"></div>
-        <div className="beam"></div>
-        <div className="beam"></div>
-        <div className="beam"></div>
-        <div className="radial-gradient-overlay"></div>
-      </div>
-    </>
+    <div className="absolute inset-0 bg-white overflow-hidden z-0">
+      <div className="absolute w-64 h-64 bg-[#134E4A] rounded-full opacity-40 blur-3xl top-10 left-10"></div>
+      <div className="absolute w-64 h-64 bg-[#14b8a6] rounded-full opacity-40 blur-3xl top-180 left-0"></div>
+      <div className="absolute w-80 h-80 bg-[#14b8a6] rounded-full opacity-40 blur-3xl top-1/4 right-20"></div>
+      <div className="absolute w-96 h-96 bg-[#134E4A] rounded-full opacity-40 blur-3xl bottom-20 left-1/3"></div>
+      <div className="absolute w-72 h-72 bg-[#14b8a6] rounded-full opacity-40 blur-3xl top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"></div>
+      <div className="absolute w-64 h-64 bg-[#134E4A] rounded-full opacity-60 blur-3xl bottom-120 right-10"></div>
+      <div className="absolute w-80 h-80 bg-[#14b8a6] rounded-full opacity-40 blur-3xl top-3/4 left-10"></div>
+      <div className="absolute w-96 h-96 bg-[#14b8a6] rounded-full opacity-60 blur-3xl top-20 right-1/4"></div>
+      <div className="absolute w-72 h-72 bg-[#14b8a6] rounded-full opacity-40 blur-3xl bottom-1/3 right-1/3"></div>
+      <div className="absolute w-64 h-64 bg-[#134E4A] rounded-full opacity-40 blur-3xl top-1/3 left-20"></div>
+      <div className="absolute w-80 h-80 bg-[#14b8a6] rounded-full opacity-40 blur-3xl bottom-40 left-1/4"></div>
+    </div>
   );
 }
 
@@ -294,6 +204,7 @@ const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean }> = ({ ch
   );
 };
 
+
 /* ========================= SIMPLE STICKY FEATURE CARD ========================= */
 interface FeatureStackCardProps {
   children: React.ReactNode;
@@ -314,13 +225,14 @@ const FeatureStackCard: React.FC<FeatureStackCardProps> = ({
   </div>
 );
 
+
 /* ========================= ROTATING CARDS CAROUSEL ========================= */
 interface Card {
   id: number;
   image: string;
 }
 
-const RotatingCardsCarousel = () => {
+const RotatingCardsCarousel = ({ isMobile }) => {
   const cards: Card[] = [
     { id: 1, image: '/images/vytara/homepagess.png' },
     { id: 2, image: '/images/vytara/vaulpagess.png' },
@@ -395,7 +307,7 @@ const RotatingCardsCarousel = () => {
                   marginTop: '-96px',
                   pointerEvents: position === 0 ? 'auto' : 'none',
                 }}
-                onClick={() => setSelectedCard(card)}
+                onClick={!isMobile ? () => setSelectedCard(card) : undefined}
               >
                 <img
                   src={card.image}
@@ -436,7 +348,15 @@ const RotatingCardsCarousel = () => {
 export default function Landing() {
   const [menu, setMenu] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
-  const [heroExpanded, setHeroExpanded] = useState<number | null>(null);
+  const [heroExpanded, setHeroExpanded] = useState<number[]>([]);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    setIsMobile(window.innerWidth < 768);
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   
 
@@ -571,72 +491,147 @@ export default function Landing() {
               ))}
             </div>
           )}
+
+          <div className="h-0.5 bg-gradient-to-r from-[#134E4A] to-[#14b8a6]"></div>
+
         </nav>
 
         {/* WHAT IS VYTARA */}
         <div className="px-4 pt-12 pb-4 md:pb-8 w-full">
-          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">What Is Vytara?</h1>
-          <p className="text-center text-gray-600 italic text-base mt-4">Vytara is your one stop destination to have full control over your medical status and care for your loved one's wellness better</p>
+          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">The <em>complete</em> AI-powered platform for your health</h1>
+          <p className="text-center text-gray-600 italic text-base mt-4">vytara remembers for you, explains your health, acts when you can't and cares for your loved one's with you.
+</p>
         </div>
 
         {/* HERO TITLE */}
         <div className="px-4 pt-6 md:pt-12 pb-8 w-full">
-          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">Why Use Vytara?</h1>
+          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">Why you should join us</h1>
         </div>
 
         {/* ===== HERO ===== */}
         <section id="hero" className="px-8 pt-6 md:pt-20 pb-12 md:pb-20 w-full min-h-[80vh] relative">
-          <div className="grid grid-cols-6 gap-4 scale-[0.9] md:scale-100">
-
-            {/* LEFT CARDS */}
-            <div className="col-span-1 md:col-span-1 flex flex-col gap-4 relative z-10 md:right-4 absolute -left-24 md:left-8 top-0 h-[55vh] md:h-[55vh] md:relative">
-              {[
-                {
-                  title: 'Disorganized Documents?',
-                  icon: Lock,
-                  expandedText: 'No more scattered documents, Vytara has all your medical documents securely stored in one place'
-                },
-                {
-                  title: 'Emergency Requirements?',
-                  icon: AlertCircle,
-                  expandedText: 'Emergency services are one click away from reaching you at your most vulnerable times.'
-                },
-                {
-                  title: 'Unmonitored Wellness?',
-                  icon: Users,
-                  expandedText: 'Freely monitor the wellness of your loved ones with Vytara'
-                }
-              ].map(({ title, icon: Icon, expandedText }, i) => (
+          {/* MOBILE LAYOUT - Flex Column */}
+          <div className="md:hidden">
+            <div className="flex flex-col gap-10">
+              {/* LEFT CARDS */}
+              <div className="flex flex-col gap-4 w-full">
+                {/* Disorganized Documents - Left, expands right */}
                 <div
-                  key={i}
-                  onClick={() => window.innerWidth < 768 && setHeroExpanded(heroExpanded === i ? null : i)}
-                  className={`group relative w-48 h-48 flex-1 rounded-2xl cursor-pointer transition-all duration-300 origin-bottom-right hover:w-96 hover:h-96 md:hover:w-96 md:hover:h-96 ${
-                    i % 2 === 0 ? 'bg-[#14b8a6]' : 'bg-[#134E4A]'
-                  } ${window.innerWidth < 768 && heroExpanded === i ? 'w-96 h-96' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
+                  onClick={() => setHeroExpanded(prev => {
+                    if (!Array.isArray(prev)) return [0];
+                    return prev.includes(0) ? prev.filter(i => i !== 0) : [...prev, 0];
+                  })}
+                  className={`group relative w-24 h-24 rounded-2xl cursor-pointer transition-all duration-300 origin-left self-start ${
+                    'bg-[#14b8a6]'
+                  } ${Array.isArray(heroExpanded) && heroExpanded.includes(0) ? 'w-80' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
                 >
-                  <div className="flex flex-col items-center justify-center h-full p-4">
-                    <h3 className="text-sm font-normal text-center mb-2">{title}</h3>
-                    <Icon className="w-20 h-20 scale-[110%] mx-auto" />
+                  <div className="flex flex-col items-center justify-center h-full p-2">
+                    <h3 className="text-xs font-normal text-center mb-1">Disorganized Documents?</h3>
+                    <Lock className="w-8 h-8 scale-[110%] mx-auto" />
                   </div>
-                  <div className={`absolute left-0 top-0 h-full w-80 bg-blue-200 flex items-center justify-center p-4 transition-all duration-300 ${
-                    window.innerWidth >= 768 ? 'opacity-0 group-hover:opacity-100' : (heroExpanded === i ? 'opacity-100' : 'opacity-0')
+                  <div className={`absolute left-0 top-0 h-full w-full bg-blue-200 flex items-center justify-center p-3 transition-all duration-300 ${
+                    Array.isArray(heroExpanded) && heroExpanded.includes(0) ? 'opacity-100' : 'opacity-0'
                   }`}>
-                    <p className="text-sm text-gray-800 text-center">{expandedText}</p>
+                    <p className="text-xs text-gray-800 text-center">No more scattered documents, Vytara has all your medical documents securely stored in one place</p>
                   </div>
                 </div>
-              ))}
-            </div>
 
-            {/* ROTATING CARDS CAROUSEL - Not limited to columns to prevent cutoff */}
-            <div className="col-span-5 md:col-span-5 rounded-2xl overflow-hidden bg-transparent h-[64vh] md:ml-0 ml-12 md:relative absolute top-5 -right-5 md:top-auto md:left-auto md:w-auto w-full">
-              <RotatingCardsCarousel />
-            </div>
+                {/* Emergency Services - Right, expands left */}
+                <div
+                  onClick={() => setHeroExpanded(heroExpanded.includes(1) ? heroExpanded.filter(i => i !== 1) : [...heroExpanded, 1])}
+                  className={`group relative w-24 h-24 rounded-2xl cursor-pointer transition-all duration-300 origin-right self-end ${
+                    'bg-[#134E4A]'
+                  } ${heroExpanded.includes(1) ? 'w-80' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
+                >
+                  <div className="flex flex-col items-center justify-center h-full p-2">
+                    <h3 className="text-xs font-normal text-center mb-1">Emergency Services?</h3>
+                    <AlertCircle className="w-8 h-8 scale-[110%] mx-auto" />
+                  </div>
+                  <div className={`absolute left-0 top-0 h-full w-full bg-blue-200 flex items-center justify-center p-3 transition-all duration-300 ${
+                    heroExpanded.includes(1) ? 'opacity-100' : 'opacity-0'
+                  }`}>
+                    <p className="text-xs text-gray-800 text-center">Emergency services are one click away from reaching you at your most vulnerable times.</p>
+                  </div>
+                </div>
 
+                {/* Unmonitored Wellness - Left, expands right */}
+                <div
+                  onClick={() => setHeroExpanded(prev => {
+                    if (!Array.isArray(prev)) return [2];
+                    return prev.includes(2) ? prev.filter(i => i !== 2) : [...prev, 2];
+                  })}
+                  className={`group relative w-24 h-24 rounded-2xl cursor-pointer transition-all duration-300 origin-left self-start ${
+                    'bg-[#14b8a6]'
+                  } ${Array.isArray(heroExpanded) && heroExpanded.includes(2) ? 'w-80' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
+                >
+                 <div className="flex flex-col items-center justify-center h-full p-2">
+                    <h3 className="text-xs font-normal text-center mb-1">Unmonitored Wellness?</h3>
+                    <Users className="w-8 h-8 scale-[110%] mx-auto" />
+                  </div>
+                  <div className={`absolute left-0 top-0 h-full w-full bg-blue-200 flex items-center justify-center p-3 transition-all duration-300 ${
+                    Array.isArray(heroExpanded) && heroExpanded.includes(2) ? 'opacity-100' : 'opacity-0'
+                  }`}>
+                    <p className="text-xs text-gray-800 text-center">Freely monitor the wellness of your loved ones with Vytara</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ROTATING CARDS CAROUSEL */}
+              <div className="rounded-2xl overflow-hidden bg-transparent h-[64vh] relative top-0">
+                <RotatingCardsCarousel />
+              </div>
+            </div>
+          </div>
+
+          {/* DESKTOP LAYOUT - Grid (Previous Code Style) */}
+          <div className="hidden md:block">
+            <div className="grid grid-cols-6 gap-1 scale-100">
+              {/* LEFT CARDS */}
+              <div className="col-span-1 flex flex-col gap-4 relative z-10 h-[55vh]">
+                {[
+                  {
+                    title: 'Disorganized Documents?',
+                    icon: Lock,
+                    expandedText: 'No more scattered documents, Vytara has all your medical documents securely stored in one place'
+                  },
+                  {
+                    title: 'Emergency Requirements?',
+                    icon: AlertCircle,
+                    expandedText: 'Emergency services are one click away from reaching you at your most vulnerable times.'
+                  },
+                  {
+                    title: 'Unmonitored Wellness?',
+                    icon: Users,
+                    expandedText: 'Freely monitor the wellness of your loved ones with Vytara'
+                  }
+                ].map(({ title, icon: Icon, expandedText }, i) => (
+                  <div
+                    key={i}
+                    className={`group relative w-48 h-48 flex-1 rounded-2xl cursor-pointer transition-all duration-300 origin-bottom-right hover:w-96 hover:h-96 ${
+                      i % 2 === 0 ? 'bg-[#14b8a6]' : 'bg-[#134E4A]'
+                    } text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
+                  >
+                    <div className="flex flex-col items-center justify-center h-full p-4">
+                      <h3 className="text-sm font-normal text-center mb-2">{title}</h3>
+                      <Icon className="w-20 h-20 scale-[110%] mx-auto" />
+                    </div>
+                    <div className={`absolute left-0 top-0 h-full w-80 bg-blue-200 flex items-center justify-center p-4 transition-all duration-300 opacity-0 group-hover:opacity-100`}>
+                      <p className="text-sm text-gray-800 text-center">{expandedText}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* ROTATING CARDS CAROUSEL */}
+              <div className="col-span-5 rounded-2xl overflow-hidden bg-transparent h-[64vh]">
+                <RotatingCardsCarousel />
+              </div>
+            </div>
           </div>
         </section>
 
         {/* GET STARTED */}
-        <section className="px-4 py-8 text-center">
+        <section className="px-4 py-20 text-center">
           <button
             onClick={() => nav('login')}
             className="bg-gradient-to-r from-[#14b8a6] to-[#134E4A] text-white px-8 py-4 rounded-full font-semibold text-lg hover:from-[#134E4A] hover:to-[#14b8a6] transition"
@@ -657,13 +652,13 @@ export default function Landing() {
 
         {/* PROMO */}
         <section className="px-4 py-10 text-center text-gray-700">
-          <p className="text-xl">Vytara revolutionizes health management.</p>
-          <p>Your health. Your family. Your control.</p>
+          <p className="text-xl">Vytara For You.</p>
+          <p>Your health. Your family. Our care.</p>
         </section>
 
         {/* ===== MISSION ===== */}
         <section id="mission" className="px-4 py-14 max-w-6xl mx-auto">
-          <ScrollFloat>Mission</ScrollFloat>
+          <ScrollFloat>Why we're here</ScrollFloat>
 
           <div className="grid grid-cols-2 gap-6 mt-10">
 
@@ -674,9 +669,9 @@ export default function Landing() {
               </div>
               <div className="bg-[#10736C] h-48 rounded-3xl mission-bottom-left flex flex-col items-start justify-center p-6 text-white">
                 <Brain size={40} className="mb-3" />
-                <h3 className="text-lg font-bold mb-2">Smart Analysis</h3>
+                <h3 className="text-1xl font-bold">Helping you understand, not just store</h3>
                 <p className="text-sm leading-relaxed">
-                  Beyond secure storage, Vytara uses AI to summarize your medical records.
+                  Our AI explains what matters from your reports so you’re never left guessing.
                 </p>
               </div>
             </div>
@@ -684,16 +679,15 @@ export default function Landing() {
             {/* RIGHT BIG CARD */}
             <div className="bg-[#134E4A] rounded-3xl mission-right h-96 flex flex-col items-start justify-center p-8 text-white text-left">
               <Users size={48} className="mb-4" />
-              <h3 className="text-2xl font-bold mb-4">Empower Family Wellness</h3>
+              <h3 className="text-1xl font-bold mb-4">We look out for your loved ones with you</h3>
               <p className="text-sm leading-relaxed mb-3">
-                Vytara redefines family wellness by letting you create interconnected health profiles for every family member.
+               Keep track of important medical information for your loved ones even from miles away. Because caring doesn't stop at a distance.
               </p>
             </div>
 
           </div>
         </section>
-
-        {/* ===== FEATURES ===== */}
+{/* ===== FEATURES ===== */}
         <section id="features" className="px-4 py-8 max-w-5xl mx-auto">
           <ScrollReveal menuOpen={menu}>So what do we do exactly?</ScrollReveal>
 
@@ -705,8 +699,8 @@ export default function Landing() {
                   <p className="text-2xl font-bold text-white mb-3">
                     Send Emergency Alerts
                   </p>
-                  <p className="text-white text-xs leading-relaxed">
-                    Your emergency contacts and emergency services receive instant notifications including your location sharing.
+                  <p className="text-white text-sm leading-relaxed">
+                    Help is 1 click away with our SOS button which alerts your family and emergency services.
                   </p>
                 </div>
                 <img src="images/vytara/sosfeature.jpg" className="rounded-2xl flex-shrink-0 md:order-2 order-1" alt="Emergency SOS" />
@@ -717,10 +711,10 @@ export default function Landing() {
               <div className="feature-card flex w-full justify-between items-center gap-8 md:flex-row flex-col">
                 <div className="flex-1 text-left md:order-1 order-2">
                   <p className="text-2xl font-bold text-white mb-3">
-                    Store Your Documents Securely
+                    Store safely, explain clearly
                   </p>
-                  <p className="text-white text-xs leading-relaxed">
-                    Organized and secure storage of all your medical documents in one place.
+                  <p className="text-white text-sm leading-relaxed">
+                    AI summaries that help you understand your health, at your fingertips.
                   </p>
                 </div>
                 <img src="images/vytara/safestorefeature.jpg" className="rounded-2xl flex-shrink-0 md:order-2 order-1" alt="Secure Storage" />
@@ -733,8 +727,8 @@ export default function Landing() {
                   <p className="text-2xl font-bold text-white mb-3">
                     Ease Your Family Wellness Concerns
                   </p>
-                  <p className="text-white text-xs leading-relaxed">
-                    Health profiles of your loved ones-at your fingertips!.
+                  <p className="text-white text-sm leading-relaxed mt-[-10px]">
+                    Monitor the health of your loved ones from anywhere.
                   </p>
                 </div>
                 <img src="images/vytara/familyfeature.jpg" className="rounded-2xl flex-shrink-0 md:order-2 order-1" alt="Family Profiles" />
@@ -744,10 +738,11 @@ export default function Landing() {
           </div>
         </section>
 
+
         {/* FOOTER */}
         <footer
           id="footer"
-          className="bg-gray-900 text-white py-8 md:py-12"
+          className="bg-gray-900 text-white py-8 md:py-4"
         >
           <div className="max-w-6xl mx-auto px-4">
             {/* DESKTOP FOOTER */}
@@ -788,7 +783,7 @@ export default function Landing() {
             {/* MOBILE FOOTER */}
             <div className="md:hidden">
               {/* BRAND */}
-              <div className="flex gap-2 items-center mb-2">
+              <div className="flex gap-2 items-center">
                 <div className="w-6 h-6 bg-gradient-to-r from-[#14b8a6] to-[#134E4A] rounded-lg" />
                 <p className="font-bold text-[#14b8a6] text-lg">Vytara</p>
               </div>
@@ -824,25 +819,7 @@ export default function Landing() {
           </div>
         </footer>
 
-        <style jsx>{`
-          @keyframes slide-in-left {
-            from { opacity: 0; transform: translateX(-50px); }
-            to { opacity: 1; transform: translateX(0); }
-          }
 
-          @keyframes slide-in-right {
-            from { opacity: 0; transform: translateX(50px); }
-            to { opacity: 1; transform: translateX(0); }
-          }
-
-          .animate-slide-in-left {
-            animation: slide-in-left 0.7s ease-out forwards;
-          }
-
-          .animate-slide-in-right {
-            animation: slide-in-right 0.7s ease-out forwards;
-          }
-        `}</style>
       </div>
     </div>
   );
