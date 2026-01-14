@@ -29,7 +29,7 @@ export default function HealthInfoFormUI() {
     } = await supabase.auth.getUser();
 
     if (authError || !user){
-      router.push("/login");
+      router.push("/auth/login");
       return;
     }
 

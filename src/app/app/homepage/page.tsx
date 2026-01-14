@@ -61,6 +61,7 @@ export default function HomePage() {
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [medicalTeam, setMedicalTeam] = useState<Doctor[]>([]);
   const [medications, setMedications] = useState<Medication[]>([]);
+  const [isSendingSOS, setIsSendingSOS] = useState(false);
 
   const handleAddAppointment = (appointment: Appointment) => {
     setAppointments(prev => {
@@ -74,6 +75,65 @@ export default function HomePage() {
 
   const handleDeleteAppointment = (id: string) => {
     setAppointments(prev => prev.filter(a => a.id !== id));
+  };
+
+  /* =======================
+     SOS HANDLER
+  ======================= */
+
+  const handleSOS = async () => {
+    // Check if emergency contacts exist
+    if (!emergencyContacts || emergencyContacts.length === 0) {
+      alert("Please set up emergency contacts first before using SOS.\n\nClick on 'Emergency Contacts' card to add your emergency contacts.");
+      setActiveSection("emergency");
+      return;
+    }
+
+    // Confirm before sending
+    const confirmed = confirm(
+      "Are you sure you want to send an SOS alert to all your emergency contacts?\n\nThis will send an emergency message to:\n" +
+      emergencyContacts.map((c) => `• ${c.name} (${c.phone})`).join("\n")
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsSendingSOS(true);
+
+    try {
+      const response = await fetch("/api/sos", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          emergencyContacts: emergencyContacts,
+          userName: name || "A user",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const errorMessage = data.error || "Failed to send SOS alert";
+        throw new Error(errorMessage);
+      }
+
+      // Show success confirmation
+      alert(
+        `✅ SOS Alert Sent Successfully!\n\n${data.message}\n\nYour emergency contacts have been notified.`
+      );
+    } catch (error: any) {
+      console.error("SOS error:", error);
+      // Show user-friendly error message
+      const errorMessage = error.message === "Please enter a valid number" 
+        ? "Please enter a valid number"
+        : error.message || "Failed to send SOS alert. Please try again.";
+      alert(`❌ ${errorMessage}`);
+    } finally {
+      setIsSendingSOS(false);
+    }
   };
 
   /* =======================
@@ -203,11 +263,18 @@ export default function HomePage() {
           {/* SOS */}
           <div className="hidden lg:flex justify-center">
             <button
-              onClick={() => alert("SOS Triggered")}
-              className="w-48 h-48 rounded-full bg-red-500 hover:bg-red-600 text-white shadow-2xl flex flex-col items-center justify-center transition hover:scale-110"
+              onClick={handleSOS}
+              disabled={isSendingSOS}
+              className={`w-48 h-48 rounded-full ${
+                isSendingSOS
+                  ? "bg-red-400 cursor-not-allowed"
+                  : "bg-red-500 hover:bg-red-600"
+              } text-white shadow-2xl flex flex-col items-center justify-center transition hover:scale-110 disabled:hover:scale-100`}
             >
               <AlertCircle size={64} />
-              <span className="text-4xl font-bold mt-4">SOS</span>
+              <span className="text-4xl font-bold mt-4">
+                {isSendingSOS ? "Sending..." : "SOS"}
+              </span>
             </button>
           </div>
         </div>

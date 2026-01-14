@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/createClient";
 import { useEffect, useState } from "react";
 import Image from "next/image";
-
 export default function MedicalInfoFormUI() {
   const router = useRouter();
   
@@ -77,7 +76,7 @@ export default function MedicalInfoFormUI() {
 
     if (authError || !user) {
       alert("Authentication expired. Please login again.");
-      router.replace("/login");
+      router.replace("/auth/login");
       return;
     }
 

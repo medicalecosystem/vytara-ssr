@@ -97,7 +97,7 @@ export default function Navbar() {
                   onClick={async () => {
                     await supabase.auth.signOut();
                     setMenuOpen(false);
-                    router.push('/login');
+                    router.push('/auth/login');
                   }}
                   className="w-full px-4 py-3 text-left text-red-400 hover:bg-white/10 transition flex items-center gap-2"
                 >
