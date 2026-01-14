@@ -928,7 +928,7 @@ const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
     if (!ref.current) return;
 
     const ctx = gsap.context(() => {
-      const chars = ref.current.querySelectorAll('span');
+      const chars = ref.current!.querySelectorAll('span');
 
       gsap.fromTo(
         chars,
