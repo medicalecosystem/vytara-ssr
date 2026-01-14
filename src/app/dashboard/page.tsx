@@ -126,7 +126,7 @@ interface TextChildrenProps {
 }
 
 const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
-  const ref = useRef(null);
+  const ref = useRef<HTMLHeadingElement | null>(null);
 
   const chars = useMemo(() => {
     const text = typeof children === 'string' ? children : '';
@@ -141,7 +141,7 @@ const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
     if (!ref.current) return;
 
     const ctx = gsap.context(() => {
-      const chars = ref.current.querySelectorAll('span');
+      const chars = ref.current!.querySelectorAll('span');
 
       gsap.fromTo(
         chars,
@@ -349,30 +349,30 @@ const RotatingCardsCarousel = () => {
     return () => clearInterval(interval);
   }, [selectedCard]);
 
-  const getCardPosition = (index) => {
+  const getCardPosition = (index: number): number => {
     const adjustedIndex = (index - rotation + 3) % 3;
     const distance = (adjustedIndex + 1) % 3;
     return distance;
   };
 
-  const getZIndex = (pos) => {
+  const getZIndex = (pos: number): number => {
     if (pos === 0) return 30;
     if (pos === 1) return 20;
     return 10;
   };
 
-  const getScale = (pos) => {
+  const getScale = (pos: number): number => {
     if (pos === 0) return 1;
     return 0.65;
   };
 
-  const getOpacity = (pos) => {
+  const getOpacity = (pos: number): number => {
     if (pos === 0) return 1;
     if (pos === 1) return 0.7;
     return 0.7;
   };
 
-  const getYOffset = (pos) => {
+  const getYOffset = (pos: number): number => {
     if (pos === 0) return 0;
     if (pos === 1) return -70;
     return 70;
