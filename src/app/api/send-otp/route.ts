@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import twilio from "twilio";
+import twilio from 'twilio';
 
 const client = twilio(
   process.env.TWILIO_ACCOUNT_SID_VERIFY!,
