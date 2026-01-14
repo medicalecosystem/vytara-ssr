@@ -663,7 +663,7 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* GET STARTED */}
+        {/* GET STARTED
         <section className="px-4 py-20 text-center">
           <button
             onClick={() => nav('login')}
@@ -671,7 +671,7 @@ export default function Landing() {
           >
             Get Started
           </button>
-        </section>
+        </section> */}
 
         {/* GET STARTED */}
         <section className="px-4 py-20 text-center">
