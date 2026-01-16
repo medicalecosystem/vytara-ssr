@@ -51,6 +51,19 @@ type Medication = {
 ======================= */
 
 export default function HomePage() {
+  useEffect(() => {
+    const init = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user?.id) setUserId(data.user.id);
+    };
+    init();
+  
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserId(session?.user?.id ?? "");
+    });
+  
+    return () => sub.subscription.unsubscribe();
+  }, []);
   const router = useRouter();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
