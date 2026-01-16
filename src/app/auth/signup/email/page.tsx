@@ -6,16 +6,14 @@ import Image from "next/image";
 import { supabase } from "@/lib/createClient";
 import Plasma from "@/components/Plasma";
 
-/* ========================= SIGNUP WITH EMAIL ========================= */
 /**
- * This page does:
- * 1) User enters email
- * 2) We send a magic link (email verification link)
- * 3) After user clicks link, Supabase redirects to /auth/set-password
+ * Signup with Email (Magic Link)
  *
- * Make sure your Supabase Auth settings allow redirect URLs:
- * - http://localhost:3000/auth/set-password
- * - https://vytara-official.vercel.app/auth/set-password
+ * Flow:
+ * 1. User enters email
+ * 2. Supabase sends verification link
+ * 3. User clicks link → redirected to /auth/callback
+ * 4. User sets password at /auth/set-password
  */
 
 export default function SignupWithEmail() {
@@ -39,34 +37,7 @@ export default function SignupWithEmail() {
     setLoading(true);
     const normalizedEmail = email.trim().toLowerCase();
 
-    try {
-      const res = await fetch("/api/check-user", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: normalizedEmail }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data?.error || "check_failed");
-      }
-
-      if (data.exists) {
-        setErrorMsg("User Already Exists. Please Log in.");
-        setLoading(false);
-        return;
-      }
-    } catch (err) {
-      console.error("check-user error:", err);
-      setErrorMsg("Verification service unavailable. Please try again.");
-      setLoading(false);
-      return;
-    }
-
-    // Use current origin so it works both locally and on Vercel
     const redirectTo = `${window.location.origin}/auth/callback?next=/auth/set-password`;
-
 
     const { error } = await supabase.auth.signInWithOtp({
       email: normalizedEmail,
@@ -79,14 +50,21 @@ export default function SignupWithEmail() {
     setLoading(false);
 
     if (error) {
-      setErrorMsg(error.message || "Failed to send verification link.");
+      // Supabase safely handles existing users
+      if (error.message.toLowerCase().includes("already")) {
+        setErrorMsg("Account already exists. Please sign in.");
+      } else {
+        setErrorMsg(error.message || "Failed to send verification link.");
+      }
       return;
     }
 
-    setSuccessMsg("Verification link sent! Please check your email to continue.");
+    setSuccessMsg(
+      "Verification link sent! Please check your email to continue."
+    );
   };
 
-   return (
+  return (
     <main className="min-h-screen w-full flex items-center justify-center relative bg-slate-950 overflow-hidden py-12">
       <Plasma />
 
