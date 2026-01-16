@@ -37,6 +37,7 @@ export default function LoginWithPhone() {
 
     setLoading(true);
 
+    // Use Supabase OTP directly (replacing the old /api/send-otp route) so a session is created for DB access.
     const { error } = await supabase.auth.signInWithOtp({
       phone: formattedPhone,
       options: { shouldCreateUser: false },
