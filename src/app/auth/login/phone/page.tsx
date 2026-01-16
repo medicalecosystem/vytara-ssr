@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Plasma from "@/components/Plasma";
+import { supabase } from "@/lib/createClient";
 
 /* ========================= LOGIN WITH PHONE ========================= */
 
@@ -36,16 +37,15 @@ export default function LoginWithPhone() {
 
     setLoading(true);
 
-    const res = await fetch("/api/send-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: formattedPhone }),
+    const { error } = await supabase.auth.signInWithOtp({
+      phone: formattedPhone,
+      options: { shouldCreateUser: false },
     });
 
     setLoading(false);
 
-    if (!res.ok) {
-      setError("Failed to send OTP. Please check the number and try again.");
+    if (error) {
+      setError(error.message || "Failed to send OTP. Please check the number and try again.");
       return;
     }
 
@@ -63,16 +63,16 @@ export default function LoginWithPhone() {
 
     setLoading(true);
 
-    const res = await fetch("/api/verify-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: formattedPhone, code: otp }),
+    const { data, error } = await supabase.auth.verifyOtp({
+      phone: formattedPhone,
+      token: otp,
+      type: "sms",
     });
 
     setLoading(false);
 
-    if (!res.ok) {
-      setError("Invalid OTP. Please try again.");
+    if (error || !data?.user) {
+      setError(error?.message || "Invalid OTP. Please try again.");
       return;
     }
 
