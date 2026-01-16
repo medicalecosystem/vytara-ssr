@@ -3,6 +3,11 @@
 # Flask REST API for Medical Report RAG System
 # Converts existing Flask app to JSON API for Next.js integration
 
+# app_api.py
+
+# Flask REST API for Medical Report RAG System
+# Converts existing Flask app to JSON API for Next.js integration
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
