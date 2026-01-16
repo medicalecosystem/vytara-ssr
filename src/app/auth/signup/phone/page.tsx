@@ -11,7 +11,7 @@ import Plasma from "@/components/Plasma";
 export default function SignupWithPhone() {
   const router = useRouter();
 
-  // Store ONLY 10 digits, we’ll prepend +91 when calling Supabase/Twilio
+  // Store ONLY 10 digits, we’ll prepend +91 when calling Supabase
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"phone" | "otp">("phone");
@@ -28,6 +28,7 @@ export default function SignupWithPhone() {
     return () => clearInterval(id);
   }, [timer]);
 
+  /* ========================= SEND OTP ========================= */
   const sendOtp = async () => {
     setErrorMsg("");
 
@@ -38,34 +39,14 @@ export default function SignupWithPhone() {
 
     setLoading(true);
 
-    try {
-      const res = await fetch("/api/check-user", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: fullPhone }),
-      });
-
-      if (!res.ok) {
-        throw new Error("check_failed");
-      }
-
-      const { exists } = (await res.json()) as { exists?: boolean };
-      if (exists) {
-        setErrorMsg("User Already Exists");
-        setLoading(false);
-        return;
-      }
-    } catch {
-      setErrorMsg("Unable to verify account. Please try again.");
-      setLoading(false);
-      return;
-    }
-
-    // This sends OTP using Supabase Phone Auth (backed by Twilio if configured in Supabase)
+    // Supabase handles:
+    // - first-time signup
+    // - existing users
+    // - pending users
     const { error } = await supabase.auth.signInWithOtp({
       phone: fullPhone,
       options: {
-        shouldCreateUser: true, // important for signup flow
+        shouldCreateUser: true,
       },
     });
 
@@ -80,6 +61,7 @@ export default function SignupWithPhone() {
     setTimer(60);
   };
 
+  /* ========================= VERIFY OTP ========================= */
   const verifyOtp = async () => {
     setErrorMsg("");
 
@@ -103,7 +85,7 @@ export default function SignupWithPhone() {
       return;
     }
 
-    // Optional but recommended: store phone in credentials table (ignore if table not ready)
+    // Optional: store phone in your own table
     try {
       await supabase
         .from("credentials")
@@ -111,9 +93,8 @@ export default function SignupWithPhone() {
           { id: data.user.id, phone: fullPhone },
           { onConflict: "id" }
         );
-    } catch (e) {
-      // If credentials table isn't created yet, don't block signup
-      console.warn("credentials upsert skipped:", e);
+    } catch {
+      // Non-blocking
     }
 
     router.push("/app/homepage");
@@ -142,6 +123,7 @@ export default function SignupWithPhone() {
             <h1 className="text-center text-[#14b8a6] text-3xl font-bold mb-1">
               Sign up with Phone
             </h1>
+
             <p className="text-center text-gray-500 mb-8 text-sm">
               {step === "phone"
                 ? "We’ll send you a one-time password"
@@ -150,7 +132,6 @@ export default function SignupWithPhone() {
 
             {step === "phone" && (
               <>
-                {/* +91 prefix + 10-digit input */}
                 <div className="flex mb-4">
                   <div className="flex items-center px-4 bg-gray-100 border-2 border-r-0 border-gray-100 rounded-l-xl text-gray-600 font-semibold">
                     +91
@@ -171,7 +152,7 @@ export default function SignupWithPhone() {
                 <button
                   onClick={sendOtp}
                   disabled={loading}
-                  className="w-full bg-gradient-to-br from-[#14b8a6] to-[#0f766e] text-white py-3.5 rounded-xl font-bold shadow-lg shadow-teal-900/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70 disabled:hover:scale-100"
+                  className="w-full bg-gradient-to-br from-[#14b8a6] to-[#0f766e] text-white py-3.5 rounded-xl font-bold shadow-lg shadow-teal-900/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70"
                 >
                   {loading ? "Sending OTP..." : "Request OTP"}
                 </button>
@@ -206,7 +187,7 @@ export default function SignupWithPhone() {
                 <button
                   onClick={verifyOtp}
                   disabled={loading}
-                  className="w-full bg-gradient-to-br from-[#14b8a6] to-[#0f766e] text-white py-3.5 rounded-xl font-bold shadow-lg shadow-teal-900/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70 disabled:hover:scale-100"
+                  className="w-full bg-gradient-to-br from-[#14b8a6] to-[#0f766e] text-white py-3.5 rounded-xl font-bold shadow-lg shadow-teal-900/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70"
                 >
                   {loading ? "Verifying..." : "Verify OTP"}
                 </button>
