@@ -46,31 +46,6 @@ export default function SignupWithEmail() {
     setLoading(true);
     const normalizedEmail = email.trim().toLowerCase();
 
-    try {
-      const response = await fetch(
-        `/api/auth/check-email?email=${encodeURIComponent(normalizedEmail)}`
-      );
-
-      if (!response.ok) {
-        setLoading(false);
-        setErrorMsg("Unable to verify email. Please try again.");
-        return;
-      }
-
-      const result = await response.json();
-
-      if (result?.exists) {
-        setLoading(false);
-        setErrorMsg("Account already exists. Please sign in.");
-        return;
-      }
-    } catch (error) {
-      console.error("Email lookup failed", error);
-      setLoading(false);
-      setErrorMsg("Unable to verify email. Please try again.");
-      return;
-    }
-
     const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,
