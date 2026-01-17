@@ -39,7 +39,7 @@ export default function StaticVaultPage() {
     //Sidebar filter
     const [activeFilter, setActiveFilter] = useState("All");
     
-    const filterToFolerName = (filter: string) => {
+    const filterToFolderName = (filter: string) => {
       if ( filter === "All") return null;
       return getFolderByType(filter);
     }
@@ -47,10 +47,10 @@ export default function StaticVaultPage() {
     const visibleDocuments = 
         activeFilter === "All"
             ? documents
-            : documents.filter((doc) => doc.type === filterToFolerName(activeFilter));
+            : documents.filter((doc) => doc.type === activeFilter);
 
-    const getFolderByType = (type: string) => {
-      switch(type) {
+    const getFolderByType = (folder: string) => {
+      switch(folder) {
         case "Lab Reports":
           return "lab-reports";
         case "Prescriptions":
