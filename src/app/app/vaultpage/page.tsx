@@ -81,33 +81,51 @@ export default function StaticVaultPage() {
 
 
     const fetchDocuments = async () => {
-      const { data, error } = await supabase.storage
-        .from("medical-vault")
-        .list("", {
-          limit: 100,
-          offset: 0,
-          sortBy: { column: "name", order: "asc"},
-        });
+  // Get authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        console.error("User not authenticated");
+        return;
+      }
 
-        if ( error ){
-          console.error(error);
-          return;
+      const userId = user.id;
+      const folders = ["lab-reports", "prescriptions", "insurance", "bills", "others"];
+      
+      let allDocs: VaultDocument[] = [];
+
+      // Fetch documents from each folder
+      for (const folder of folders) {
+        const { data, error } = await supabase.storage
+          .from("medical-vault")
+          .list(`${userId}/${folder}`, {
+            limit: 100,
+            offset: 0,
+            sortBy: { column: "created_at", order: "desc" },
+          });
+
+        if (error) {
+          console.error(`Error fetching ${folder}:`, error);
+          continue;
         }
 
-        const formattedDocs = data.map((item) => {
-          const parts = item.name.split("/");
+        if (data) {
+          const formattedDocs = data
+            .filter(item => item.name !== '.emptyFolderPlaceholder') // Filter out placeholder files
+            .map((item) => ({
+              id: item.id,
+              name: item.name,
+              type: folderToLabel(folder),
+              filePath: `${userId}/${folder}/${item.name}`,
+              uploadedAt: new Date(item.created_at).toLocaleString(),
+            }));
 
-          return {
-            id: item.id,
-            name: item.name.split("/").pop() || item.name,
-            type: folderToLabel(parts[1] || ""),
-            filePath: item.name,
-            uploadedAt: item.created_at || new Date().toLocaleString(),
-          };
-        });
+          allDocs = [...allDocs, ...formattedDocs];
+        }
+      }
 
-        setDocuments(formattedDocs);
-    }
+      setDocuments(allDocs);
+    };
 
     return (
         <div className="min-h-screen bg-[#f4f7f8]">
