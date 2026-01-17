@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { supabase } from "@/lib/createClient";
 import Plasma from "@/components/Plasma";
 
 export default function SetPasswordClient() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -18,44 +17,28 @@ export default function SetPasswordClient() {
   const [errorMsg, setErrorMsg] = useState("");
   const [infoMsg, setInfoMsg] = useState("");
 
-  const code = useMemo(() => searchParams.get("code"), [searchParams]);
-
-  // 1) Verify magic link / PKCE
+  // ✅ ONLY check session — no code exchange here
   useEffect(() => {
     const run = async () => {
       setErrorMsg("");
       setInfoMsg("");
       setCheckingLink(true);
 
-      try {
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) {
-            setErrorMsg(
-              `This link is invalid or expired. (${error.message || "unknown error"})`
-            );
-            return;
-          }
-        }
+      const { data } = await supabase.auth.getSession();
 
-        const { data } = await supabase.auth.getSession();
-        if (!data.session) {
-          setErrorMsg("Session not found. Please open the verification link again.");
-          return;
-        }
-
-        setInfoMsg("Email verified. Set a password to continue.");
-      } catch {
-        setErrorMsg("Something went wrong while verifying the link.");
-      } finally {
+      if (!data.session) {
+        setErrorMsg("Session not found. Please open the verification link again.");
         setCheckingLink(false);
+        return;
       }
+
+      setInfoMsg("Email verified. Set a password to continue.");
+      setCheckingLink(false);
     };
 
     run();
-  }, [code]);
+  }, []);
 
-  // 2) Set password
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
@@ -128,9 +111,6 @@ export default function SetPasswordClient() {
             <h1 className="text-center text-[#14b8a6] text-3xl font-bold mb-1">
               Set your password
             </h1>
-            <p className="text-center text-gray-500 mb-8 text-sm">
-              Create a password for your Vytara account
-            </p>
 
             {checkingLink ? (
               <div className="text-center text-sm text-gray-500">
