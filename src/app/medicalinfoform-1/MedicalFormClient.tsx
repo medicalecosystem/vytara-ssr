@@ -68,7 +68,7 @@ export default function MedicalInfoFormUI() {
   // Handle Section 1 submission
   const handleSection1Submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-
+    
     const {
       data: { user },
       error: authError,
