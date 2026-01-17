@@ -37,6 +37,18 @@ export default function SignupWithEmail() {
     setLoading(true);
     const normalizedEmail = email.trim().toLowerCase();
 
+    const { data: existingProfile, error: lookupError } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("email", normalizedEmail)
+      .maybeSingle();
+
+    if (!lookupError && existingProfile) {
+      setLoading(false);
+      setErrorMsg("Account already exists. Please sign in.");
+      return;
+    }
+
     const redirectTo = `${window.location.origin}/auth/callback?next=/auth/set-password`;
 
     const { error } = await supabase.auth.signInWithOtp({

@@ -37,6 +37,20 @@ export default function LoginWithPhone() {
 
     setLoading(true);
 
+    const { data: existingUser, error: lookupError } = await supabase
+      .from("credentials")
+      .select("id")
+      .eq("phone", formattedPhone)
+      .maybeSingle();
+
+    if (lookupError) {
+      console.warn("Phone lookup failed; proceeding with OTP.", lookupError);
+    } else if (!existingUser) {
+      setLoading(false);
+      setError("User not found. Please create an account first.");
+      return;
+    }
+
     // Use Supabase OTP directly (replacing the old /api/send-otp route) so a session is created for DB access.
     const { error } = await supabase.auth.signInWithOtp({
       phone: formattedPhone,
@@ -46,7 +60,12 @@ export default function LoginWithPhone() {
     setLoading(false);
 
     if (error) {
-      setError(error.message || "Failed to send OTP. Please check the number and try again.");
+      const lowerMessage = error.message.toLowerCase();
+      if (lowerMessage.includes("signups not allowed")) {
+        setError("User not found. Please create an account first.");
+      } else {
+        setError(error.message || "Failed to send OTP. Please check the number and try again.");
+      }
       return;
     }
 
