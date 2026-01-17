@@ -36,8 +36,8 @@ function Background() {
 }
 
 /* ========================= ScrollFloat ========================= */
-const ScrollFloat = ({ children }) => {
-  const ref = useRef(null);
+const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
+  const ref = useRef<HTMLHeadingElement | null>(null);
 
   const chars = useMemo(() => {
     const text = typeof children === 'string' ? children : '';
@@ -52,7 +52,7 @@ const ScrollFloat = ({ children }) => {
     if (!ref.current) return;
 
     const ctx = gsap.context(() => {
-      const chars = ref.current.querySelectorAll('span');
+      const chars = ref.current!.querySelectorAll('span');
 
       gsap.fromTo(
         chars,
