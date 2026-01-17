@@ -8,23 +8,18 @@ import {
   Upload,
   Folder,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { supabase } from '@/lib/createClient';
 
 export default function StaticVaultPage() {
 
     type VaultDocument = {
-      id: string;
-      name: string;
-      type: string;
-      filePath: string;
-      uploadedAt: string;
+        id: number;
+        name: string;
+        type: string;
+        file: File;
+        uploadedAt: string;
     };
-
-
-    useEffect(() => {
-      fetchDocuments();
-    }, []);
 
     //Modal Control
     const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -39,18 +34,13 @@ export default function StaticVaultPage() {
     //Sidebar filter
     const [activeFilter, setActiveFilter] = useState("All");
     
-    const filterToFolderName = (filter: string) => {
-      if ( filter === "All") return null;
-      return getFolderByType(filter);
-    }
-    
     const visibleDocuments = 
         activeFilter === "All"
             ? documents
             : documents.filter((doc) => doc.type === activeFilter);
 
-    const getFolderByType = (folder: string) => {
-      switch(folder) {
+    const getFolderByType = (type: string) => {
+      switch(type) {
         case "Lab Reports":
           return "lab-reports";
         case "Prescriptions":
@@ -63,70 +53,7 @@ export default function StaticVaultPage() {
           return "others";
       }
     };
-    
-    const folderToLabel = (folder: string) => {
-      switch (folder) {
-        case "lab-reports":
-          return "Lab Reports";
-        case "prescriptions":
-          return "Prescriptions";
-        case "insurance":
-          return "Insurance";
-        case "bills":
-          return "Bills & Receipts";
-        default:
-          return "Others";
-      }
-    };
-
-
-    const fetchDocuments = async () => {
-  // Get authenticated user
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        console.error("User not authenticated");
-        return;
-      }
-
-      const userId = user.id;
-      const folders = ["lab-reports", "prescriptions", "insurance", "bills", "others"];
-      
-      let allDocs: VaultDocument[] = [];
-
-      // Fetch documents from each folder
-      for (const folder of folders) {
-        const { data, error } = await supabase.storage
-          .from("medical-vault")
-          .list(`${userId}/${folder}`, {
-            limit: 100,
-            offset: 0,
-            sortBy: { column: "created_at", order: "desc" },
-          });
-
-        if (error) {
-          console.error(`Error fetching ${folder}:`, error);
-          continue;
-        }
-
-        if (data) {
-          const formattedDocs = data
-            .filter(item => item.name !== '.emptyFolderPlaceholder') // Filter out placeholder files
-            .map((item) => ({
-              id: item.id,
-              name: item.name,
-              type: folderToLabel(folder),
-              filePath: `${userId}/${folder}/${item.name}`,
-              uploadedAt: new Date(item.created_at).toLocaleString(),
-            }));
-
-          allDocs = [...allDocs, ...formattedDocs];
-        }
-      }
-
-      setDocuments(allDocs);
-    };
-
+            
     return (
         <div className="min-h-screen bg-[#f4f7f8]">
         <main className="max-w-7xl mx-auto px-6 py-8 grid lg:grid-cols-3 gap-8">
@@ -142,25 +69,18 @@ export default function StaticVaultPage() {
                 >
                 + Upload New Document
                 </button>
-                <div className="grid sm:grid-cols-2 gap-4">
+                            <div className="grid sm:grid-cols-2 gap-4">
                 {visibleDocuments.map((doc) => (
-                  <div
+                    <div
                     key={doc.id}
                     className="p-4 bg-white rounded-xl border shadow-sm"
-                  >
+                    >
                     <p className="font-medium">{doc.name}</p>
                     <p className="text-sm text-gray-500">{doc.type}</p>
                     <p className="text-xs text-gray-400">
-                      Uploaded on {doc.uploadedAt}
+                        Uploaded on {doc.uploadedAt}
                     </p>
-                    <a
-                      className="text-teal-600 underline mt-2 block"
-                      href={`https://mhlkzulgpeirtjiopzvu.supabase.co/storage/v1/object/public/medical-vault/${doc.filePath}`}
-                      target="_blank"
-                    >
-                      View
-                    </a>
-                  </div>
+                    </div>
                 ))}
             </div>
             </div>
@@ -301,7 +221,7 @@ export default function StaticVaultPage() {
 
                         const userId = user.id;
 
-                        const filePath = `${userId}/${folder}/${Date.now()}-${selectedFile.name}`;
+                        const filePath = `${userId}/${selectedType.toLowerCase()}/${Date.now()}-${selectedFile.name}`;
                         
                         const { error } = await supabase.storage
                           .from("medical-vault")
@@ -316,15 +236,15 @@ export default function StaticVaultPage() {
                           } 
 
                           setDocuments((prev) => [
-                          ...prev,
-                          {
-                            id: String(Date.now()),
-                            name: selectedFile.name,
-                            type: selectedType,
-                            filePath: filePath,
-                            uploadedAt: new Date().toLocaleString(),
-                          },
-                        ]);
+                            ...prev,
+                            {
+                              id: Date.now(),
+                              name: selectedFile.name,
+                              type: selectedType,
+                              file: selectedFile,
+                              uploadedAt: new Date().toLocaleString(),
+                            },
+                          ]);
 
                         setSelectedFile(null);
                         setIsUploadOpen(false);

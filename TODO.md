@@ -1,0 +1,5 @@
+- [ ] Update hero section grid to stack on mobile (flex-col), make cards full-width and responsive height
+- [ ] Adjust hero cards hover widths for mobile
+- [ ] Update mission section grid to stack on mobile (flex-col)
+- [ ] Adjust general padding, margins, and text sizes for mobile without changing design
+- [ ] Test responsiveness across screen sizes

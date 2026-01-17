@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 
 import { Menu, X, Lock, AlertCircle, Users, Brain } from 'lucide-react';
+import Link from 'next/link';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 gsap.registerPlugin(ScrollTrigger);
@@ -16,7 +17,7 @@ interface TextChildrenProps {
   children: string;
 }
 
-function BeamsBackground() {
+function Background() {
   return (
     <div className="absolute inset-0 bg-white overflow-hidden z-0">
       <div className="absolute w-64 h-64 bg-[#134E4A] rounded-full opacity-40 blur-3xl top-10 left-10"></div>
@@ -35,8 +36,8 @@ function BeamsBackground() {
 }
 
 /* ========================= ScrollFloat ========================= */
-const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
-  const ref = useRef<HTMLHeadingElement | null>(null);
+const ScrollFloat = ({ children }) => {
+  const ref = useRef(null);
 
   const chars = useMemo(() => {
     const text = typeof children === 'string' ? children : '';
@@ -51,7 +52,7 @@ const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
     if (!ref.current) return;
 
     const ctx = gsap.context(() => {
-      const chars = ref.current!.querySelectorAll('span');
+      const chars = ref.current.querySelectorAll('span');
 
       gsap.fromTo(
         chars,
@@ -235,7 +236,7 @@ interface Card {
   image: string;
 }
 
-const RotatingCardsCarousel: React.FC<{ isMobile: boolean }> = ({ isMobile }) => {
+const RotatingCardsCarousel = ({ isMobile }) => {
   const cards: Card[] = [
     { id: 1, image: '/images/vytara/homepagess.png' },
     { id: 2, image: '/images/vytara/vaulpagess.png' },
@@ -256,30 +257,30 @@ const RotatingCardsCarousel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
     return () => clearInterval(interval);
   }, [selectedCard]);
 
-  const getCardPosition = (index: number): number => {
+  const getCardPosition = (index) => {
     const adjustedIndex = (index - rotation + 3) % 3;
     const distance = (adjustedIndex + 1) % 3;
     return distance;
   };
 
-  const getZIndex = (pos: number): number => {
+  const getZIndex = (pos) => {
     if (pos === 0) return 30;
     if (pos === 1) return 20;
     return 10;
   };
 
-  const getScale = (pos: number): number => {
+  const getScale = (pos) => {
     if (pos === 0) return 1;
     return 0.65;
   };
 
-  const getOpacity = (pos: number): number => {
+  const getOpacity = (pos) => {
     if (pos === 0) return 1;
     if (pos === 1) return 0.7;
     return 0.7;
   };
 
-  const getYOffset = (pos: number): number => {
+  const getYOffset = (pos) => {
     if (pos === 0) return 0;
     if (pos === 1) return -70;
     return 70;
@@ -300,7 +301,7 @@ const RotatingCardsCarousel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
             return (
               <div
                 key={card.id}
-                className="absolute w-64 h-48 md:w-[40rem] md:h-[21rem] cursor-pointer transition-all duration-700 ease-out"
+                className={`absolute w-64 h-48 md:w-[40rem] md:h-[21rem] transition-all duration-700 ease-out ${!isMobile ? 'cursor-pointer' : ''}`}
                 style={{
                   zIndex: zIndex,
                   transform: `translateY(${yOffset}px) scale(${scale})`,
@@ -308,7 +309,7 @@ const RotatingCardsCarousel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
                   left: '50%',
                   marginLeft: '-128px',
                   marginTop: '-96px',
-                  pointerEvents: position === 0 ? 'auto' : 'none',
+                  pointerEvents: isMobile ? 'none' : (position === 0 ? 'auto' : 'none'),
                 }}
                 onClick={!isMobile ? () => setSelectedCard(card) : undefined}
               >
@@ -422,7 +423,7 @@ export default function Landing() {
   <div className="relative">
     
     {/* BACKGROUND */}
-    <BeamsBackground />
+    <Background />
 
     {/* PAGE CONTENT ABOVE BACKGROUND */}
     <div className="relative z-10">
@@ -657,7 +658,7 @@ export default function Landing() {
 
               {/* ROTATING CARDS CAROUSEL */}
               <div className="col-span-5 rounded-2xl overflow-hidden bg-transparent h-[64vh]">
-                <RotatingCardsCarousel isMobile={isMobile} />
+                <RotatingCardsCarousel />
               </div>
             </div>
           </div>
@@ -815,10 +816,10 @@ export default function Landing() {
               <div className="md:col-span-1">
                 <h3 className="font-semibold text-lg mb-4">Legal</h3>
                 <div className="space-y-2 text-gray-400 text-sm">
-                  <a href="#" className="block hover:text-white transition">Privacy Policy</a>
-                  <a href="#" className="block hover:text-white transition">Terms of Service</a>
-                  <a href="#" className="block hover:text-white transition">Cookie Policy</a>
-                  <a href="#" className="block hover:text-white transition">HIPAA Compliance</a>
+                  <Link href="/legal/privacy-policy" className="block hover:text-white transition">Privacy Policy</Link>
+                  <Link href="/legal/terms-of-service" className="block hover:text-white transition">Terms of Service</Link>
+                  <Link href="/legal/cookie-policy" className="block hover:text-white transition">Cookie Policy</Link>
+                  <Link href="/legal/health-data-privacy" className="block hover:text-white transition">Health Data Privacy</Link>
                 </div>
               </div>
             </div>
@@ -847,10 +848,10 @@ export default function Landing() {
                 <div className="flex-1">
                   <h3 className="font-semibold text-xs mb-1">Legal</h3>
                   <div className="space-y-0.5 text-gray-400 text-xs">
-                    <a href="#" className="block hover:text-white transition">Privacy Policy</a>
-                    <a href="#" className="block hover:text-white transition">Terms of Service</a>
-                    <a href="#" className="block hover:text-white transition">Cookie Policy</a>
-                    <a href="#" className="block hover:text-white transition">HIPAA Compliance</a>
+                    <Link href="/legal/privacy-policy" className="block hover:text-white transition">Privacy Policy</Link>
+                    <Link href="/legal/terms-of-service" className="block hover:text-white transition">Terms of Service</Link>
+                    <Link href="/legal/cookie-policy" className="block hover:text-white transition">Cookie Policy</Link>
+                    <Link href="/legal/health-data-privacy" className="block hover:text-white transition">Health Data Privacy</Link>
                   </div>
                 </div>
               </div>
