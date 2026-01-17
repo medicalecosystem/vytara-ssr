@@ -290,10 +290,14 @@ export default function LoginPage() {
   const signInWithGoogle = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
 
+    const redirectTo = `${window.location.origin}/auth/callback?next=/app/homepage`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: 'https://vytara-official.vercel.app/auth/callback',
+        redirectTo,
+        queryParams: {
+          prompt: 'select_account',
+        },
       },
     });
 

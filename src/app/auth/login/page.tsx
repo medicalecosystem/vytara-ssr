@@ -10,11 +10,30 @@
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Plasma from "@/components/Plasma";
+import { supabase } from "@/lib/createClient";
 
 /* ========================= LOGIN PAGE ========================= */
 
 export default function LoginPage() {
   const router = useRouter();
+
+  const signInWithGoogle = async () => {
+    const redirectTo = `${window.location.origin}/auth/callback?next=/app/homepage`;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo,
+        queryParams: {
+          prompt: "select_account",
+        },
+      },
+    });
+
+    if (error) {
+      console.error(error);
+      alert("Google login failed. Please try again.");
+    }
+  };
 
   return (
     <main className="min-h-screen w-full flex items-center justify-center relative bg-slate-950 overflow-hidden">
@@ -62,7 +81,7 @@ export default function LoginPage() {
 
               {/* Google stays only here (we'll wire the handler next) */}
               <button
-                onClick={() => router.push("/auth/login/google")}
+                onClick={signInWithGoogle}
                 className="flex items-center justify-center gap-3 w-full border border-gray-300 rounded-xl py-3 bg-white hover:bg-gray-50 transition-all shadow-sm cursor-pointer"
               >
                 <img
