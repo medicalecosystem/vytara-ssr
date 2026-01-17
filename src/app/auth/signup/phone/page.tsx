@@ -39,6 +39,24 @@ export default function SignupWithPhone() {
 
     setLoading(true);
 
+    const { data: existingUser, error: lookupError } = await supabase
+      .from("credentials")
+      .select("id")
+      .eq("phone", fullPhone)
+      .maybeSingle();
+
+    if (lookupError) {
+      setLoading(false);
+      setErrorMsg("Unable to verify account status. Please try again.");
+      return;
+    }
+
+    if (existingUser) {
+      setLoading(false);
+      setErrorMsg("Account already exists. Please sign in.");
+      return;
+    }
+
     // Supabase handles:
     // - first-time signup
     // - existing users

@@ -37,6 +37,24 @@ export default function LoginWithPhone() {
 
     setLoading(true);
 
+    const { data: existingUser, error: lookupError } = await supabase
+      .from("credentials")
+      .select("id")
+      .eq("phone", formattedPhone)
+      .maybeSingle();
+
+    if (lookupError) {
+      setLoading(false);
+      setError("Unable to verify account status. Please try again.");
+      return;
+    }
+
+    if (!existingUser) {
+      setLoading(false);
+      setError("User not found. Please create an account first.");
+      return;
+    }
+
     // Use Supabase OTP directly (replacing the old /api/send-otp route) so a session is created for DB access.
     const { error } = await supabase.auth.signInWithOtp({
       phone: formattedPhone,
