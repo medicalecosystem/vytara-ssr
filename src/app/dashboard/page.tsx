@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 
 import { Menu, X, Lock, AlertCircle, Users, Brain } from 'lucide-react';
+import Link from 'next/link';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 gsap.registerPlugin(ScrollTrigger);
@@ -802,10 +803,10 @@ export default function Landing() {
               <div className="md:col-span-1">
                 <h3 className="font-semibold text-lg mb-4">Legal</h3>
                 <div className="space-y-2 text-gray-400 text-sm">
-                  <a href="#" className="block hover:text-white transition">Privacy Policy</a>
-                  <a href="#" className="block hover:text-white transition">Terms of Service</a>
-                  <a href="#" className="block hover:text-white transition">Cookie Policy</a>
-                  <a href="#" className="block hover:text-white transition">HIPAA Compliance</a>
+                  <Link href="/legal/privacy-policy" className="block hover:text-white transition">Privacy Policy</Link>
+                  <Link href="/legal/terms-of-service" className="block hover:text-white transition">Terms of Service</Link>
+                  <Link href="/legal/cookie-policy" className="block hover:text-white transition">Cookie Policy</Link>
+                  <Link href="/legal/health-data-privacy" className="block hover:text-white transition">Health Data Privacy</Link>
                 </div>
               </div>
             </div>
@@ -834,10 +835,10 @@ export default function Landing() {
                 <div className="flex-1">
                   <h3 className="font-semibold text-xs mb-1">Legal</h3>
                   <div className="space-y-0.5 text-gray-400 text-xs">
-                    <a href="#" className="block hover:text-white transition">Privacy Policy</a>
-                    <a href="#" className="block hover:text-white transition">Terms of Service</a>
-                    <a href="#" className="block hover:text-white transition">Cookie Policy</a>
-                    <a href="#" className="block hover:text-white transition">HIPAA Compliance</a>
+                    <Link href="/legal/privacy-policy" className="block hover:text-white transition">Privacy Policy</Link>
+                    <Link href="/legal/terms-of-service" className="block hover:text-white transition">Terms of Service</Link>
+                    <Link href="/legal/cookie-policy" className="block hover:text-white transition">Cookie Policy</Link>
+                    <Link href="/legal/health-data-privacy" className="block hover:text-white transition">Health Data Privacy</Link>
                   </div>
                 </div>
               </div>
