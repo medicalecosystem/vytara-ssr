@@ -121,7 +121,7 @@ export default function StaticVaultPage() {
                     </p>
                     <a
                       className="text-teal-600 underline mt-2 block"
-                      href={`https://YOUR_SUPABASE_URL/storage/v1/object/public/medical-vault/${doc.filePath}`}
+                      href={`https://mhlkzulgpeirtjiopzvu.supabase.co/storage/v1/object/public/medical-vault/${doc.filePath}`}
                       target="_blank"
                     >
                       View
