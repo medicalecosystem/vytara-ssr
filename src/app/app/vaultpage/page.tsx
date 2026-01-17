@@ -14,12 +14,13 @@ import { supabase } from '@/lib/createClient';
 export default function StaticVaultPage() {
 
     type VaultDocument = {
-        id: number;
-        name: string;
-        type: string;
-        file: File;
-        uploadedAt: string;
+      id: string;
+      name: string;
+      type: string;
+      filePath: string;
+      uploadedAt: string;
     };
+
 
     useEffect(() => {
       fetchDocuments();
@@ -281,15 +282,15 @@ export default function StaticVaultPage() {
                           } 
 
                           setDocuments((prev) => [
-                            ...prev,
-                            {
-                              id: Date.now(),
-                              name: selectedFile.name,
-                              type: selectedType,
-                              file: selectedFile,
-                              uploadedAt: new Date().toLocaleString(),
-                            },
-                          ]);
+                          ...prev,
+                          {
+                            id: String(Date.now()),
+                            name: selectedFile.name,
+                            type: selectedType,
+                            filePath: filePath,
+                            uploadedAt: new Date().toLocaleString(),
+                          },
+                        ]);
 
                         setSelectedFile(null);
                         setIsUploadOpen(false);
