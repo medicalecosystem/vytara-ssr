@@ -8,7 +8,7 @@ import {
   Upload,
   Folder,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/createClient';
 
 export default function StaticVaultPage() {
@@ -20,6 +20,10 @@ export default function StaticVaultPage() {
         file: File;
         uploadedAt: string;
     };
+
+    useEffect(() => {
+      fetchDocuments();
+    }, []);
 
     //Modal Control
     const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -34,10 +38,15 @@ export default function StaticVaultPage() {
     //Sidebar filter
     const [activeFilter, setActiveFilter] = useState("All");
     
+    const filterToFolerName = (filter: string) => {
+      if ( filter === "All") return null;
+      return getFolderByType(filter);
+    }
+    
     const visibleDocuments = 
         activeFilter === "All"
             ? documents
-            : documents.filter((doc) => doc.type === activeFilter);
+            : documents.filter((doc) => doc.type === filterToFolerName(activeFilter));
 
     const getFolderByType = (type: string) => {
       switch(type) {
@@ -53,7 +62,36 @@ export default function StaticVaultPage() {
           return "others";
       }
     };
-            
+    
+    const fetchDocuments = async () => {
+      const { data, error } = await supabase.storage
+        .from("medical-vault")
+        .list("", {
+          limit: 100,
+          offset: 0,
+          sortBy: { column: "name", order: "asc"},
+        });
+
+        if ( error ){
+          console.error(error);
+          return;
+        }
+
+        const formattedDocs = data.map((item) => {
+          const parts = item.name.split("/");
+
+          return {
+            id: item.id,
+            name: item.name.split("/").pop() || item.name,
+            type: parts[1] || "Others",
+            filePath: item.name,
+            uploadedAt: item.created_at || new Date().toLocaleString(),
+          };
+        });
+
+        setDocuments(formattedDocs);
+    }
+
     return (
         <div className="min-h-screen bg-[#f4f7f8]">
         <main className="max-w-7xl mx-auto px-6 py-8 grid lg:grid-cols-3 gap-8">
@@ -69,18 +107,25 @@ export default function StaticVaultPage() {
                 >
                 + Upload New Document
                 </button>
-                            <div className="grid sm:grid-cols-2 gap-4">
+                <div className="grid sm:grid-cols-2 gap-4">
                 {visibleDocuments.map((doc) => (
-                    <div
+                  <div
                     key={doc.id}
                     className="p-4 bg-white rounded-xl border shadow-sm"
-                    >
+                  >
                     <p className="font-medium">{doc.name}</p>
                     <p className="text-sm text-gray-500">{doc.type}</p>
                     <p className="text-xs text-gray-400">
-                        Uploaded on {doc.uploadedAt}
+                      Uploaded on {doc.uploadedAt}
                     </p>
-                    </div>
+                    <a
+                      className="text-teal-600 underline mt-2 block"
+                      href={`https://YOUR_SUPABASE_URL/storage/v1/object/public/medical-vault/${doc.filePath}`}
+                      target="_blank"
+                    >
+                      View
+                    </a>
+                  </div>
                 ))}
             </div>
             </div>
