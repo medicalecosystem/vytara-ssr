@@ -39,6 +39,20 @@ export default function SignupWithPhone() {
 
     setLoading(true);
 
+    const { data: existingUser, error: lookupError } = await supabase
+      .from("credentials")
+      .select("id")
+      .eq("phone", fullPhone)
+      .maybeSingle();
+
+    if (lookupError) {
+      console.warn("Phone lookup failed; proceeding with OTP.", lookupError);
+    } else if (existingUser) {
+      setLoading(false);
+      setErrorMsg("Account already exists. Please sign in.");
+      return;
+    }
+
     // Supabase handles:
     // - first-time signup
     // - existing users
@@ -53,7 +67,12 @@ export default function SignupWithPhone() {
     setLoading(false);
 
     if (error) {
-      setErrorMsg(error.message || "Failed to send OTP. Please try again.");
+      const lowerMessage = error.message.toLowerCase();
+      if (lowerMessage.includes("already")) {
+        setErrorMsg("Account already exists. Please sign in.");
+      } else {
+        setErrorMsg(error.message || "Failed to send OTP. Please try again.");
+      }
       return;
     }
 

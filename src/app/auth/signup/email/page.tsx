@@ -7,44 +7,48 @@ import { supabase } from "@/lib/createClient";
 import Plasma from "@/components/Plasma";
 
 /**
- * Signup with Email (Magic Link)
+ * Signup with Email + Password
  *
  * Flow:
- * 1. User enters email
- * 2. Supabase sends verification link
- * 3. User clicks link → redirected to /auth/callback
- * 4. User sets password at /auth/set-password
+ * 1. User enters email + password + confirm password
+ * 2. Supabase creates user
+ * 3. User is signed in and redirected to app
  */
 
 export default function SignupWithEmail() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
 
-  const sendMagicLink = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
-    setSuccessMsg("");
 
     if (!email.trim()) {
       setErrorMsg("Please enter your email address.");
       return;
     }
 
+    if (!password) {
+      setErrorMsg("Please enter a password.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setErrorMsg("Passwords do not match.");
+      return;
+    }
+
     setLoading(true);
     const normalizedEmail = email.trim().toLowerCase();
 
-    const redirectTo = `${window.location.origin}/auth/callback?next=/auth/set-password`;
-
-    const { error } = await supabase.auth.signInWithOtp({
+    const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
-      options: {
-        shouldCreateUser: true,
-        emailRedirectTo: redirectTo,
-      },
+      password,
     });
 
     setLoading(false);
@@ -54,14 +58,24 @@ export default function SignupWithEmail() {
       if (error.message.toLowerCase().includes("already")) {
         setErrorMsg("Account already exists. Please sign in.");
       } else {
-        setErrorMsg(error.message || "Failed to send verification link.");
+        setErrorMsg(error.message || "Failed to create your account.");
       }
       return;
     }
 
-    setSuccessMsg(
-      "Verification link sent! Please check your email to continue."
-    );
+    if (!data.session) {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      });
+
+      if (signInError) {
+        setErrorMsg(signInError.message || "Unable to sign you in.");
+        return;
+      }
+    }
+
+    router.push("/app/homepage");
   };
 
   return (
@@ -88,10 +102,10 @@ export default function SignupWithEmail() {
               Sign up with Email
             </h1>
             <p className="text-center text-gray-500 mb-8 text-sm">
-              We’ll email you a verification link to continue
+              Create your account in seconds
             </p>
 
-            <form className="space-y-5" onSubmit={sendMagicLink}>
+            <form className="space-y-5" onSubmit={handleSignup}>
               <div>
                 <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 ml-1">
                   Email Address
@@ -106,22 +120,44 @@ export default function SignupWithEmail() {
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 ml-1">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-[#14b8a6] focus:bg-white focus:outline-none transition-all text-black"
+                  placeholder="Create a password"
+                  autoComplete="new-password"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 ml-1">
+                  Confirm Password
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-[#14b8a6] focus:bg-white focus:outline-none transition-all text-black"
+                  placeholder="Re-enter your password"
+                  autoComplete="new-password"
+                />
+              </div>
+
               <button
                 type="submit"
                 disabled={loading}
                 className="w-full bg-gradient-to-br from-[#14b8a6] to-[#0f766e] text-white py-3.5 rounded-xl font-bold shadow-lg shadow-teal-900/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70"
               >
-                {loading ? "Sending Link..." : "Send Verification Link"}
+                {loading ? "Creating Account..." : "Create Account"}
               </button>
 
               {errorMsg && (
                 <p className="text-sm text-red-600 text-center">{errorMsg}</p>
-              )}
-
-              {successMsg && (
-                <p className="text-sm text-emerald-700 text-center">
-                  {successMsg}
-                </p>
               )}
             </form>
 
