@@ -21,7 +21,12 @@ export async function GET(request: Request) {
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
-  const { data, error } = await supabase.auth.admin.getUserByEmail(email);
+  const { data, error } = await supabase
+    .schema("auth")
+    .from("users")
+    .select("id")
+    .eq("email", email)
+    .maybeSingle();
 
   if (error) {
     return NextResponse.json(
@@ -30,5 +35,5 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json({ exists: Boolean(data?.user) });
+  return NextResponse.json({ exists: Boolean(data?.id) });
 }
