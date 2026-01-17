@@ -13,6 +13,9 @@ import Link from 'next/link';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 gsap.registerPlugin(ScrollTrigger);
+interface TextChildrenProps {
+  children: string;
+}
 
 function Background() {
   return (
@@ -412,7 +415,7 @@ export default function Landing() {
 
   const nav = (id: string) => {
     setMenu(false);
-    if (id === 'login') return (window.location.href = '/login');
+    if (id === 'login') return (window.location.href = '/auth/login');
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   };
 
@@ -660,6 +663,16 @@ export default function Landing() {
             </div>
           </div>
         </section>
+
+        {/* GET STARTED
+        <section className="px-4 py-20 text-center">
+          <button
+            onClick={() => nav('login')}
+            className="bg-gradient-to-r from-[#14b8a6] to-[#134E4A] text-white px-8 py-4 rounded-full font-semibold text-lg hover:from-[#134E4A] hover:to-[#14b8a6] transition"
+          >
+            Get Started
+          </button>
+        </section> */}
 
         {/* GET STARTED */}
         <section className="px-4 py-20 text-center">
