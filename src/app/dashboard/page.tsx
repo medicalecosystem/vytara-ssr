@@ -236,7 +236,7 @@ interface Card {
   image: string;
 }
 
-const RotatingCardsCarousel = ({ isMobile }) => {
+const RotatingCardsCarousel: React.FC<{ isMobile: boolean }> = ({ isMobile }) => {
   const cards: Card[] = [
     { id: 1, image: '/images/vytara/homepagess.png' },
     { id: 2, image: '/images/vytara/vaulpagess.png' },
@@ -257,30 +257,30 @@ const RotatingCardsCarousel = ({ isMobile }) => {
     return () => clearInterval(interval);
   }, [selectedCard]);
 
-  const getCardPosition = (index) => {
+  const getCardPosition = (index: number): number => {
     const adjustedIndex = (index - rotation + 3) % 3;
     const distance = (adjustedIndex + 1) % 3;
     return distance;
   };
 
-  const getZIndex = (pos) => {
+  const getZIndex = (pos: number): number => {
     if (pos === 0) return 30;
     if (pos === 1) return 20;
     return 10;
   };
 
-  const getScale = (pos) => {
+  const getScale = (pos: number): number => {
     if (pos === 0) return 1;
     return 0.65;
   };
 
-  const getOpacity = (pos) => {
+  const getOpacity = (pos: number): number => {
     if (pos === 0) return 1;
     if (pos === 1) return 0.7;
     return 0.7;
   };
 
-  const getYOffset = (pos) => {
+  const getYOffset = (pos: number): number => {
     if (pos === 0) return 0;
     if (pos === 1) return -70;
     return 70;
@@ -301,7 +301,7 @@ const RotatingCardsCarousel = ({ isMobile }) => {
             return (
               <div
                 key={card.id}
-                className={`absolute w-64 h-48 md:w-[40rem] md:h-[21rem] transition-all duration-700 ease-out ${!isMobile ? 'cursor-pointer' : ''}`}
+                className="absolute w-64 h-48 md:w-[40rem] md:h-[21rem] cursor-pointer transition-all duration-700 ease-out"
                 style={{
                   zIndex: zIndex,
                   transform: `translateY(${yOffset}px) scale(${scale})`,
@@ -309,7 +309,7 @@ const RotatingCardsCarousel = ({ isMobile }) => {
                   left: '50%',
                   marginLeft: '-128px',
                   marginTop: '-96px',
-                  pointerEvents: isMobile ? 'none' : (position === 0 ? 'auto' : 'none'),
+                  pointerEvents: position === 0 ? 'auto' : 'none',
                 }}
                 onClick={!isMobile ? () => setSelectedCard(card) : undefined}
               >
