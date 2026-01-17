@@ -40,10 +40,16 @@ export default function SignupWithEmail() {
     const { data: existingProfile, error: lookupError } = await supabase
       .from("profiles")
       .select("id")
-      .eq("email", normalizedEmail)
+      .ilike("email", normalizedEmail)
       .maybeSingle();
 
-    if (!lookupError && existingProfile) {
+    if (lookupError) {
+      setLoading(false);
+      setErrorMsg("Unable to verify email. Please try again.");
+      return;
+    }
+
+    if (existingProfile) {
       setLoading(false);
       setErrorMsg("Account already exists. Please sign in.");
       return;
