@@ -658,7 +658,7 @@ export default function Landing() {
 
               {/* ROTATING CARDS CAROUSEL */}
               <div className="col-span-5 rounded-2xl overflow-hidden bg-transparent h-[64vh]">
-                <RotatingCardsCarousel />
+                <RotatingCardsCarousel isMobile={isMobile} />
               </div>
             </div>
           </div>
