@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import {
   Crown,
   Shield,
@@ -31,7 +31,7 @@ type CareCircleData = {
   currentUserRole: CareCircleRole;
 };
 
-const roleIcons: Record<CareCircleRole, JSX.Element> = {
+const roleIcons: Record<CareCircleRole, ReactElement> = {
   owner: <Crown className="h-4 w-4 text-amber-500" />,
   admin: <Shield className="h-4 w-4 text-teal-600" />,
   member: <User className="h-4 w-4 text-slate-500" />,
