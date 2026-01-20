@@ -503,6 +503,12 @@ export default function VaultPage() {
 
   const [selectedCategory, setSelectedCategory] = useState<Category>('all');
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [counts, setCounts] = useState<Record<MedicalFolder, number>>({
+    reports: 0,
+    prescriptions: 0,
+    insurance: 0,
+    bills: 0,
+  });
 
   const [uploadData, setUploadData] = useState<{
     category: Category;
@@ -519,6 +525,7 @@ export default function VaultPage() {
       if (!data.user) return;
       setUserId(data.user.id);
       fetchFiles(data.user.id, selectedCategory);
+      fetchCounts(data.user.id);
     });
   }, []);
 
@@ -574,6 +581,28 @@ export default function VaultPage() {
     setLoading(false);
   };
 
+  const fetchCounts = async (uid: string) => {
+    const folders: MedicalFolder[] = [
+      'reports',
+      'prescriptions',
+      'insurance',
+      'bills',
+    ];
+    const nextCounts: Record<MedicalFolder, number> = {
+      reports: 0,
+      prescriptions: 0,
+      insurance: 0,
+      bills: 0,
+    };
+
+    for (const folder of folders) {
+      const { data } = await listMedicalFiles(uid, folder);
+      nextCounts[folder] = data?.length ?? 0;
+    }
+
+    setCounts(nextCounts);
+  };
+
   /* ---------------- UPLOAD ---------------- */
 
   const handleUpload = async (e: React.FormEvent) => {
@@ -597,6 +626,7 @@ export default function VaultPage() {
     setShowUploadModal(false);
     setUploadData({ category: 'lab-reports', file: null });
     fetchFiles(userId, selectedCategory);
+    fetchCounts(userId);
   };
 
   const handleDelete = async (file: MedicalFile) => {
@@ -617,6 +647,7 @@ export default function VaultPage() {
     }
 
     setFiles((prev) => prev.filter((f) => f.name !== file.name));
+    fetchCounts(userId);
   };
 
   const handleRename = async (file: MedicalFile) => {
@@ -648,6 +679,7 @@ export default function VaultPage() {
     setFiles((prev) =>
       prev.map((f) => (f.name === file.name ? { ...f, name: nextName } : f))
     );
+    fetchCounts(userId);
   };
 
   const handleDownload = async (file: MedicalFile) => {
@@ -716,11 +748,20 @@ export default function VaultPage() {
   };
 
   const categories = [
-    { id: 'all', label: 'All Documents', icon: Folder, count: files.length },
-    { id: 'lab-reports', label: 'Lab Reports', icon: Activity, count: files.filter(f => f.folder === 'reports').length },
-    { id: 'prescriptions', label: 'Prescriptions', icon: FileText, count: files.filter(f => f.folder === 'prescriptions').length },
-    { id: 'insurance', label: 'Insurance', icon: Shield, count: files.filter(f => f.folder === 'insurance').length },
-    { id: 'bills', label: 'Bills & Receipts', icon: Receipt, count: files.filter(f => f.folder === 'bills').length },
+    {
+      id: 'all',
+      label: 'All Documents',
+      icon: Folder,
+      count:
+        counts.reports +
+        counts.prescriptions +
+        counts.insurance +
+        counts.bills,
+    },
+    { id: 'lab-reports', label: 'Lab Reports', icon: Activity, count: counts.reports },
+    { id: 'prescriptions', label: 'Prescriptions', icon: FileText, count: counts.prescriptions },
+    { id: 'insurance', label: 'Insurance', icon: Shield, count: counts.insurance },
+    { id: 'bills', label: 'Bills & Receipts', icon: Receipt, count: counts.bills },
   ];
 
   /* ---------------- UI ---------------- */
