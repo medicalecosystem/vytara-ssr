@@ -69,8 +69,8 @@ const CookiePolicyLayout = () => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   };
   const [activeSection, setActiveSection] = useState('intro');
-  const contentRef = useRef(null);
-  const sectionRefs = useRef({});
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const sections = [
     { id: 'intro', title: 'Introductory Text' },
@@ -82,7 +82,7 @@ const CookiePolicyLayout = () => {
     { id: 'Updates-to-this-Cookie-Policy', title: 'Updates to this Cookie Policy' },
   ];
 
-  const handleSectionClick = (sectionId) => {
+  const handleSectionClick = (sectionId: string) => {
     const element = sectionRefs.current[sectionId];
     if (element) {
       element.scrollIntoView({ behavior: 'smooth' });
