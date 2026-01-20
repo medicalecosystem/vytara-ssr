@@ -1,4 +1,5 @@
 'use client';
+'use client';
 
 import React, {
   useState,
@@ -19,23 +20,116 @@ interface TextChildrenProps {
 
 function Background() {
   return (
-    <div className="absolute inset-0 bg-white overflow-hidden z-0">
-      <div className="absolute w-64 h-64 bg-[#134E4A] rounded-full opacity-40 blur-3xl top-10 left-10"></div>
-      <div className="absolute w-64 h-64 bg-[#14b8a6] rounded-full opacity-40 blur-3xl top-180 left-0"></div>
-      <div className="absolute w-80 h-80 bg-[#14b8a6] rounded-full opacity-40 blur-3xl top-1/4 right-20"></div>
-      <div className="absolute w-96 h-96 bg-[#134E4A] rounded-full opacity-40 blur-3xl bottom-20 left-1/3"></div>
-      <div className="absolute w-72 h-72 bg-[#14b8a6] rounded-full opacity-40 blur-3xl top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"></div>
-      <div className="absolute w-64 h-64 bg-[#134E4A] rounded-full opacity-60 blur-3xl bottom-120 right-10"></div>
-      <div className="absolute w-80 h-80 bg-[#14b8a6] rounded-full opacity-40 blur-3xl top-3/4 left-10"></div>
-      <div className="absolute w-96 h-96 bg-[#14b8a6] rounded-full opacity-60 blur-3xl top-20 right-1/4"></div>
-      <div className="absolute w-72 h-72 bg-[#14b8a6] rounded-full opacity-40 blur-3xl bottom-1/3 right-1/3"></div>
-      <div className="absolute w-64 h-64 bg-[#134E4A] rounded-full opacity-40 blur-3xl top-1/3 left-20"></div>
-      <div className="absolute w-80 h-80 bg-[#14b8a6] rounded-full opacity-40 blur-3xl bottom-40 left-1/4"></div>
-    </div>
+    <>
+      <style>{`
+        
+        .beams-gradient {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(135deg, #134e4a 0%, #14b8a6 50%, #134e4a 100%);
+          overflow: hidden;
+          z-index: 0;
+        }
+
+        .beam {
+          position: absolute;
+          width: 2px;
+          height: 100%;
+          background: linear-gradient(
+            to bottom,
+            transparent,
+            rgba(20, 184, 166, 0.3),
+            transparent
+          );
+          animation: beam-animation 8s ease-in-out infinite;
+          filter: blur(1px);
+        }
+
+        @keyframes beam-animation {
+          0%, 100% {
+            opacity: 0.3;
+            transform: translateY(0px);
+          }
+          50% {
+            opacity: 0.8;
+            transform: translateY(-50px);
+          }
+        }
+
+        .beam:nth-child(1) {
+          left: 10%;
+          animation-delay: 0s;
+          height: 150%;
+        }
+
+        .beam:nth-child(2) {
+          left: 20%;
+          animation-delay: 1s;
+          height: 200%;
+        }
+
+        .beam:nth-child(3) {
+          left: 30%;
+          animation-delay: 2s;
+          height: 180%;
+        }
+
+        .beam:nth-child(4) {
+          left: 50%;
+          animation-delay: 3s;
+          height: 200%;
+        }
+
+        .beam:nth-child(5) {
+          left: 70%;
+          animation-delay: 2s;
+          height: 180%;
+        }
+
+        .beam:nth-child(6) {
+          left: 80%;
+          animation-delay: 1s;
+          height: 200%;
+        }
+
+        .beam:nth-child(7) {
+          left: 90%;
+          animation-delay: 0s;
+          height: 150%;
+        }
+
+        .radial-gradient-overlay {
+          position: absolute;
+          inset: 0;
+          background: radial-gradient(
+            ellipse at center,
+            transparent 0%,
+            rgba(255, 255, 255, 0.8) 100%
+          );
+          pointer-events: none;
+          z-index: 1;
+        }
+      `}</style>
+
+      <div className="beams-gradient">
+        <div className="beam"></div>
+        <div className="beam"></div>
+        <div className="beam"></div>
+        <div className="beam"></div>
+        <div className="beam"></div>
+        <div className="beam"></div>
+        <div className="beam"></div>
+        <div className="radial-gradient-overlay"></div>
+      </div>
+    </>
   );
 }
 
 /* ========================= ScrollFloat ========================= */
+interface TextChildrenProps {
+  children: string;
+}
+
 const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
   const ref = useRef<HTMLHeadingElement | null>(null);
 
@@ -94,7 +188,12 @@ const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
 };
 
 /* ========================= ScrollReveal With Title Pin + Color Sync ========================= */
-const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean }> = ({ children, menuOpen = false }) => {
+const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean; isMobile?: boolean }> = ({
+    children,
+    menuOpen = false,
+    isMobile = false
+  }) => {
+
   const ref = useRef<HTMLHeadingElement | null>(null);
 
   const words = useMemo(
@@ -134,14 +233,14 @@ const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean }> = ({ ch
       // pin title
       ScrollTrigger.create({
         trigger: '#features',
-        start: window.innerWidth >= 768 ? 'top top+=90' : 'top top+=60',
+        start: !isMobile ? 'top top+=90' : 'top top+=60',
         end: 'bottom top',
         pin: ref.current,
         pinSpacing: false
       });
 
       // CARD COLOR SYNC: desktop (>= 768px) OR mobile when menu is open
-      if (window.innerWidth >= 768 || menuOpen) {
+      if (!isMobile || menuOpen) {
         const cards = document.querySelectorAll('.feature-card');
 
         ScrollTrigger.create({
@@ -200,7 +299,7 @@ const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean }> = ({ ch
     <h2
       ref={ref}
       className={`text-[clamp(1.8rem,4vw,3rem)] font-serif text-black text-center leading-tight whitespace-nowrap z-50 ${
-        menuOpen && window.innerWidth < 768 ? 'hidden' : 'block'
+        menuOpen && isMobile ? 'hidden' : 'block'
       }`}
     >
       {words}
@@ -229,14 +328,13 @@ const FeatureStackCard: React.FC<FeatureStackCardProps> = ({
   </div>
 );
 
-
 /* ========================= ROTATING CARDS CAROUSEL ========================= */
 interface Card {
   id: number;
   image: string;
 }
 
-const RotatingCardsCarousel: React.FC<{ isMobile: boolean }> = ({ isMobile }) => {
+const RotatingCardsCarousel = () => {
   const cards: Card[] = [
     { id: 1, image: '/images/vytara/homepagess.png' },
     { id: 2, image: '/images/vytara/vaulpagess.png' },
@@ -311,7 +409,7 @@ const RotatingCardsCarousel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
                   marginTop: '-96px',
                   pointerEvents: position === 0 ? 'auto' : 'none',
                 }}
-                onClick={!isMobile ? () => setSelectedCard(card) : undefined}
+                onClick={() => setSelectedCard(card)}
               >
                 <img
                   src={card.image}
@@ -350,19 +448,21 @@ const RotatingCardsCarousel: React.FC<{ isMobile: boolean }> = ({ isMobile }) =>
 
 /* ========================= MAIN PAGE ========================= */
 export default function Landing() {
-  const [menu, setMenu] = useState(false);
-  const [expanded, setExpanded] = useState<number | null>(null);
-  const [heroExpanded, setHeroExpanded] = useState<number[]>([]);
+
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    setIsMobile(window.innerWidth < 768);
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    const checkScreen = () => setIsMobile(window.innerWidth < 768);
+
+    checkScreen(); // initial
+    window.addEventListener('resize', checkScreen);
+
+    return () => window.removeEventListener('resize', checkScreen);
   }, []);
 
-  
+  const [menu, setMenu] = useState(false);
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [heroExpanded, setHeroExpanded] = useState<number | null>(null);
 
   /* ----- MISSION ANIMATION ----- */
   useEffect(() => {
@@ -502,165 +602,68 @@ export default function Landing() {
 
         {/* WHAT IS VYTARA */}
         <div className="px-4 pt-12 pb-4 md:pb-8 w-full">
-          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">The <em>complete</em> AI-powered platform for your health</h1>
-          <p className="text-center text-gray-600 italic text-base mt-4">vytara remembers for you, explains your health, acts when you can't and cares for your loved one's with you.
-</p>
+          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">What Is Vytara?</h1>
+          <p className="text-center text-gray-600 italic text-base mt-4">Vytara is your one stop destination to have full control over your medical status and care for your loved one's wellness better</p>
         </div>
 
         {/* HERO TITLE */}
         <div className="px-4 pt-6 md:pt-12 pb-8 w-full">
-          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">Why you should join us</h1>
+          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">Why Use Vytara?</h1>
         </div>
 
         {/* ===== HERO ===== */}
         <section id="hero" className="px-8 pt-6 md:pt-20 pb-12 md:pb-20 w-full min-h-[80vh] relative">
-          {/* MOBILE LAYOUT - Flex Column */}
-          <div className="md:hidden">
-            <div className="flex flex-col gap-10">
-              {/* LEFT CARDS */}
-              <div className="flex flex-col gap-4 w-full">
-                {/* Disorganized Documents - Left, expands right */}
-                <div className="relative flex items-center self-start">
-                  <div
-                    onClick={() => setHeroExpanded(prev => {
-                      if (!Array.isArray(prev)) return [0];
-                      return prev.includes(0) ? prev.filter(i => i !== 0) : [...prev, 0];
-                    })}
-                    className={`group relative w-24 h-24 rounded-l-2xl cursor-pointer transition-all duration-300 origin-left ${
-                      'bg-[#14b8a6]'
-                    } ${Array.isArray(heroExpanded) && heroExpanded.includes(0) ? 'w-72' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
-                  >
-                    <div className="flex flex-col items-center justify-center h-full p-2">
-                      <h3 className="text-xs font-normal text-center mb-1">Disorganized Documents?</h3>
-                      <Lock className="w-8 h-8 scale-[110%] mx-auto" />
-                    </div>
-                    <div className={`absolute left-0 top-0 h-full w-full bg-blue-200 flex items-center justify-center p-3 transition-all duration-300 ${
-                      Array.isArray(heroExpanded) && heroExpanded.includes(0) ? 'opacity-100' : 'opacity-0'
-                    }`}>
-                      <p className="text-xs text-gray-800 text-center">No more scattered documents, Vytara has all your medical documents securely stored in one place</p>
-                    </div>
+          <div className="grid grid-cols-6 gap-4 scale-[0.9] md:scale-100">
+
+            {/* LEFT CARDS */}
+            <div className="col-span-1 md:col-span-1 flex flex-col gap-4 relative z-10 md:right-4 absolute -left-24 md:left-8 top-0 h-[55vh] md:h-[55vh] md:relative">
+              {[
+                {
+                  title: 'Disorganized Documents?',
+                  icon: Lock,
+                  expandedText: 'No more scattered documents, Vytara has all your medical documents securely stored in one place'
+                },
+                {
+                  title: 'Emergency Requirements?',
+                  icon: AlertCircle,
+                  expandedText: 'Emergency services are one click away from reaching you at your most vulnerable times.'
+                },
+                {
+                  title: 'Unmonitored Wellness?',
+                  icon: Users,
+                  expandedText: 'Freely monitor the wellness of your loved ones with Vytara'
+                }
+              ].map(({ title, icon: Icon, expandedText }, i) => (
+                <div
+                  key={i}
+                  onClick={() => isMobile && setHeroExpanded(heroExpanded === i ? null : i)}
+                  className={`group relative w-48 h-48 flex-1 rounded-2xl cursor-pointer transition-all duration-300 origin-bottom-right hover:w-96 hover:h-96 md:hover:w-96 md:hover:h-96 ${
+                    i % 2 === 0 ? 'bg-[#14b8a6]' : 'bg-[#134E4A]'
+                  } ${isMobile && heroExpanded === i ? 'w-96 h-96' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
+                >
+                  <div className="flex flex-col items-center justify-center h-full p-4">
+                    <h3 className="text-sm font-normal text-center mb-2">{title}</h3>
+                    <Icon className="w-20 h-20 scale-[110%] mx-auto" />
                   </div>
                   <div
-                    onClick={() => setHeroExpanded(prev => {
-                      if (!Array.isArray(prev)) return [0];
-                      return prev.includes(0) ? prev.filter(i => i !== 0) : [...prev, 0];
-                    })}
-                    className="w-6 h-24 bg-[#5eead4] rounded-r-2xl flex items-center justify-center cursor-pointer"
+                    className={`absolute left-0 top-0 h-full w-80 bg-blue-200 flex items-center justify-center p-4 transition-all duration-300 ${
+                      !isMobile
+                        ? 'opacity-0 group-hover:opacity-100'
+                        : heroExpanded === i
+                        ? 'opacity-100'
+                        : 'opacity-0'
+                    }`}
                   >
-                    <span className="text-white font-bold text-lg">{heroExpanded.includes(0) ? '<' : '>'}</span>
                   </div>
                 </div>
-
-                {/* Emergency Services - Right, expands left */}
-                <div className="relative flex items-center self-end">
-                  <div
-                    onClick={() => setHeroExpanded(heroExpanded.includes(1) ? heroExpanded.filter(i => i !== 1) : [...heroExpanded, 1])}
-                    className="w-6 h-24 bg-[#207a74] rounded-l-2xl flex items-center justify-center cursor-pointer"
-                  >
-                    <span className="text-white font-bold text-lg">{heroExpanded.includes(1) ? '>' : '<'}</span>
-                  </div>
-                  <div
-                    onClick={() => setHeroExpanded(heroExpanded.includes(1) ? heroExpanded.filter(i => i !== 1) : [...heroExpanded, 1])}
-                    className={`group relative w-24 h-24 rounded-r-2xl cursor-pointer transition-all duration-300 origin-right ${
-                      'bg-[#134E4A]'
-                    } ${heroExpanded.includes(1) ? 'w-72' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
-                  >
-                    <div className="flex flex-col items-center justify-center h-full p-2">
-                      <h3 className="text-xs font-normal text-center mb-1">Emergency Services?</h3>
-                      <AlertCircle className="w-8 h-8 scale-[110%] mx-auto" />
-                    </div>
-                    <div className={`absolute left-0 top-0 h-full w-full bg-blue-200 flex items-center justify-center p-3 transition-all duration-300 ${
-                      heroExpanded.includes(1) ? 'opacity-100' : 'opacity-0'
-                    }`}>
-                      <p className="text-xs text-gray-800 text-center">Emergency services are one click away from reaching you at your most vulnerable times.</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Unmonitored Wellness - Left, expands right */}
-                <div className="relative flex items-center self-start">
-                  <div
-                    onClick={() => setHeroExpanded(prev => {
-                      if (!Array.isArray(prev)) return [2];
-                      return prev.includes(2) ? prev.filter(i => i !== 2) : [...prev, 2];
-                    })}
-                    className={`group relative w-24 h-24 rounded-l-2xl cursor-pointer transition-all duration-300 origin-left ${
-                      'bg-[#14b8a6]'
-                    } ${Array.isArray(heroExpanded) && heroExpanded.includes(2) ? 'w-72' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
-                  >
-                    <div className="flex flex-col items-center justify-center h-full p-2">
-                      <h3 className="text-xs font-normal text-center mb-1">Unmonitored Wellness?</h3>
-                      <Users className="w-8 h-8 scale-[110%] mx-auto" />
-                    </div>
-                    <div className={`absolute left-0 top-0 h-full w-full bg-blue-200 flex items-center justify-center p-3 transition-all duration-300 ${
-                      Array.isArray(heroExpanded) && heroExpanded.includes(2) ? 'opacity-100' : 'opacity-0'
-                    }`}>
-                      <p className="text-xs text-gray-800 text-center">Freely monitor the wellness of your loved ones with Vytara</p>
-                    </div>
-                  </div>
-                  <div
-                    onClick={() => setHeroExpanded(prev => {
-                      if (!Array.isArray(prev)) return [2];
-                      return prev.includes(2) ? prev.filter(i => i !== 2) : [...prev, 2];
-                    })}
-                    className="w-6 h-24 bg-[#5eead4] rounded-r-2xl flex items-center justify-center cursor-pointer"
-                  >
-                    <span className="text-white font-bold text-lg">{heroExpanded.includes(2) ? '<' : '>'}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* ROTATING CARDS CAROUSEL */}
-              <div className="rounded-2xl overflow-hidden bg-transparent h-[64vh] relative top-0">
-                <RotatingCardsCarousel isMobile={isMobile} />
-              </div>
+              ))}
             </div>
-          </div>
 
-          {/* DESKTOP LAYOUT - Grid (Previous Code Style) */}
-          <div className="hidden md:block">
-            <div className="grid grid-cols-6 gap-1 scale-100">
-              {/* LEFT CARDS */}
-              <div className="col-span-1 flex flex-col gap-4 relative z-10 h-[55vh]">
-                {[
-                  {
-                    title: 'Disorganized Documents?',
-                    icon: Lock,
-                    expandedText: 'No more scattered documents, Vytara has all your medical documents securely stored in one place'
-                  },
-                  {
-                    title: 'Emergency Requirements?',
-                    icon: AlertCircle,
-                    expandedText: 'Emergency services are one click away from reaching you at your most vulnerable times.'
-                  },
-                  {
-                    title: 'Unmonitored Wellness?',
-                    icon: Users,
-                    expandedText: 'Freely monitor the wellness of your loved ones with Vytara'
-                  }
-                ].map(({ title, icon: Icon, expandedText }, i) => (
-                  <div
-                    key={i}
-                    className={`group relative w-48 h-48 flex-1 rounded-2xl cursor-pointer transition-all duration-300 origin-bottom-right hover:w-96 hover:h-96 ${
-                      i % 2 === 0 ? 'bg-[#14b8a6]' : 'bg-[#134E4A]'
-                    } text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
-                  >
-                    <div className="flex flex-col items-center justify-center h-full p-4">
-                      <h3 className="text-sm font-normal text-center mb-2">{title}</h3>
-                      <Icon className="w-20 h-20 scale-[110%] mx-auto" />
-                    </div>
-                    <div className={`absolute left-0 top-0 h-full w-80 bg-blue-200 flex items-center justify-center p-4 transition-all duration-300 opacity-0 group-hover:opacity-100`}>
-                      <p className="text-sm text-gray-800 text-center">{expandedText}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* ROTATING CARDS CAROUSEL */}
-              <div className="col-span-5 rounded-2xl overflow-hidden bg-transparent h-[64vh]">
-                <RotatingCardsCarousel isMobile={isMobile} />
-              </div>
+            {/* ROTATING CARDS CAROUSEL - Not limited to columns to prevent cutoff */}
+            <div className="col-span-5 md:col-span-5 rounded-2xl overflow-hidden bg-transparent h-[64vh] md:ml-0 ml-12 md:relative absolute top-5 -right-5 md:top-auto md:left-auto md:w-auto w-full">
+              <RotatingCardsCarousel />
             </div>
+
           </div>
         </section>
 
@@ -733,8 +736,9 @@ export default function Landing() {
         </section>
 {/* ===== FEATURES ===== */}
         <section id="features" className="px-4 py-8 max-w-5xl mx-auto">
-          <ScrollReveal menuOpen={menu}>So what do we do exactly?</ScrollReveal>
-
+          <ScrollReveal menuOpen={menu} isMobile={isMobile}>
+            So what do we do exactly?
+          </ScrollReveal>
           <div className="mt-[18vh]">
 
             <FeatureStackCard color="#14b8a6" top="md:top-[15vh] top-[20vh]">
@@ -863,7 +867,25 @@ export default function Landing() {
           </div>
         </footer>
 
+        <style>{`
+          @keyframes slide-in-left {
+            from { opacity: 0; transform: translateX(-50px); }
+            to { opacity: 1; transform: translateX(0); }
+          }
 
+          @keyframes slide-in-right {
+            from { opacity: 0; transform: translateX(50px); }
+            to { opacity: 1; transform: translateX(0); }
+          }
+
+          .animate-slide-in-left {
+            animation: slide-in-left 0.7s ease-out forwards;
+          }
+
+          .animate-slide-in-right {
+            animation: slide-in-right 0.7s ease-out forwards;
+          }
+        `}</style>
       </div>
     </div>
   );
