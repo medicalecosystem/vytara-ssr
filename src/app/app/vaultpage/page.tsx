@@ -497,6 +497,9 @@ export default function VaultPage() {
   const [deletingName, setDeletingName] = useState<string | null>(null);
   const [openMenuName, setOpenMenuName] = useState<string | null>(null);
   const [renamingName, setRenamingName] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<MedicalFile | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
@@ -711,6 +714,41 @@ export default function VaultPage() {
     }
   };
 
+  const handlePreview = async (file: MedicalFile) => {
+    if (!userId) return;
+    setPreviewFile(file);
+    setPreviewUrl(null);
+    setPreviewLoading(true);
+    const { data, error } = await getSignedUrl(
+      `${userId}/${file.folder}/${file.name}`
+    );
+    setPreviewLoading(false);
+    if (error || !data?.signedUrl) {
+      alert(error?.message || "Failed to load preview.");
+      return;
+    }
+    setPreviewUrl(data.signedUrl);
+  };
+
+  const fileExtension = (name: string) => name.split(".").pop()?.toLowerCase();
+  const isImageFile = (name: string) => {
+    const ext = fileExtension(name);
+    return (
+      ext === "png" ||
+      ext === "jpg" ||
+      ext === "jpeg" ||
+      ext === "gif" ||
+      ext === "webp" ||
+      ext === "bmp" ||
+      ext === "svg" ||
+      ext === "tif" ||
+      ext === "tiff" ||
+      ext === "heic" ||
+      ext === "heif"
+    );
+  };
+  const isPdfFile = (name: string) => fileExtension(name) === "pdf";
+
   /* ---------------- HELPERS ---------------- */
   
   const filteredFiles = files.filter(file => 
@@ -924,7 +962,10 @@ export default function VaultPage() {
                           <p className="text-xs text-slate-400 mb-4">{new Date(file.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                           
                           <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition">
-                            <button className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 text-xs font-medium transition">
+                            <button
+                              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 text-xs font-medium transition"
+                              onClick={() => handlePreview(file)}
+                            >
                               <Eye size={14} /> View
                             </button>
                             <button
@@ -980,7 +1021,11 @@ export default function VaultPage() {
                                   >
                                     <Edit2 size={16} />
                                   </button>
-                                  <button className="p-2 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition">
+                                  <button
+                                    className="p-2 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition"
+                                    onClick={() => handlePreview(file)}
+                                    aria-label={`Preview ${file.name}`}
+                                  >
                                     <Eye size={16} />
                                   </button>
                                   <button
@@ -1008,6 +1053,7 @@ export default function VaultPage() {
                   </div>
                 )}
               </div>
+
             </div>
           </section>
         </main>
@@ -1088,6 +1134,61 @@ export default function VaultPage() {
                 Upload Document
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {previewFile && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/70 backdrop-blur-sm">
+          <div className="absolute inset-4 md:inset-8 bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-800 truncate">
+                  {previewFile.name}
+                </p>
+                <p className="text-xs text-slate-500">{previewFile.folder}</p>
+              </div>
+              <button
+                className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                onClick={() => {
+                  setPreviewFile(null);
+                  setPreviewUrl(null);
+                }}
+                aria-label="Close preview"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 p-6 overflow-auto">
+              {previewLoading && (
+                <div className="text-sm text-slate-500">Loading preview…</div>
+              )}
+              {!previewLoading && previewUrl && isImageFile(previewFile.name) && (
+                <div className="w-full h-full flex items-center justify-center">
+                  <img
+                    src={previewUrl}
+                    alt={previewFile.name}
+                    className="max-h-full max-w-full rounded-xl border border-slate-100"
+                  />
+                </div>
+              )}
+              {!previewLoading && previewUrl && isPdfFile(previewFile.name) && (
+                <iframe
+                  src={previewUrl}
+                  title={previewFile.name}
+                  className="w-full h-full rounded-xl border border-slate-100"
+                />
+              )}
+              {!previewLoading && previewUrl && !isImageFile(previewFile.name) && !isPdfFile(previewFile.name) && (
+                <div className="text-sm text-slate-500">
+                  Preview not available for this file type.
+                </div>
+              )}
+              {!previewLoading && !previewUrl && (
+                <div className="text-sm text-slate-500">Preview unavailable.</div>
+              )}
+            </div>
           </div>
         </div>
       )}
