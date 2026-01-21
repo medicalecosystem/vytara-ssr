@@ -3,15 +3,10 @@ import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 
-const getDisplayName = (personal: Record<string, unknown> | null) => {
-  const fullName = typeof personal?.fullName === 'string' ? personal.fullName : '';
-  if (fullName.trim()) {
-    return fullName.trim();
-  }
-  const contactNumber =
-    typeof personal?.contactNumber === 'string' ? personal.contactNumber : '';
-  if (contactNumber.trim()) {
-    return contactNumber.trim();
+const getDisplayName = (email: string | null) => {
+  const trimmed = email?.trim() ?? '';
+  if (trimmed) {
+    return trimmed;
   }
   return 'Unknown member';
 };
@@ -77,14 +72,14 @@ export async function GET() {
     )
   );
 
-  const profileLookup: Record<string, Record<string, unknown> | null> = {};
+  const credentialsLookup: Record<string, string | null> = {};
   if (memberIds.length > 0) {
-    const { data: profiles } = await adminClient
-      .from('profiles')
-      .select('user_id, personal')
-      .in('user_id', memberIds);
-    (profiles ?? []).forEach((profile) => {
-      profileLookup[profile.user_id] = profile.personal ?? null;
+    const { data: credentials } = await adminClient
+      .from('credentials')
+      .select('id, email')
+      .in('id', memberIds);
+    (credentials ?? []).forEach((credential) => {
+      credentialsLookup[credential.id] = credential.email ?? null;
     });
   }
 
@@ -94,7 +89,7 @@ export async function GET() {
       id: link.id,
       memberId: link.recipient_id,
       status: link.status,
-      displayName: getDisplayName(profileLookup[link.recipient_id] ?? null),
+      displayName: getDisplayName(credentialsLookup[link.recipient_id] ?? null),
       createdAt: link.created_at,
     }));
 
@@ -104,7 +99,7 @@ export async function GET() {
       id: link.id,
       memberId: link.requester_id,
       status: link.status,
-      displayName: getDisplayName(profileLookup[link.requester_id] ?? null),
+      displayName: getDisplayName(credentialsLookup[link.requester_id] ?? null),
       createdAt: link.created_at,
     }));
 
