@@ -1,6 +1,6 @@
 'use client';
 
-import { LogOut, Home, User, Folder, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LogOut, Home, User, Folder, ChevronLeft, ChevronRight, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePathname } from 'next/navigation';
@@ -14,6 +14,7 @@ export default function Navbar() {
     { label: 'Home', href: '/app/homepage', icon: Home },
     { label: 'Profile', href: '/app/profilepage', icon: User },
     { label: 'Vault', href: '/app/vaultpage', icon: Folder },
+    { label: 'Care Circle', href: '/app/carecircle', icon: Users },
   ];
 
   useEffect(() => {
