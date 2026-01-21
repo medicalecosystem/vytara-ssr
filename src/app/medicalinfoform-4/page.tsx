@@ -1,5 +1,7 @@
 'use client'
 
+// medicalinfoform-4
+
 import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import logoImage from "figma:asset/8e191f727b2ef8023e7e4984e9036f679c3d3038.png";
 import { useRouter } from 'next/navigation';
@@ -7,6 +9,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/createClient";
 
 import Image from "next/image";
+import { profile } from "console";
 
 export default function FamilyMedicalHistoryUI() {
   const router = useRouter();
@@ -25,7 +28,7 @@ export default function FamilyMedicalHistoryUI() {
     } = await supabase.auth.getUser();
 
     if (authError || !user){
-      router.push("/login");
+      router.push("/auth/login");
       return;
     }
 
@@ -37,7 +40,7 @@ export default function FamilyMedicalHistoryUI() {
         .from("profiles")
         .update( {
           family_history: familyData,
-          login_check: true
+          profile_complete: true
         } )
         .eq("user_id", user.id)
 

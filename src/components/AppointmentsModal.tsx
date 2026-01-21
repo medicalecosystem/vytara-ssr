@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 
 type Appointment = {
@@ -53,6 +53,7 @@ const appointmentTypeFields = {
 
 export function AppointmentsModal({ appointments, onClose, onAddAppointment, onDeleteAppointment }: Props) {
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [isClient, setIsClient] = useState(false);
   const [showEventModal, setShowEventModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Appointment | null>(null);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
@@ -64,6 +65,12 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
   });
   const [additionalFields, setAdditionalFields] = useState<{ [key: string]: string }>({});
 
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  const displayDate = isClient ? selectedDate : new Date(0);
+
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
@@ -74,7 +81,7 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
     return { daysInMonth, startingDayOfWeek };
   };
 
-  const { daysInMonth, startingDayOfWeek } = getDaysInMonth(selectedDate);
+  const { daysInMonth, startingDayOfWeek } = getDaysInMonth(displayDate);
 
   const previousMonth = () => {
     setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1));
@@ -161,12 +168,12 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
   };
 
   const getAppointmentsForDate = (day: number) => {
-    const dateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dateStr = `${displayDate.getFullYear()}-${String(displayDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     return appointments.filter(apt => apt.date === dateStr);
   };
 
   const isPastDate = (day: number) => {
-    const date = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), day);
+    const date = new Date(displayDate.getFullYear(), displayDate.getMonth(), day);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return date < today;
@@ -191,7 +198,7 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
               <ChevronLeft className="w-6 h-6" />
             </button>
             <h3 className="text-2xl font-bold text-slate-900">
-              {selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              {displayDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </h3>
             <button onClick={nextMonth} className="p-2 hover:bg-teal-50 rounded-lg transition text-teal-600">
               <ChevronRight className="w-6 h-6" />

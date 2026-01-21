@@ -293,7 +293,7 @@ export default function SignUpPage() {
         email, 
         password,
         options: {
-          emailRedirectTo: "https://vytara-official.vercel.app/verified"
+          emailRedirectTo: "https://vytara-official.vercel.app/auth/callback"
         }
       });
       if (error) throw error;
@@ -310,11 +310,14 @@ export default function SignUpPage() {
 
   const signInWithGoogle = async(e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
+      const redirectTo = `${window.location.origin}/auth/callback?next=/app/homepage`;
       const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: "https://vytara-official.vercel.app/medicalinfoform-1",
-          
+        redirectTo,
+        queryParams: {
+          prompt: "select_account",
+        },
       },
     });
   
@@ -326,6 +329,23 @@ export default function SignUpPage() {
     <main className="min-h-screen w-full flex items-center justify-center relative bg-slate-950 overflow-hidden py-12">
       {/* Animated Background */}
       <Plasma />
+      <button 
+        className='
+            absolute top-4 left-4 z-20
+            flex items-center gap-1
+            px-4 py-2
+            text-sm font-bold
+            text-white
+            bg-gradient-to-br from-[#14b8a6] to-[#0f766e]
+            rounded-lg
+            shadow-lg shadow-teal-900/20
+            hover:scale-[1.02]
+            active:scale-95
+            transition-all
+        '
+      onClick={() => router.push('/dashboard')}>
+        ← Back
+      </button>
 
       {/* Static Sign Up Card */}
       <div className="relative z-10 w-full max-w-md px-4">
@@ -390,6 +410,19 @@ export default function SignUpPage() {
                 disabled={loading}  
               >
                 {loading ? "Creating Account..." : "Create Account"}
+              </button>
+              <button
+                onClick={signInWithGoogle}
+                className="flex items-center justify-center gap-3 w-full border border-gray-300 rounded-xl py-3 bg-white hover:bg-gray-50 transition-all shadow-sm cursor-pointer"
+              >
+                <img
+                  src="https://www.svgrepo.com/show/475656/google-color.svg"
+                  alt="Google"
+                  className="w-5 h-5"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  Sign in with Google
+                </span>
               </button>
             </form>
 
