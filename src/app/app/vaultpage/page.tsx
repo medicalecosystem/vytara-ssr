@@ -477,12 +477,12 @@ import {
   Edit2,
   Plus,
 } from 'lucide-react';
-import { useState } from 'react';
+
 import { supabase } from '@/lib/createClient';
 import { deleteMedicalFile, getSignedUrl, listMedicalFiles, uploadMedicalFile } from '@/lib/medicalStorage';
 import { MedicalFolder } from '@/constants/medicalFolders';
 
-export default function StaticVaultPage() {
+type Category = 'lab-reports' | 'prescriptions' | 'insurance' | 'bills' | 'all';
 
 type MedicalFile = {
   name: string;
