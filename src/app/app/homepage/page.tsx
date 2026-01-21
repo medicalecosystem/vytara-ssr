@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/createClient";
 import { useRouter } from "next/navigation";
-import { AppointmentsModal } from "@/components/AppointmentsModal";
+import { AppointmentsModal } from '@/components/AppointmentsModal';
+import { MedicalSummaryModal } from '@/components/MedicalSummaryModal'; // NEW IMPORT
 import {
   Calendar,
   Users,
@@ -79,6 +80,9 @@ useEffect(() => {
   const [medicalTeam, setMedicalTeam] = useState<Doctor[]>([]);
   const [medications, setMedications] = useState<Medication[]>([]);
   const [isSendingSOS, setIsSendingSOS] = useState(false);
+
+  // NEW: State for medical summary modal
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
 
   const handleAddAppointment = (appointment: Appointment) => {
     setAppointments((prev) => {
@@ -365,6 +369,23 @@ useEffect(() => {
             <p className="text-slate-600 text-lg max-w-md">
               Designed with empathy. Built for clarity. Ready when you need it.
             </p>
+
+            {/* UPDATED: Get Summary button now opens modal */}
+            <button
+              onClick={() => {
+                console.log('🔘 Get Summary button clicked!');
+                setIsSummaryModalOpen(true);
+                console.log('🔘 Modal state set to true');
+              }}
+              disabled={!userId}
+              className={`mt-8 px-10 py-5 text-lg rounded-2xl font-bold shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl ${
+                userId
+                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer'
+                  : 'bg-gray-400 cursor-not-allowed text-gray-200'
+              }`}
+            >
+              Get Summary
+            </button>
           </div>
 
           {/* SOS */}
@@ -413,6 +434,14 @@ useEffect(() => {
             )}
           </Modal>
         )}
+
+        {/* NEW: Medical Summary Modal */}
+        <MedicalSummaryModal
+          isOpen={isSummaryModalOpen}
+          onClose={() => setIsSummaryModalOpen(false)}
+          folderType="reports"
+          userId={userId}  // ← ADD THIS LINE
+        />
 
         {/* CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
