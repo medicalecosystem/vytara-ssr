@@ -1,125 +1,102 @@
 'use client';
 
-import { Menu, X, LogOut } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { LogOut, Home, User, Folder, ChevronLeft, ChevronRight, Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { supabase } from '@/lib/createClient';
 
 export default function Navbar() {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement | null>(null);
   const router = useRouter();
+  const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+  const navItems = [
+    { label: 'Home', href: '/app/homepage', icon: Home },
+    { label: 'Profile', href: '/app/profilepage', icon: User },
+    { label: 'Vault', href: '/app/vaultpage', icon: Folder },
+    { label: 'Care Circle', href: '/app/carecircle', icon: Users },
+  ];
 
-  // Close menu when clicking outside
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () =>
-      document.removeEventListener('mousedown', handleClickOutside);
+    const stored = window.localStorage.getItem('vytara_nav_collapsed');
+    if (stored) setCollapsed(stored === '1');
   }, []);
 
-  return (
-    <header
-      className="sticky top-0 z-40 border-b border-white/20 shadow-sm"
-      style={{
-        background:
-          'linear-gradient(90deg, #006770 0%, #00838B 40%, #00A3A9 100%)',
-      }}
-    >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-        <div className="flex items-center justify-between">
+  useEffect(() => {
+    window.localStorage.setItem('vytara_nav_collapsed', collapsed ? '1' : '0');
+  }, [collapsed]);
 
-          {/* Logo */}
-          <div
-            className="flex items-center gap-3 cursor-pointer"
+  return (
+    <aside
+      className={`sticky top-0 h-screen shrink-0 border-r border-teal-900/20 bg-gradient-to-b from-teal-950 via-slate-950 to-slate-950 text-white transition-[width] duration-200 ${
+        collapsed ? 'w-20' : 'w-64'
+      }`}
+    >
+      <div className="flex h-full flex-col px-3 py-6">
+        <div className="flex items-center justify-between px-1">
+          <button
+            className="flex items-center gap-3 text-left"
             onClick={() => router.push('/app/homepage')}
           >
-            <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-md p-2">
+            <div className="w-11 h-11 bg-white rounded-full flex items-center justify-center shadow-md p-2">
               <div className="w-full h-full bg-teal-600 rounded-full"></div>
             </div>
-            <h1 className="text-xl font-bold text-white tracking-wide">
-              Vytara
-            </h1>
-          </div>
-
-          {/* Hamburger Menu */}
-          <div className="relative" ref={menuRef}>
-            <button
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="p-2 text-white hover:bg-white/20 rounded-lg flex items-center justify-center transition border border-white/30 bg-white/10 backdrop-blur-sm"
-            >
-              {menuOpen ? (
-                <X className="w-7 h-7" />
-              ) : (
-                <Menu className="w-7 h-7" />
-              )}
-            </button>
-
-            {/* Dropdown */}
-            {menuOpen && (
-              <div className="absolute right-0 mt-2 w-44 rounded-xl border border-white/20 bg-black/70 backdrop-blur-md shadow-lg overflow-hidden z-50">
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    router.push('/app/homepage');
-                  }}
-                  className="w-full px-4 py-3 text-left text-white hover:bg-white/10 transition"
-                >
-                  Home
-                </button>
-
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    router.push('/app/profilepage');
-                  }}
-                  className="w-full px-4 py-3 text-left text-white hover:bg-white/10 transition"
-                >
-                  Profile
-                </button>
-
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    router.push('/app/vaultpage');
-                  }}
-                  className="w-full px-4 py-3 text-left text-white hover:bg-white/10 transition"
-                >
-                  Vault
-                </button>
-
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    router.push('/app/carecircle');
-                  }}
-                  className="w-full px-4 py-3 text-left text-white hover:bg-white/10 transition"
-                >
-                  Care Circle
-                </button>
-
-                <button
-                  onClick={async () => {
-                    await supabase.auth.signOut();
-                    setMenuOpen(false);
-                    router.push('/auth/login');
-                  }}
-                  className="w-full px-4 py-3 text-left text-red-400 hover:bg-white/10 transition flex items-center gap-2"
-                >
-                  <LogOut className="w-4 h-4" />
-                  Logout
-                </button>
+            {!collapsed && (
+              <div>
+                <p className="text-sm uppercase tracking-[0.25em] text-teal-200/70">
+                  Vytara
+                </p>
+                <p className="text-lg font-semibold leading-tight">Patient Hub</p>
               </div>
             )}
-          </div>
-
+          </button>
+          <button
+            onClick={() => setCollapsed((v) => !v)}
+            title={collapsed ? 'Open navbar' : 'Close navbar'}
+            className="ml-auto rounded-lg p-2 text-teal-100/70 hover:bg-white/10 hover:text-white transition"
+          >
+            {collapsed ? (
+              <ChevronRight className="w-4 h-4" />
+            ) : (
+              <ChevronLeft className="w-4 h-4" />
+            )}
+          </button>
         </div>
+
+        <nav className="mt-8 flex-1 space-y-2">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = pathname === item.href;
+            return (
+              <button
+                key={item.href}
+                onClick={() => router.push(item.href)}
+                className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${
+                  isActive
+                    ? 'bg-teal-500/20 text-white shadow-sm'
+                    : 'text-teal-100/80 hover:bg-white/10 hover:text-white'
+                }`}
+                title={collapsed ? item.label : undefined}
+              >
+                <Icon className="w-4 h-4" />
+                {!collapsed && item.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        <button
+          onClick={async () => {
+            await supabase.auth.signOut();
+            router.push('/auth/login');
+          }}
+          title={collapsed ? 'Logout' : undefined}
+          className="mt-auto flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-200/90 hover:bg-white/10 hover:text-red-100 transition"
+        >
+          <LogOut className="w-4 h-4" />
+          {!collapsed && 'Logout'}
+        </button>
       </div>
-    </header>
+    </aside>
   );
 }

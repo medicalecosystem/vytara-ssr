@@ -54,9 +54,11 @@ export function MedicalSummaryModal({
         console.log('✅ [Modal] User ID from localStorage:', uid);
       } catch (e) {
         console.error('❌ [Modal] Parse error:', e);
+        setError('Authentication error. Please log in again.');
       }
     } else {
-      console.error('❌ [Modal] No auth data in localStorage');
+      console.log('ℹ️ [Modal] No auth data in localStorage - user may need to log in');
+      setError('Please log in to use this feature');
     }
   }, [propUserId]);
 
@@ -68,7 +70,8 @@ export function MedicalSummaryModal({
       console.log('🚀 [Modal] Triggering summary generation!');
       handleGenerateSummary();
     } else if (isOpen && !userId) {
-      console.error('❌ [Modal] Modal open but no userId available');
+      console.log('ℹ️ [Modal] Modal open but no userId available yet');
+      // Don't set error here, let the first useEffect handle it
     }
   }, [isOpen, userId, hasProcessed]);
 

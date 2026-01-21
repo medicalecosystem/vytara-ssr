@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { UserPlus, Trash2, X } from 'lucide-react';
 import { supabase } from '@/lib/createClient';
 
-type CareCircleStatus = 'pending' | 'active' | 'revoked';
+type CareCircleStatus = 'pending' | 'accepted' | 'declined';
 
 type CareCircleMember = {
   id: string;
@@ -36,76 +36,159 @@ export default function CareCirclePage() {
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [inviteContact, setInviteContact] = useState('');
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [isSavingInvite, setIsSavingInvite] = useState(false);
 
-  useEffect(() => {
-    async function loadCareCircle() {
-      const { data } = await supabase.auth.getUser();
-      const user = data.user;
-      const displayName =
-        user?.user_metadata?.full_name ??
-        user?.user_metadata?.name ??
-        user?.email?.split('@')[0] ??
-        'Your';
-      const circleName = `${displayName}'s Care Circle`;
+  const loadCareCircle = useCallback(async () => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) {
+      return;
+    }
+    const user = data.user;
+    const displayName =
+      user.user_metadata?.full_name ??
+      user.user_metadata?.name ??
+      user.email?.split('@')[0] ??
+      'Your';
+    const circleName = `${displayName}'s Care Circle`;
 
-      setCircleData({
-        circleName,
-        ownerName: displayName,
-        myCircleMembers: [],
-        circlesImIn: [],
-      });
-      setCurrentUserId(user?.id ?? null);
+    setCurrentUserId(user.id);
+
+    const response = await fetch('/api/care-circle/links', {
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      return;
     }
 
-    loadCareCircle();
+    const linksData: {
+      outgoing: Array<{
+        id: string;
+        memberId: string;
+        status: CareCircleStatus;
+        displayName: string;
+        createdAt: string;
+      }>;
+      incoming: Array<{
+        id: string;
+        memberId: string;
+        status: CareCircleStatus;
+        displayName: string;
+        createdAt: string;
+      }>;
+    } = await response.json();
+
+    const myCircleMembers = linksData.outgoing.map((link) => ({
+      id: link.memberId,
+      name: link.displayName,
+      status: link.status,
+    }));
+
+    const circlesImIn = linksData.incoming.map((link) => ({
+      id: link.memberId,
+      name: link.displayName,
+      status: link.status,
+    }));
+
+    setPendingInvites(
+      linksData.outgoing
+        .filter((link) => link.status === 'pending')
+        .map((link) => ({
+          id: link.id,
+          contact: link.displayName,
+          sentAt: link.createdAt,
+        }))
+    );
+
+    setCircleData({
+      circleName,
+      ownerName: displayName,
+      myCircleMembers,
+      circlesImIn,
+    });
   }, []);
 
-  const handleRemove = (memberId: string) => {
-    setCircleData((prev) => ({
-      ...prev,
-      myCircleMembers: prev.myCircleMembers.filter((member) => member.id !== memberId),
-    }));
+  useEffect(() => {
+    loadCareCircle();
+  }, [loadCareCircle]);
+
+  const handleRemove = async (memberId: string) => {
+    if (!currentUserId) {
+      return;
+    }
+    await supabase
+      .from('care_circle_links')
+      .delete()
+      .eq('requester_id', currentUserId)
+      .eq('recipient_id', memberId);
+    await loadCareCircle();
   };
 
-  const handleInviteSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleInviteSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = inviteContact.trim();
     if (!trimmed) {
       return;
     }
 
-    setPendingInvites((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        contact: trimmed,
-        sentAt: new Date().toISOString(),
+    if (!currentUserId) {
+      setInviteError('Please sign in again to send invites.');
+      return;
+    }
+
+    setIsSavingInvite(true);
+    setInviteError(null);
+
+    const response = await fetch('/api/care-circle/invite', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
-    ]);
+      body: JSON.stringify({ contact: trimmed }),
+    });
+
+    if (!response.ok) {
+      const errorPayload: { message?: string } = await response.json();
+      setInviteError(errorPayload.message ?? 'Unable to send invite.');
+      setIsSavingInvite(false);
+      return;
+    }
+
     setInviteContact('');
     setIsInviteOpen(false);
+    setIsSavingInvite(false);
+    await loadCareCircle();
   };
 
-  const handleAcceptCircleInvite = (memberId: string) => {
-    setCircleData((prev) => ({
-      ...prev,
-      circlesImIn: prev.circlesImIn.map((member) =>
-        member.id === memberId ? { ...member, status: 'active' } : member
-      ),
-    }));
+  const handleAcceptCircleInvite = async (memberId: string) => {
+    if (!currentUserId) {
+      return;
+    }
+    await supabase
+      .from('care_circle_links')
+      .update({ status: 'accepted' })
+      .eq('recipient_id', currentUserId)
+      .eq('requester_id', memberId);
+    await loadCareCircle();
   };
 
-  const handleDeclineCircleInvite = (memberId: string) => {
-    setCircleData((prev) => ({
-      ...prev,
-      circlesImIn: prev.circlesImIn.filter((member) => member.id !== memberId),
-    }));
+  const handleDeclineCircleInvite = async (memberId: string) => {
+    if (!currentUserId) {
+      return;
+    }
+    await supabase
+      .from('care_circle_links')
+      .update({ status: 'declined' })
+      .eq('recipient_id', currentUserId)
+      .eq('requester_id', memberId);
+    await loadCareCircle();
   };
 
   const activeMembers = useMemo(
     () =>
       circleData.myCircleMembers.filter(
-        (member) => member.status === 'active' && member.id !== currentUserId
+        (member) => member.status === 'accepted' && member.id !== currentUserId
       ),
     [circleData.myCircleMembers, currentUserId]
   );
@@ -116,7 +199,7 @@ export default function CareCirclePage() {
   );
 
   const activeCirclesImIn = useMemo(
-    () => circleData.circlesImIn.filter((member) => member.status === 'active'),
+    () => circleData.circlesImIn.filter((member) => member.status === 'accepted'),
     [circleData.circlesImIn]
   );
 
@@ -320,6 +403,9 @@ export default function CareCirclePage() {
                   className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
               </label>
+              {inviteError && (
+                <p className="text-sm text-rose-600">{inviteError}</p>
+              )}
               <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
                 <button
                   type="button"
@@ -330,9 +416,10 @@ export default function CareCirclePage() {
                 </button>
                 <button
                   type="submit"
+                  disabled={isSavingInvite}
                   className="inline-flex items-center justify-center rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
                 >
-                  Send invite
+                  {isSavingInvite ? 'Sending…' : 'Send invite'}
                 </button>
               </div>
             </form>
