@@ -1,5 +1,7 @@
 'use client'
 
+// medicalinfoform-2
+
 import { ChevronRight, Plus, X } from "lucide-react";
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from "react";
@@ -27,7 +29,7 @@ export default function HealthInfoFormUI() {
     } = await supabase.auth.getUser();
 
     if (authError || !user){
-      router.push("/login");
+      router.push("/auth/login");
       return;
     }
 

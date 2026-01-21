@@ -290,10 +290,14 @@ export default function LoginPage() {
   const signInWithGoogle = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
 
+    const redirectTo = `${window.location.origin}/auth/callback?next=/app/homepage`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: 'https://vytara-official.vercel.app/auth/callback',
+        redirectTo,
+        queryParams: {
+          prompt: 'select_account',
+        },
       },
     });
 
@@ -306,6 +310,23 @@ export default function LoginPage() {
     <main className="min-h-screen w-full flex items-center justify-center relative bg-slate-950 overflow-hidden">
       {/* Animated Background */}
       <Plasma />
+      <button 
+        className='
+            absolute top-4 left-4 z-20
+            flex items-center gap-1
+            px-4 py-2
+            text-sm font-bold
+            text-white
+            bg-gradient-to-br from-[#14b8a6] to-[#0f766e]
+            rounded-lg
+            shadow-lg shadow-teal-900/20
+            hover:scale-[1.02]
+            active:scale-95
+            transition-all
+        '
+      onClick={() => router.push('/dashboard')}>
+        ← Back
+      </button>
 
       {/* Static Login Card */}
       <div className="relative z-10 w-full max-w-md px-4">

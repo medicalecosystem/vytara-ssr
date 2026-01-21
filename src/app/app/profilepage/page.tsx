@@ -3,7 +3,7 @@
 import {
   User, Mail, Phone, Activity, Edit2,
   Download, Droplet, Calculator, CalendarCheck,
-  ChevronDown, Users, Menu, X, Pill, History, LogOut, Calendar, Locate
+  ChevronDown, Users, Menu, X, Pill, History, LogOut, Calendar, Locate, Plus
 } from 'lucide-react';
 import { supabase } from '@/lib/createClient';
 import { useRef, useEffect, useState } from 'react';
@@ -12,7 +12,10 @@ import { useRouter } from 'next/navigation';
 export default function ProfilePageUI() {
 
   const router = useRouter();
-
+  const [isPersonalInfoModalOpen, setIsPersonalInfoModalOpen] = useState(false);
+  const [isCurrentMedicalModalOpen, setIsCurrentMedicalModalOpen] = useState(false);
+  const [isPastMedicalModalOpen, setIsPastMedicalModalOpen] = useState(false);
+  const [isFamilyHistoryModalOpen, setIsFamilyHistoryModalOpen] = useState(false);
   const [userId, setUserId] = useState("");
 
   useEffect(() => {
@@ -181,7 +184,10 @@ export default function ProfilePageUI() {
 
             {/* Edit Button */}
             <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
-              <button className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition">
+              <button 
+                onClick={() => setIsPersonalInfoModalOpen(true)}
+                className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition"
+              >  
                 <Edit2 className="w-4 h-4" />
               </button>
             </div>
@@ -307,7 +313,10 @@ export default function ProfilePageUI() {
                 <Activity className="w-5 h-5" />
               </div>
               <h3 className="font-bold text-gray-800">Current Medical Status</h3>
-              <button className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition">
+              <button 
+                onClick={() => setIsCurrentMedicalModalOpen(true)}
+                className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition"
+              >
                 <Edit2 className="w-4 h-4" />
               </button>
             </div>
@@ -402,7 +411,10 @@ export default function ProfilePageUI() {
                 <History className="w-5 h-5" />
               </div>
               <h3 className="font-bold text-gray-800">Past Medical History</h3>
-              <button className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition">
+              <button 
+                onClick={() => setIsPastMedicalModalOpen(true)}
+                className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition"
+              >
                 <Edit2 className="w-4 h-4" />
               </button>
             </div>
@@ -496,7 +508,10 @@ export default function ProfilePageUI() {
               <Users className="w-5 h-5" />
             </div>
             <h3 className="font-bold text-gray-800">Family Medical History</h3>
-            <button className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition">
+            <button 
+              onClick={() => setIsFamilyHistoryModalOpen(true)}
+              className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition"
+            >
               <Edit2 className="w-4 h-4" />
             </button>
           </div>
@@ -518,7 +533,729 @@ export default function ProfilePageUI() {
               ))}
             </div>
           </div>
-        </div>         
+        </div>   
+        {/* Personal Info Modal */}
+        {isPersonalInfoModalOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-gray-800">Edit Personal Information</h3>
+                <button 
+                  onClick={() => setIsPersonalInfoModalOpen(false)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+              <div className="p-6">
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  const personalData = {
+                    fullName: userName,
+                    dob,
+                    gender,
+                    bloodGroup,
+                    contactNumber: phoneNumber,
+                    address,
+                    bmi,
+                  };
+                  const { error } = await supabase
+                    .from("profiles")
+                    .update({ personal: personalData })
+                    .eq("user_id", userId);
+                  if (error) {
+                    alert("Error: " + error.message);
+                  } else {
+                    setIsPersonalInfoModalOpen(false);
+                    alert("Personal information updated successfully!");
+                  }
+                }}>
+                  <div className="space-y-4">
+                    <h3 className="text-[#FF8000] mb-4">Basic Personal Information</h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="md:col-span-2">
+                        <label className="block text-[#309898] mb-2">Full Name *</label>
+                        <input
+                          value={userName}
+                          onChange={(e) => setUserName(e.target.value)}
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                          placeholder="Full Name"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[#309898] mb-2">Date of Birth *</label>
+                        <input
+                          type="date"
+                          value={dob}
+                          onChange={(e) => setDob(e.target.value)}
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[#309898] mb-2">Gender *</label>
+                        <select
+                          value={gender}
+                          onChange={(e) => setGender(e.target.value)}
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                        >
+                          <option>Select Gender</option>
+                          <option>Male</option>
+                          <option>Female</option>
+                          <option>Other</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[#309898] mb-2">Blood Group *</label>  
+                        <select
+                          value={bloodGroup}
+                          onChange={(e) => setBloodGroup(e.target.value)}
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                        >
+                          <option>Select Blood Group</option>
+                          <option>A+</option>
+                          <option>A−</option>
+                          <option>B+</option>
+                          <option>B−</option>
+                          <option>AB+</option>
+                          <option>AB−</option>
+                          <option>O+</option>
+                          <option>O−</option>
+                        </select>
+                      </div>
+                      
+                      <div className="md:col-span-2">
+                        <label className="block text-[#309898] mb-2">Address *</label>
+                        <textarea
+                          value={address}
+                          onChange={(e) => setAddress(e.target.value)}
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                          placeholder="Address"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[#309898] mb-2">Contact Number *</label>
+                        <input
+                          type="tel"
+                          value={phoneNumber}
+                          onChange={(e) => setPhoneNumber(e.target.value)}
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                          placeholder="eg: 1234567890"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[#309898] mb-2">BMI</label>
+                        <input
+                          value={bmi}
+                          onChange={(e) => setBmi(e.target.value)}
+                          placeholder="eg: 24.5"
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 mt-6">
+                    <button
+                      type="button"
+                      onClick={() => setIsPersonalInfoModalOpen(false)}
+                      className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-2 bg-[#FF8000] text-white rounded-lg hover:bg-[#309898] transition"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Current Medical Status Modal */}
+        {isCurrentMedicalModalOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-gray-800">Edit Current Medical Status</h3>
+                <button 
+                  onClick={() => setIsCurrentMedicalModalOpen(false)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+              <div className="p-6">
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  const healthData = {
+                    conditions,
+                    currentMedications,
+                    allergies: allergy,
+                    treatments: treatment,
+                  };
+                  const { error } = await supabase
+                    .from("profiles")
+                    .update({ health: healthData })
+                    .eq("user_id", userId);
+                  if (error) {
+                    alert("Error: " + error.message);
+                  } else {
+                    setIsCurrentMedicalModalOpen(false);
+                    alert("Health information updated successfully!");
+                  }
+                }}>
+                  <div className="space-y-6">
+                    {/* CONDITIONS */}
+                    <div className="space-y-4">
+                      <h3 className="text-[#FF8000] mb-4">Current Diagnosed Conditions</h3>
+                      {conditions.map((cond, index) => (
+                        <div key={index} className="flex gap-2 items-center">
+                          <input
+                            value={cond}
+                            onChange={(e) => {
+                              const updated = [...conditions];
+                              updated[index] = e.target.value;
+                              setConditions(updated);
+                            }}
+                            placeholder="e.g., Diabetes, Asthma"
+                            className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                          />
+                          {index > 0 && (
+                            <button
+                              type="button"
+                              className="text-red-500"
+                              onClick={() =>
+                                setConditions(conditions.filter((_, i) => i !== index))
+                              }
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => setConditions([...conditions, ""])}
+                        type="button"
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
+                      >
+                        <Plus className="w-5 h-5" /> Add Condition
+                      </button>
+                    </div>
+
+                    {/* MEDICATIONS */}
+                    <div className="space-y-4">
+                      <h3 className="text-[#FF8000] mb-4">Current Medications</h3>
+                      {currentMedications.map((med, index) => (
+                        <div
+                          key={index}
+                          className="p-4 border-2 border-[#309898]/30 rounded-lg bg-gray-50 space-y-3 relative"
+                        >
+                          {index > 0 && (
+                            <button
+                              type="button"
+                              className="absolute top-2 right-2 text-red-500"
+                              onClick={() =>
+                                setCurrentMedications(currentMedications.filter((_, i) => i !== index))
+                              }
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          )}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="md:col-span-2">
+                              <label className="block text-[#309898] mb-2">Medication Name</label>
+                              <input
+                                value={med.name}
+                                onChange={(e) => {
+                                  const updated = [...currentMedications];
+                                  updated[index].name = e.target.value;
+                                  setCurrentMedications(updated);
+                                }}
+                                placeholder="e.g., Metformin"
+                                className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[#309898] mb-2">Dosage</label>
+                              <input
+                                value={med.dosage}
+                                onChange={(e) => {
+                                  const updated = [...currentMedications];
+                                  updated[index].dosage = e.target.value;
+                                  setCurrentMedications(updated);
+                                }}
+                                placeholder="e.g., 500 mg"
+                                className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[#309898] mb-2">Frequency</label>
+                              <input
+                                value={med.frequency}
+                                onChange={(e) => {
+                                  const updated = [...currentMedications];
+                                  updated[index].frequency = e.target.value;
+                                  setCurrentMedications(updated);
+                                }}
+                                placeholder="e.g., Twice a day"
+                                className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-[#309898] mb-2">Purpose</label>
+                              <input
+                                value={med.purpose}
+                                onChange={(e) => {
+                                  const updated = [...currentMedications];
+                                  updated[index].purpose = e.target.value;
+                                  setCurrentMedications(updated);
+                                }}
+                                placeholder="e.g., Blood sugar control"
+                                className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCurrentMedications([
+                            ...currentMedications,
+                            { name: "", dosage: "", frequency: "", purpose: "" },
+                          ])
+                        }
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
+                      >
+                        <Plus className="w-5 h-5" /> Add Medication
+                      </button>
+                    </div>
+
+                    {/* ALLERGIES */}
+                    <div className="space-y-4">
+                      <h3 className="text-[#FF8000] mb-4">Allergies</h3>
+                      {allergy.map((allergyItem, index) => (
+                        <div key={index} className="flex gap-2 items-center">
+                          <input
+                            value={allergyItem}
+                            onChange={(e) => {
+                              const updated = [...allergy];
+                              updated[index] = e.target.value;
+                              setAllergy(updated);
+                            }}
+                            placeholder="e.g., Peanuts, Penicillin"
+                            className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                          />
+                          {index > 0 && (
+                            <button
+                              type="button"
+                              className="text-red-500"
+                              onClick={() =>
+                                setAllergy(allergy.filter((_, i) => i !== index))
+                              }
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setAllergy([...allergy, ""])}
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
+                      >
+                        <Plus className="w-5 h-5" /> Add Allergy
+                      </button>
+                    </div>
+
+                    {/* TREATMENTS */}
+                    <div className="space-y-4">
+                      <h3 className="text-[#FF8000] mb-4">Ongoing Treatments</h3>
+                      {treatment.map((treat, index) => (
+                        <div key={index} className="flex gap-2 items-center">
+                          <input
+                            value={treat}
+                            onChange={(e) => {
+                              const updated = [...treatment];
+                              updated[index] = e.target.value;
+                              setTreatment(updated);
+                            }}
+                            placeholder="e.g., Physiotherapy, Dialysis"
+                            className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                          />
+                          {index > 0 && (
+                            <button
+                              type="button"
+                              className="text-red-500"
+                              onClick={() =>
+                                setTreatment(treatment.filter((_, i) => i !== index))
+                              }
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setTreatment([...treatment, ""])}
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
+                      >
+                        <Plus className="w-5 h-5" /> Add Treatment
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 mt-6">
+                    <button
+                      type="button"
+                      onClick={() => setIsCurrentMedicalModalOpen(false)}
+                      className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-2 bg-[#FF8000] text-white rounded-lg hover:bg-[#309898] transition"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Past Medical History Modal */}
+        {isPastMedicalModalOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-gray-800">Edit Past Medical History</h3>
+                <button 
+                  onClick={() => setIsPastMedicalModalOpen(false)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+              <div className="p-6">
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  const pastData = {
+                    diagnosedCondition: previousDiagnosedCondition,
+                    pastSurgeries,
+                    childhoodIllness,
+                    longTermTreatments,
+                  };
+                  const { error } = await supabase
+                    .from("profiles")
+                    .update({ past_medical_info: pastData })
+                    .eq("user_id", userId);
+                  if (error) {
+                    alert("Error: " + error.message);
+                  } else {
+                    setIsPastMedicalModalOpen(false);
+                    alert("Past medical history updated successfully!");
+                  }
+                }}>
+                  <div className="space-y-6">
+                    {/* PREVIOUSLY DIAGNOSED DISEASES */}
+                    <div className="space-y-4">
+                      <h3 className="text-[#FF8000] mb-4">Previously Diagnosed Diseases</h3>
+                      {previousDiagnosedCondition.map((diag, index) => (
+                        <div className="flex gap-2 items-center" key={index}>
+                          <input
+                            value={diag}
+                            onChange={(e) => {
+                              const updated = [...previousDiagnosedCondition];
+                              updated[index] = e.target.value;
+                              setPreviousDiagnosedCondition(updated);
+                            }}
+                            placeholder="e.g., Thyroid, Jaundice"
+                            className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                          />
+                          {index > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPreviousDiagnosedCondition(previousDiagnosedCondition.filter((_, i) => i !== index))
+                              }
+                              className="text-[#FF8000]"
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setPreviousDiagnosedCondition([...previousDiagnosedCondition, ""])}
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
+                      >
+                        <Plus className="w-5 h-5" /> Add Diagnosed Condition
+                      </button>
+                    </div>
+
+                    {/* PAST SURGERIES */}
+                    <div className="space-y-4">
+                      <h3 className="text-[#FF8000] mb-4">Past Surgeries</h3>
+                      {pastSurgeries.map((surg, index) => (
+                        <div key={index} className="p-4 border rounded-lg bg-gray-50 space-y-3 relative text-gray-800">
+                          {index > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setPastSurgeries(pastSurgeries.filter((_, i) => i !== index))}
+                              className="absolute top-2 right-2 text-red-500"
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          )}
+                          <input
+                            value={surg.name}
+                            onChange={(e) => {
+                              const updated = [...pastSurgeries];
+                              updated[index].name = e.target.value;
+                              setPastSurgeries(updated);
+                            }}
+                            placeholder="Surgery Name"
+                            className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                          />
+                          <input
+                            type="date"
+                            value={surg.date}
+                            onChange={(e) => {
+                              const updated = [...pastSurgeries];
+                              updated[index].date = e.target.value;
+                              setPastSurgeries(updated);
+                            }}
+                            className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                          />
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setPastSurgeries([...pastSurgeries, { name: "", date: "" }])}
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
+                      >
+                        <Plus className="w-5 h-5" /> Add Surgery
+                      </button>
+                    </div>
+
+                    {/* CHILDHOOD ILLNESSES */}
+                    <div className="space-y-4">
+                      <h3 className="text-[#FF8000] mb-4">Childhood Illnesses</h3>
+                      {childhoodIllness.map((ill, index) => (
+                        <div key={index} className="flex gap-2 items-center">
+                          <input
+                            value={ill}
+                            onChange={(e) => {
+                              const updated = [...childhoodIllness];
+                              updated[index] = e.target.value;
+                              setChildhoodIllness(updated);
+                            }}
+                            placeholder="e.g., Chickenpox"
+                            className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                          />
+                          {index > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setChildhoodIllness(childhoodIllness.filter((_, i) => i !== index))
+                              }
+                              className="text-[#FF8000]"
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setChildhoodIllness([...childhoodIllness, ""])}
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
+                      >
+                        <Plus className="w-5 h-5" /> Add Childhood Illness
+                      </button>
+                    </div>
+
+                    {/* LONG-TERM TREATMENTS */}
+                    <div className="space-y-4">
+                      <h3 className="text-[#FF8000] mb-4">Long-Term Treatments (Previously Taken)</h3>
+                      {longTermTreatments.map((treat, index) => (
+                        <div key={index} className="flex gap-2 items-center">
+                          <input
+                            value={treat}
+                            onChange={(e) => {
+                              const updated = [...longTermTreatments];
+                              updated[index] = e.target.value;
+                              setLongTermTreatments(updated);
+                            }}
+                            placeholder="e.g., Physical Therapy"
+                            className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                          />
+                          {index > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setLongTermTreatments(longTermTreatments.filter((_, i) => i !== index))
+                              }
+                              className="text-[#FF8000]"
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setLongTermTreatments([...longTermTreatments, ""])}
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
+                      >
+                        <Plus className="w-5 h-5" /> Add Treatment
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 mt-6">
+                    <button
+                      type="button"
+                      onClick={() => setIsPastMedicalModalOpen(false)}
+                      className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-2 bg-[#FF8000] text-white rounded-lg hover:bg-[#309898] transition"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Family Medical History Modal */}
+        {isFamilyHistoryModalOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-gray-800">Edit Family Medical History</h3>
+                <button 
+                  onClick={() => setIsFamilyHistoryModalOpen(false)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+              <div className="p-6">
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  const familyData = { familyMedicalHistory };
+                  const { error } = await supabase
+                    .from("profiles")
+                    .update({ family_history: familyData })
+                    .eq("user_id", userId);
+                  if (error) {
+                    alert("Error: " + error.message);
+                  } else {
+                    setIsFamilyHistoryModalOpen(false);
+                    alert("Family medical history updated successfully!");
+                  }
+                }}>
+                  <div className="space-y-6">
+                    <h3 className="text-[#FF8000] mb-2">Family Medical History</h3>
+                    {familyMedicalHistory.map((row, index) => (
+                      <div key={index} className="flex gap-4 items-center relative">
+                        <input
+                          value={row.disease}
+                          onChange={(e) => {
+                            const updated = [...familyMedicalHistory];
+                            updated[index].disease = e.target.value;
+                            setFamilyMedicalHistory(updated);
+                          }}
+                          placeholder="e.g., Diabetes"
+                          className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                        />
+                        <select
+                          value={row.relation}
+                          onChange={(e) => {
+                            const updated = [...familyMedicalHistory];
+                            updated[index].relation = e.target.value;
+                            setFamilyMedicalHistory(updated);
+                          }}
+                          className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                        >
+                          <option value="">Select Relation</option>
+                          <option>Father</option>
+                          <option>Mother</option>
+                          <option>Brother</option>
+                          <option>Sister</option>
+                          <option>Grandparents</option>
+                        </select>
+                        {index > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFamilyMedicalHistory(
+                                familyMedicalHistory.filter((_, i) => i !== index)
+                              );
+                            }}
+                            className="text-red-500"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFamilyMedicalHistory([
+                          ...familyMedicalHistory,
+                          { disease: "", relation: "" },
+                        ])
+                      }
+                      className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
+                    >
+                      <Plus className="w-5 h-5" /> Add More
+                    </button>
+                  </div>
+
+                  <div className="flex justify-end gap-3 mt-6">
+                    <button
+                      type="button"
+                      onClick={() => setIsFamilyHistoryModalOpen(false)}
+                      className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-2 bg-[#FF8000] text-white rounded-lg hover:bg-[#309898] transition"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )} 
       </main>
     </div>
   );
