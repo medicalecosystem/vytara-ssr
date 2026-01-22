@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import ChatWidget from "@/components/ChatWidget";
+import WeglotProvider from "@/components/WeglotProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,15 +23,16 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: {
+  children: ReactNode;
+}) {
   return (
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased relative min-h-screen overflow-x-hidden bg-slate-950`}
       >
-        {/* Global background */}
+        {/* Weglot (loads once globally) */}
+        <WeglotProvider />
 
         {/* App pages */}
         {children}
