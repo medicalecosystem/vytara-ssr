@@ -24,6 +24,7 @@ export default function ProfilePageUI() {
       if(data.user){
         setUserId(data.user.id)
         setEmail(data.user.email ?? "")
+        setPhoneNumber(data.user.phone ?? "")
       }
     }
     getUser();
@@ -38,6 +39,7 @@ export default function ProfilePageUI() {
   const [bloodGroup, setBloodGroup] = useState("");
   const [address, setAddress] = useState("");
   const [bmi, setBmi] = useState("");
+  const [age, setAge] = useState("");
 
   {/* MEDICAL DATA */}
   const [conditions, setConditions] = useState<string[]>([]);
@@ -47,7 +49,6 @@ export default function ProfilePageUI() {
   type Medication = {
     name: string,
     dosage: string,
-    purpose: string,
     frequency: string
   }
   
@@ -61,7 +62,8 @@ export default function ProfilePageUI() {
 
   type PastSurgery = {
     name: string,
-    date: string
+    month: number | null,
+    year: number | null
   }
 
   const [pastSurgeries, setPastSurgeries] = useState<PastSurgery[]>([]);
@@ -72,6 +74,29 @@ export default function ProfilePageUI() {
   }
 
   const [familyMedicalHistory, setFamilyMedicalHistory] = useState<FamilyMedicalHistory[]>([]);
+
+  const currentYear = new Date().getFullYear();
+  const monthOptions = [
+    { value: 1, label: "January" },
+    { value: 2, label: "February" },
+    { value: 3, label: "March" },
+    { value: 4, label: "April" },
+    { value: 5, label: "May" },
+    { value: 6, label: "June" },
+    { value: 7, label: "July" },
+    { value: 8, label: "August" },
+    { value: 9, label: "September" },
+    { value: 10, label: "October" },
+    { value: 11, label: "November" },
+    { value: 12, label: "December" },
+  ];
+  const yearOptions = Array.from({ length: currentYear - 1899 }, (_, idx) => currentYear - idx);
+
+  const formatMonthYear = (month: number | null, year: number | null) => {
+    if (!month || !year) return "Date not set";
+    const label = monthOptions.find((opt) => opt.value === month)?.label ?? String(month);
+    return `${label} ${year}`;
+  };
 
   useEffect(() => {
     async function fetchProfileData() {
@@ -86,10 +111,9 @@ export default function ProfilePageUI() {
           const profile = data.personal;
           setUserName(profile.fullName || "");
           setGender(profile.gender || "");
-          setDob(profile.dob || "");
-          setPhoneNumber(profile.contactNumber || "");
-          setBloodGroup(profile.bloodGroup || "");
-          setBmi(profile.bmi || "");
+          //setDob(profile.dob || "");
+          setPhoneNumber((prev) => profile.contactNumber || prev || "");
+          //setBloodGroup(profile.bloodGroup || "");
           setAddress(profile.address || "");
         }
 
@@ -101,49 +125,77 @@ export default function ProfilePageUI() {
     fetchProfileData();
   }, [userId]);
 
-  useEffect(() => {
-    async function fetchHealthData(){
+
+useEffect(() => {
+    async function fetchCredentialsData(){
+      if (!userId) return;
       const { data, error } = await supabase
-      .from("profiles")
-      .select("health")
-      .eq("user_id", userId)
-      .single()
+        .from("credentials")
+        .select(`
+          email,
+          phone
+        `)
+        .eq("id", userId)
+        .maybeSingle();
 
       if (error){
         console.log("Error: ", error);
         return;
       }
 
-      if (data && data.health){
-        setConditions(data.health.conditions || []);
-        setAllergy(data.health.allergies || []);  
-        setTreatment(data.health.treatments || []);
-        setCurrentMedications(data.health.currentMedications || []);
+      if (data){
+        setPhoneNumber((prev) => data.phone || prev || "");
+      }
+    }
+    fetchCredentialsData();
+  }, [userId]);
+
+
+
+  useEffect(() => {
+    async function fetchHealthData(){
+      if (!userId) return;
+      const { data, error } = await supabase
+        .from("health")
+        .select(`
+          date_of_birth,
+          blood_group,
+          current_diagnosed_condition,
+          allergies,
+          ongoing_treatments,
+          current_medication,
+          bmi,
+          age,
+          previous_diagnosed_conditions,
+          past_surgeries,
+          childhood_illness,
+          long_term_treatments
+        `)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (error){
+        console.log("Error: ", error);
+        return;
+      }
+
+      if (data){
+        setConditions((data.current_diagnosed_condition as string[]) || []);
+        setAllergy((data.allergies as string[]) || []);
+        setTreatment((data.ongoing_treatments as string[]) || []);
+        setCurrentMedications((data.current_medication as Medication[]) || []);
+        setBmi(data.bmi !== null && data.bmi !== undefined ? String(data.bmi) : "");
+        setAge(data.age !== null && data.age !== undefined ? String(data.age) : "");
+        setBloodGroup(data.blood_group || "");
+        setDob(data.date_of_birth || "");
+
+        setPreviousDiagnosedCondition((data.previous_diagnosed_conditions as string[]) || []);
+        setPastSurgeries((data.past_surgeries as PastSurgery[]) || []);
+        setChildhoodIllness((data.childhood_illness as string[]) || []);
+        setLongTermTreatments((data.long_term_treatments as string[]) || []);
       }
     }
     fetchHealthData();
-  }, [userId]);
-
-  useEffect(() => {
-    async function fetchPastData() {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("past_medical_info")
-        .eq("user_id", userId)
-        .single()
-
-        if (error) {
-          console.log("Error: " + error);
-        }
-
-        if ( data && data.past_medical_info ) {
-          setPreviousDiagnosedCondition(data.past_medical_info.diagnosedCondition || []);
-          setPastSurgeries(data.past_medical_info.pastSurgeries || []);
-          setChildhoodIllness(data.past_medical_info.childhoodIllness || []);
-          setLongTermTreatments(data.past_medical_info.longTermTreatments || []);
-        }
-    }
-    fetchPastData();
   }, [userId]);
 
   useEffect(() => {
@@ -269,12 +321,12 @@ export default function ProfilePageUI() {
               </div>
 
               {/* KPI 3 */}
-              {/* <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 hover:border-purple-300 transition shadow-sm group">
+              <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 hover:border-purple-300 transition shadow-sm group">
                 <p className="text-[10px] text-purple-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <CalendarCheck className="w-3 h-3 text-purple-500 group-hover:scale-110 transition" /> Visits
+                  <CalendarCheck className="w-3 h-3 text-purple-500 group-hover:scale-110 transition" /> Age
                 </p>
-                <p className="text-2xl font-bold text-gray-800">12</p>
-              </div> */}
+                <p className="text-2xl font-bold text-gray-800">{age || "—"}</p>
+              </div>
             </div>
           </div>
 
@@ -390,13 +442,13 @@ export default function ProfilePageUI() {
 
                       <div>
                         <p className="font-bold text-gray-700">{current.name}</p>
-                        <p className="text-xs text-gray-500">Purpose: {current.purpose}</p>
-                        <p className="text-xs text-gray-500">Dosage: {current.frequency}</p>
+                        <p className="text-xs text-gray-500">Dosage: {current.dosage || "Not specified"}</p>
+                        <p className="text-xs text-gray-500">Frequency: {current.frequency || "Not specified"}</p>
                       </div>
                     </div>
 
                     <span className='text-sm font-medium text-gray-500 bg-white px-2 py-1 rounded-md shadow-sm border border-gray-100'>
-                      {current.dosage}
+                      {current.frequency || "As directed"}
                     </span>
                   </div>
                 ))}
@@ -454,7 +506,7 @@ export default function ProfilePageUI() {
 
                         <div>
                           <p className="font-bold text-gray-700">{pastSurgeries.name}</p>
-                          <p className="text-xs text-gray-500">Date: {pastSurgeries.date}</p>
+                          <p className="text-xs text-gray-500">Date: {formatMonthYear(pastSurgeries.month, pastSurgeries.year)}</p>
                         </div>
                       </div>
                     </div>
@@ -555,9 +607,8 @@ export default function ProfilePageUI() {
                     dob,
                     gender,
                     bloodGroup,
-                    contactNumber: phoneNumber,
+                    phone: phoneNumber,
                     address,
-                    bmi,
                   };
                   const { error } = await supabase
                     .from("profiles")
@@ -649,11 +700,11 @@ export default function ProfilePageUI() {
                       </div>
 
                       <div>
-                        <label className="block text-[#309898] mb-2">BMI</label>
+                        <label className="block text-[#309898] mb-2">BMI (computed)</label>
                         <input
                           value={bmi}
-                          onChange={(e) => setBmi(e.target.value)}
                           placeholder="eg: 24.5"
+                          readOnly
                           className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                         />
                       </div>
@@ -698,15 +749,21 @@ export default function ProfilePageUI() {
                 <form onSubmit={async (e) => {
                   e.preventDefault();
                   const healthData = {
-                    conditions,
-                    currentMedications,
-                    allergies: allergy,
-                    treatments: treatment,
+                    user_id: userId,
+                    current_diagnosed_condition: conditions.map((item) => item.trim()).filter(Boolean),
+                    current_medication: currentMedications
+                      .map((med) => ({
+                        name: med.name.trim(),
+                        dosage: med.dosage.trim(),
+                        frequency: med.frequency.trim(),
+                      }))
+                      .filter((med) => med.name),
+                    allergies: allergy.map((item) => item.trim()).filter(Boolean),
+                    ongoing_treatments: treatment.map((item) => item.trim()).filter(Boolean),
                   };
                   const { error } = await supabase
-                    .from("profiles")
-                    .update({ health: healthData })
-                    .eq("user_id", userId);
+                    .from("health")
+                    .upsert(healthData, { onConflict: "user_id" });
                   if (error) {
                     alert("Error: " + error.message);
                   } else {
@@ -811,19 +868,6 @@ export default function ProfilePageUI() {
                                 className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                               />
                             </div>
-                            <div className="md:col-span-2">
-                              <label className="block text-[#309898] mb-2">Purpose</label>
-                              <input
-                                value={med.purpose}
-                                onChange={(e) => {
-                                  const updated = [...currentMedications];
-                                  updated[index].purpose = e.target.value;
-                                  setCurrentMedications(updated);
-                                }}
-                                placeholder="e.g., Blood sugar control"
-                                className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
-                              />
-                            </div>
                           </div>
                         </div>
                       ))}
@@ -832,7 +876,7 @@ export default function ProfilePageUI() {
                         onClick={() =>
                           setCurrentMedications([
                             ...currentMedications,
-                            { name: "", dosage: "", frequency: "", purpose: "" },
+                            { name: "", dosage: "", frequency: "" },
                           ])
                         }
                         className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
@@ -954,15 +998,21 @@ export default function ProfilePageUI() {
                 <form onSubmit={async (e) => {
                   e.preventDefault();
                   const pastData = {
-                    diagnosedCondition: previousDiagnosedCondition,
-                    pastSurgeries,
-                    childhoodIllness,
-                    longTermTreatments,
+                    user_id: userId,
+                    previous_diagnosed_conditions: previousDiagnosedCondition.map((item) => item.trim()).filter(Boolean),
+                    past_surgeries: pastSurgeries
+                      .map((surg) => ({
+                        name: surg.name.trim(),
+                        month: surg.month ? Number(surg.month) : null,
+                        year: surg.year ? Number(surg.year) : null,
+                      }))
+                      .filter((surg) => surg.name && surg.month && surg.year),
+                    childhood_illness: childhoodIllness.map((item) => item.trim()).filter(Boolean),
+                    long_term_treatments: longTermTreatments.map((item) => item.trim()).filter(Boolean),
                   };
                   const { error } = await supabase
-                    .from("profiles")
-                    .update({ past_medical_info: pastData })
-                    .eq("user_id", userId);
+                    .from("health")
+                    .upsert(pastData, { onConflict: "user_id" });
                   if (error) {
                     alert("Error: " + error.message);
                   } else {
@@ -1032,21 +1082,45 @@ export default function ProfilePageUI() {
                             placeholder="Surgery Name"
                             className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                           />
-                          <input
-                            type="date"
-                            value={surg.date}
-                            onChange={(e) => {
-                              const updated = [...pastSurgeries];
-                              updated[index].date = e.target.value;
-                              setPastSurgeries(updated);
-                            }}
-                            className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
-                          />
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <select
+                              value={surg.month ?? ""}
+                              onChange={(e) => {
+                                const updated = [...pastSurgeries];
+                                updated[index].month = e.target.value ? Number(e.target.value) : null;
+                                setPastSurgeries(updated);
+                              }}
+                              className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                            >
+                              <option value="">Select Month</option>
+                              {monthOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={surg.year ?? ""}
+                              onChange={(e) => {
+                                const updated = [...pastSurgeries];
+                                updated[index].year = e.target.value ? Number(e.target.value) : null;
+                                setPastSurgeries(updated);
+                              }}
+                              className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                            >
+                              <option value="">Select Year</option>
+                              {yearOptions.map((year) => (
+                                <option key={year} value={year}>
+                                  {year}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
                       ))}
                       <button
                         type="button"
-                        onClick={() => setPastSurgeries([...pastSurgeries, { name: "", date: "" }])}
+                        onClick={() => setPastSurgeries([...pastSurgeries, { name: "", month: null, year: null }])}
                         className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
                       >
                         <Plus className="w-5 h-5" /> Add Surgery

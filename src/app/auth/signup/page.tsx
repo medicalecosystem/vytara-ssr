@@ -11,7 +11,7 @@ export default function SignupPage() {
   const router = useRouter();
 
   const signUpWithGoogle = async () => {
-    const redirectTo = `${window.location.origin}/auth/callback?next=/app/homepage`;
+    const redirectTo = `${window.location.origin}/auth/callback?next=/app/health-onboarding`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
