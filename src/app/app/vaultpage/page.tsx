@@ -471,6 +471,9 @@ import {
   Grid3X3,
   List,
   MoreVertical,
+  ArrowUpDown,
+  Filter,
+  Check,
   Download,
   Trash2,
   Eye,
@@ -501,8 +504,15 @@ export default function VaultPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const sortMenuRef = useRef<HTMLDivElement | null>(null);
+  const filterMenuRef = useRef<HTMLDivElement | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [sortOption, setSortOption] = useState<'date-desc' | 'date-asc' | 'name-asc' | 'name-desc'>('date-desc');
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [dateFilter, setDateFilter] = useState<'all' | 'last-7' | 'last-30' | 'last-90' | 'custom'>('all');
+  const [customRange, setCustomRange] = useState({ start: '', end: '' });
 
   const [selectedCategory, setSelectedCategory] = useState<Category>('all');
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -548,6 +558,28 @@ export default function VaultPage() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [openMenuName]);
+
+  useEffect(() => {
+    if (!sortMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
+        setSortMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [sortMenuOpen]);
+
+  useEffect(() => {
+    if (!filterMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target as Node)) {
+        setFilterMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [filterMenuOpen]);
 
   const fetchFiles = async (uid: string, category: Category) => {
     setLoading(true);
@@ -770,6 +802,46 @@ export default function VaultPage() {
   const filteredFiles = files.filter(file => 
     file.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const dateFilteredFiles = filteredFiles.filter((file) => {
+    if (dateFilter === 'all') return true;
+    const createdAt = new Date(file.created_at);
+    if (dateFilter === 'last-7') {
+      const start = new Date();
+      start.setDate(start.getDate() - 7);
+      return createdAt >= start;
+    }
+    if (dateFilter === 'last-30') {
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+      return createdAt >= start;
+    }
+    if (dateFilter === 'last-90') {
+      const start = new Date();
+      start.setDate(start.getDate() - 90);
+      return createdAt >= start;
+    }
+    if (dateFilter === 'custom') {
+      if (!customRange.start && !customRange.end) return true;
+      const start = customRange.start ? new Date(`${customRange.start}T00:00:00`) : null;
+      const end = customRange.end ? new Date(`${customRange.end}T23:59:59.999`) : null;
+      if (start && createdAt < start) return false;
+      if (end && createdAt > end) return false;
+      return true;
+    }
+    return true;
+  });
+  const sortedFiles = [...dateFilteredFiles].sort((a, b) => {
+    if (sortOption === 'date-asc') {
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    }
+    if (sortOption === 'name-asc') {
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    }
+    if (sortOption === 'name-desc') {
+      return b.name.localeCompare(a.name, undefined, { sensitivity: 'base' });
+    }
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 
   const getCategoryIcon = (folder: MedicalFolder) => {
     const icons: Record<MedicalFolder, any> = {
@@ -827,7 +899,7 @@ export default function VaultPage() {
         
         {/* TOP HEADER BAR */}
         <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-200/50">
-          <div className="px-8 py-5 flex items-center justify-between">
+          <div className="px-4 sm:px-6 md:px-8 py-4 sm:py-5 flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-slate-800">Medical Vault</h1>
               <p className="text-sm text-slate-500 mt-0.5">Securely store and manage your medical documents</p>
@@ -844,24 +916,182 @@ export default function VaultPage() {
           </div>
         </header>
 
-        <main className="p-8 pt-6">
+        <main className="p-4 sm:p-6 md:p-8 pt-4 sm:pt-6">
           {/* MAIN DOCUMENTS SECTION */}
           <section>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
               <h2 className="text-lg font-semibold text-slate-800">All Documents</h2>
               
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
                 {/* Search */}
-                <div className="relative">
+                <div className="relative w-full sm:w-auto">
                   <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
                     placeholder="Search documents..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 w-64"
+                    className="pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 w-full sm:w-64"
                     data-testid="search-documents"
                   />
+                </div>
+
+                {/* Sort */}
+                <div className="relative" ref={sortMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setSortMenuOpen((prev) => !prev)}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition"
+                  >
+                    <ArrowUpDown size={16} className="text-slate-500" />
+                    Sort
+                  </button>
+                  {sortMenuOpen && (
+                    <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 bg-white shadow-lg z-20">
+                      {[
+                        { id: 'date-desc', label: 'Date created (newest)' },
+                        { id: 'date-asc', label: 'Date created (oldest)' },
+                        { id: 'name-asc', label: 'Alphabetical (A–Z)' },
+                        { id: 'name-desc', label: 'Alphabetical (Z–A)' },
+                      ].map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => {
+                            setSortOption(option.id as typeof sortOption);
+                            setSortMenuOpen(false);
+                          }}
+                          className={`w-full px-4 py-2 text-left text-sm transition ${
+                            sortOption === option.id
+                              ? 'bg-teal-50 text-teal-700'
+                              : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Filter */}
+                <div className="relative" ref={filterMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setFilterMenuOpen((prev) => !prev)}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition"
+                  >
+                    <Filter size={16} className="text-slate-500" />
+                    Filter
+                    {dateFilter !== 'all' && (
+                      <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                        {dateFilter === 'custom'
+                          ? 'Custom'
+                          : dateFilter === 'last-7'
+                          ? '7d'
+                          : dateFilter === 'last-30'
+                          ? '30d'
+                          : '90d'}
+                      </span>
+                    )}
+                  </button>
+                  {filterMenuOpen && (
+                    <div className="absolute right-0 mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-lg z-20 p-3">
+                      <div className="space-y-1">
+                        {[
+                          { id: 'all', label: 'All time' },
+                          { id: 'last-7', label: 'Last 7 days' },
+                          { id: 'last-30', label: 'Last 30 days' },
+                          { id: 'last-90', label: 'Last 90 days' },
+                        ].map((option) => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => {
+                              setDateFilter(option.id as typeof dateFilter);
+                              setFilterMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm rounded-lg transition ${
+                              dateFilter === option.id
+                                ? 'bg-teal-50 text-teal-700'
+                                : 'text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            {option.label}
+                            {dateFilter === option.id && <Check size={16} className="text-teal-600" />}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="mt-3 border-t border-slate-100 pt-3">
+                        <button
+                          type="button"
+                          onClick={() => setDateFilter('custom')}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm rounded-lg transition ${
+                            dateFilter === 'custom'
+                              ? 'bg-teal-50 text-teal-700'
+                              : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          Custom range
+                          {dateFilter === 'custom' && <Check size={16} className="text-teal-600" />}
+                        </button>
+                        {dateFilter === 'custom' && (
+                          <div className="mt-3 space-y-2">
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 mb-1">Start date</label>
+                              <input
+                                type="date"
+                                value={customRange.start}
+                                onChange={(e) =>
+                                  setCustomRange((prev) => ({ ...prev, start: e.target.value }))
+                                }
+                                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 mb-1">End date</label>
+                              <input
+                                type="date"
+                                value={customRange.end}
+                                onChange={(e) =>
+                                  setCustomRange((prev) => ({ ...prev, end: e.target.value }))
+                                }
+                                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCustomRange({ start: '', end: '' });
+                                  setDateFilter('all');
+                                  setFilterMenuOpen(false);
+                                }}
+                                className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                              >
+                                Clear
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!customRange.start || !customRange.end) {
+                                    alert('Please select a start and end date.');
+                                    return;
+                                  }
+                                  setDateFilter('custom');
+                                  setFilterMenuOpen(false);
+                                }}
+                                className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 transition"
+                              >
+                                Apply
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
                 {/* View Toggle */}
@@ -884,14 +1114,14 @@ export default function VaultPage() {
               </div>
             </div>
 
-            <div className="flex gap-6">
+            <div className="flex flex-col md:flex-row gap-6">
               {/* CATEGORY SIDEBAR */}
-              <div className="w-56 flex-shrink-0 space-y-2">
+              <div className="w-full md:w-56 flex-shrink-0 flex md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0">
                 {categories.map(cat => (
                   <button
                     key={cat.id}
                     onClick={() => setSelectedCategory(cat.id as Category)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200 ${
+                    className={`w-48 md:w-full flex-shrink-0 flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200 ${
                       selectedCategory === cat.id
                         ? 'bg-teal-50 text-teal-700 border-2 border-teal-200 shadow-sm'
                         : 'bg-white text-slate-600 border border-slate-100 hover:border-slate-200 hover:bg-slate-50'
@@ -909,7 +1139,7 @@ export default function VaultPage() {
 
               {/* FILES GRID/LIST */}
               <div className="flex-1">
-                {filteredFiles.length === 0 && !loading ? (
+                {sortedFiles.length === 0 && !loading ? (
                   <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-16 text-center">
                     <div className="w-20 h-20 mx-auto bg-slate-100 rounded-2xl flex items-center justify-center mb-4">
                       <Upload size={32} className="text-slate-400" />
@@ -925,8 +1155,8 @@ export default function VaultPage() {
                     </button>
                   </div>
                 ) : viewMode === 'grid' ? (
-                  <div className="grid grid-cols-3 gap-4">
-                    {filteredFiles.map((file, i) => {
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {sortedFiles.map((file, i) => {
                       const Icon = getCategoryIcon(file.folder);
                       return (
                         <div
@@ -996,8 +1226,8 @@ export default function VaultPage() {
                     })}
                   </div>
                 ) : (
-                  <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-                    <table className="w-full">
+                  <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto">
+                    <table className="w-full min-w-[720px]">
                       <thead className="bg-slate-50 border-b border-slate-100">
                         <tr>
                           <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Name</th>
@@ -1007,7 +1237,7 @@ export default function VaultPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredFiles.map((file, i) => {
+                        {sortedFiles.map((file, i) => {
                           const Icon = getCategoryIcon(file.folder);
                           return (
                             <tr key={i} className="hover:bg-slate-50 transition" data-testid={`file-row-${i}`}>

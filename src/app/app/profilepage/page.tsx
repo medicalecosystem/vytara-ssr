@@ -228,7 +228,7 @@ useEffect(() => {
           <div className="lg:col-span-2 bg-white rounded-3xl p-6 shadow-xl shadow-teal-900/20 border border-white/20 flex flex-col h-full relative overflow-hidden">  
             
             {/* Background Decoration */}
-            <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-teal-50 to-orange-50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 opacity-80 pointer-events-none"></div>
+            <div className="absolute top-0 right-0 w-40 h-40 sm:w-64 sm:h-64 bg-gradient-to-br from-teal-50 to-orange-50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 opacity-80 pointer-events-none"></div>
 
             {/* Edit Button */}
             <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
@@ -251,14 +251,14 @@ useEffect(() => {
                     <ChevronDown className="w-3 h-3" />
                   </button>
                 </div>
-                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-teal-100 to-blue-100 flex items-center justify-center border-[4px] border-white shadow-lg shrink-0">
-                  <User className="w-10 h-10 text-teal-700/80" />
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-teal-100 to-blue-100 flex items-center justify-center border-[4px] border-white shadow-lg shrink-0">
+                  <User className="w-8 h-8 sm:w-10 sm:h-10 text-teal-700/80" />
                 </div>
               </div>
 
               <div className="flex-1 w-full pt-2">
                 <div className="mb-4">
-                  <h2 className="text-3xl font-bold text-gray-800 tracking-tight">{userName}</h2>
+                  <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 tracking-tight">{userName}</h2>
                   <div className="flex flex-wrap items-center gap-2 mt-1">
                     <span className="px-2.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-wide rounded-full border border-blue-200">
                       {gender}
@@ -290,7 +290,7 @@ useEffect(() => {
             </div>
 
             {/* KPI Section */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               {/* KPI 1 */}
               <div className="bg-red-50 p-4 rounded-2xl border border-red-100 hover:border-red-300 transition shadow-sm group">
                 <p className="text-[10px] text-red-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">

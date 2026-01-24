@@ -765,6 +765,7 @@ import {
   Stethoscope,
   Pill,
   AlertCircle,
+  Bell,
   X,
 } from "lucide-react";
 
@@ -814,6 +815,24 @@ export default function HomePage() {
 
   // NEW: State for medical summary modal
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
+  const [greeting, setGreeting] = useState("Good Morning");
+
+  useEffect(() => {
+    const updateGreeting = () => {
+      const hour = new Date().getHours();
+      if (hour < 12) {
+        setGreeting("Good Morning");
+      } else if (hour < 18) {
+        setGreeting("Good Afternoon");
+      } else {
+        setGreeting("Good Evening");
+      }
+    };
+
+    updateGreeting();
+    const interval = setInterval(updateGreeting, 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   /* =======================
      AUTH USER SETUP
@@ -1341,7 +1360,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-slate-50 text-slate-900">
-      <main className="max-w-7xl mx-auto px-6 py-12">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-12">
         {/* HERO */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center mb-20">
           <div>
@@ -1350,7 +1369,7 @@ export default function HomePage() {
             </span>
 
             <h2
-              className="text-5xl lg:text-6xl font-bold mb-4 leading-tight"
+              className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-4 leading-tight"
               style={{
                 background: `linear-gradient(90deg, #4FD1A6, #FFBF69)`,
                 WebkitBackgroundClip: "text",
@@ -1358,63 +1377,63 @@ export default function HomePage() {
                 color: "transparent",
               }}
             >
-              Welcome, {name}
+              {greeting}, {name}
             </h2>
 
             <p className="text-slate-600 text-lg max-w-md">
               Designed with empathy. Built for clarity. Ready when you need it.
             </p>
 
-            {/* UPDATED: Get Summary button now opens modal */}
-            <button
-              onClick={() => {
-                console.log('🔘 Get Summary button clicked!');
-                setIsSummaryModalOpen(true);
-                console.log('🔘 Modal state set to true');
-              }}
-              disabled={!userId}
-              className={`mt-8 px-10 py-5 text-lg rounded-2xl font-bold shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl ${
-                userId
-                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer'
-                  : 'bg-gray-400 cursor-not-allowed text-gray-200'
-              }`}
-            >
-              Get Summary
-            </button>
+            <div className="mt-8 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              {/* UPDATED: Get Summary button now opens modal */}
+              <button
+                onClick={() => {
+                  console.log('🔘 Get Summary button clicked!');
+                  setIsSummaryModalOpen(true);
+                  console.log('🔘 Modal state set to true');
+                }}
+                disabled={!userId}
+                className={`w-full sm:w-auto px-10 py-5 text-lg rounded-2xl font-bold shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl ${
+                  userId
+                    ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer'
+                    : 'bg-gray-400 cursor-not-allowed text-gray-200'
+                }`}
+              >
+                Get Summary
+              </button>
+
+              <button
+                onClick={handleSOS}
+                disabled={isSendingSOS}
+                className={`relative w-full sm:w-auto px-10 py-5 text-lg rounded-2xl font-bold shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl disabled:hover:scale-100 ${
+                  isSendingSOS
+                    ? "bg-red-400 cursor-not-allowed"
+                    : "bg-red-500 hover:bg-red-600"
+                } text-white ${
+                  isSendingSOS ? "" : "animate-sos-pulse"
+                }`}
+              >
+                <span className="relative z-10 flex items-center gap-3">
+                  <AlertCircle size={22} />
+                  <span>{isSendingSOS ? "Sending..." : "SOS"}</span>
+                </span>
+              </button>
+            </div>
           </div>
 
-          {/* SOS */}
-          <div className="hidden lg:flex justify-center">
-            <button
-              onClick={handleSOS}
-              disabled={isSendingSOS}
-              className={`relative w-48 h-48 rounded-full ${
-                isSendingSOS
-                  ? "bg-red-400 cursor-not-allowed"
-                  : "bg-red-500 hover:bg-red-600"
-              } text-white shadow-2xl flex items-center justify-center transition hover:scale-110 disabled:hover:scale-100 ${
-                isSendingSOS ? "" : "animate-sos-pulse"
-              }`}
-            >
-              <span
-                className={`absolute -inset-6 rounded-full bg-red-500/50 blur-[52px] animate-sos-glow-slow ${
-                  isSendingSOS ? "opacity-0" : "opacity-100"
-                }`}
-                aria-hidden="true"
-              />
-              <span
-                className={`absolute -inset-2 rounded-full bg-red-500/60 blur-3xl animate-sos-glow ${
-                  isSendingSOS ? "opacity-0" : "opacity-100"
-                }`}
-                aria-hidden="true"
-              />
-              <span className="relative z-10 flex flex-col items-center justify-center">
-                <AlertCircle size={64} />
-                <span className="text-4xl font-bold mt-4">
-                  {isSendingSOS ? "Sending..." : "SOS"}
-                </span>
-              </span>
-            </button>
+          {/* Notifications */}
+          <div className="hidden lg:flex justify-end">
+            <div className="bg-white rounded-3xl shadow-lg transition border w-full max-w-sm h-[420px] flex flex-col">
+              <div className="flex items-center gap-3 px-6 py-5 border-b">
+                <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center">
+                  <Bell size={18} className="text-teal-600" />
+                </div>
+                <h3 className="font-bold text-lg">Notifications</h3>
+              </div>
+              <div className="flex-1 flex items-center justify-center px-6 py-4 text-sm text-slate-500">
+                No notifications yet
+              </div>
+            </div>
           </div>
         </div>
 
