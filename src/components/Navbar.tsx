@@ -28,6 +28,61 @@ export default function Navbar() {
     window.localStorage.setItem('vytara_nav_collapsed', collapsed ? '1' : '0');
   }, [collapsed]);
 
+  const clearSupabaseAuthCookies = () => {
+    if (typeof document === "undefined") return;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) return;
+    let projectRef = "";
+    try {
+      projectRef = new URL(supabaseUrl).hostname.split(".")[0] ?? "";
+    } catch {
+      return;
+    }
+    if (!projectRef) return;
+    const storageKey = `sb-${projectRef}-auth-token`;
+    document.cookie
+      .split(";")
+      .map((cookie) => cookie.trim())
+      .filter(Boolean)
+      .forEach((cookie) => {
+        const name = cookie.split("=")[0];
+        if (name.startsWith(storageKey)) {
+          document.cookie = `${name}=; Max-Age=0; path=/`;
+        }
+      });
+  };
+
+  useEffect(() => {
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (!session?.refresh_token) return;
+        try {
+          const stored = window.localStorage.getItem("vytara_remembered_account");
+          if (!stored) return;
+          const parsed = JSON.parse(stored) as {
+            userId?: string;
+            refreshToken?: string;
+            accessToken?: string;
+          };
+          if (parsed?.userId && parsed.userId === session.user.id) {
+            window.localStorage.setItem(
+              "vytara_remembered_account",
+              JSON.stringify({
+                ...parsed,
+                refreshToken: session.refresh_token,
+                accessToken: session.access_token,
+              })
+            );
+          }
+        } catch {
+          // ignore local storage errors
+        }
+      }
+    );
+
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
   return (
     <aside
       className={`sticky top-0 h-screen shrink-0 border-r border-teal-900/20 bg-gradient-to-b from-teal-950 via-slate-950 to-slate-950 text-white transition-[width] duration-200 ${
@@ -95,7 +150,28 @@ export default function Navbar() {
 
         <button
           onClick={async () => {
-            await supabase.auth.signOut();
+            try {
+              const stored = window.localStorage.getItem("vytara_remembered_account");
+              if (stored) {
+                const parsed = JSON.parse(stored) as {
+                  refreshToken?: string;
+                };
+                const { data } = await supabase.auth.getSession();
+                if (data.session?.refresh_token && parsed) {
+                  window.localStorage.setItem(
+                    "vytara_remembered_account",
+                    JSON.stringify({
+                      ...parsed,
+                      refreshToken: data.session.refresh_token,
+                    })
+                  );
+                }
+              }
+            } catch {
+              // ignore local storage errors
+            }
+            clearSupabaseAuthCookies();
+            await supabase.auth.signOut({ scope: "local" });
             router.push('/auth/login');
           }}
           title={effectiveCollapsed ? 'Logout' : undefined}

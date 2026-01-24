@@ -321,7 +321,7 @@ const FeatureStackCard: React.FC<FeatureStackCardProps> = ({
   top = 'top-[15vh]'
 }) => (
   <div
-    className={`feature-stack-card w-full h-80 md:h-80 rounded-[32px] shadow-xl flex items-center justify-between px-10 sticky ${top} md:flex-row flex-col`}
+    className={`feature-stack-card w-full h-auto md:h-80 rounded-[32px] shadow-xl flex items-center justify-between px-6 md:px-10 py-8 md:py-0 md:sticky ${top} md:flex-row flex-col`}
     style={{ backgroundColor: color }}
   >
     {children}
@@ -424,8 +424,8 @@ const RotatingCardsCarousel = () => {
 
       {/* Enlarged Card Modal */}
       {selectedCard && (
-        <div className="fixed top-1/2 left-[66.67%] transform -translate-x-1/2 -translate-y-1/2 w-[50rem] h-[30rem] bg-black bg-opacity-50 rounded-3xl flex items-center justify-center z-50">
-          <div className="relative w-[50rem] h-[30rem] rounded-3xl">
+        <div className="fixed top-1/2 left-1/2 md:left-[66.67%] transform -translate-x-1/2 -translate-y-1/2 w-[90vw] h-[60vh] md:w-[50rem] md:h-[30rem] bg-black bg-opacity-50 rounded-3xl flex items-center justify-center z-50">
+          <div className="relative w-full h-full rounded-3xl">
             <img
               src={selectedCard.image}
               className="w-full h-full object-cover rounded-3xl shadow-2xl"
@@ -533,7 +533,7 @@ export default function Landing() {
     <div className="relative z-10 bg-transparent"></div>
         {/* NAV */}
         <nav className="sticky top-0 z-50 bg-white">
-          <div className="flex items-center justify-between px-6 py-4 md:grid md:grid-cols-3 md:gap-0">
+          <div className="flex items-center justify-between px-4 sm:px-6 py-4 md:grid md:grid-cols-3 md:gap-0">
 
             {/* LOGO */}
             <div className="flex gap-2 items-center md:justify-start">
@@ -612,11 +612,11 @@ export default function Landing() {
         </div>
 
         {/* ===== HERO ===== */}
-        <section id="hero" className="px-8 pt-6 md:pt-20 pb-12 md:pb-20 w-full min-h-[80vh] relative">
-          <div className="grid grid-cols-6 gap-4 scale-[0.9] md:scale-100">
+        <section id="hero" className="px-4 sm:px-6 md:px-8 pt-6 md:pt-20 pb-12 md:pb-20 w-full min-h-[60vh] md:min-h-[80vh] relative">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 scale-[0.9] md:scale-100">
 
             {/* LEFT CARDS */}
-            <div className="col-span-1 md:col-span-1 flex flex-col gap-4 relative z-10 md:right-4 absolute -left-24 md:left-8 top-0 h-[55vh] md:h-[55vh] md:relative">
+            <div className="col-span-1 md:col-span-1 flex flex-col gap-4 relative z-10 w-full md:w-auto md:absolute md:left-8 md:top-0 md:h-[55vh] mb-6 md:mb-0">
               {[
                 {
                   title: 'Disorganized Documents?',
@@ -637,9 +637,9 @@ export default function Landing() {
                 <div
                   key={i}
                   onClick={() => isMobile && setHeroExpanded(heroExpanded === i ? null : i)}
-                  className={`group relative w-48 h-48 flex-1 rounded-2xl cursor-pointer transition-all duration-300 origin-bottom-right hover:w-96 hover:h-96 md:hover:w-96 md:hover:h-96 ${
+                  className={`group relative w-full sm:w-72 md:w-48 h-36 sm:h-40 md:h-48 flex-1 rounded-2xl cursor-pointer transition-all duration-300 origin-bottom-right md:hover:w-96 md:hover:h-96 ${
                     i % 2 === 0 ? 'bg-[#14b8a6]' : 'bg-[#134E4A]'
-                  } ${isMobile && heroExpanded === i ? 'w-96 h-96' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
+                  } ${isMobile && heroExpanded === i ? 'h-60 sm:h-72' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
                 >
                   <div className="flex flex-col items-center justify-center h-full p-4">
                     <h3 className="text-sm font-normal text-center mb-2">{title}</h3>
@@ -663,7 +663,7 @@ export default function Landing() {
             </div>
 
             {/* ROTATING CARDS CAROUSEL - Not limited to columns to prevent cutoff */}
-            <div className="col-span-5 md:col-span-5 rounded-2xl overflow-hidden bg-transparent h-[64vh] md:ml-0 ml-12 md:relative absolute top-5 -right-5 md:top-auto md:left-auto md:w-auto w-full">
+            <div className="col-span-1 md:col-span-5 rounded-2xl overflow-hidden bg-transparent h-[45vh] sm:h-[52vh] md:h-[64vh] w-full relative mt-6 md:mt-0 md:absolute md:top-5 md:-right-5 md:ml-0">
               <RotatingCardsCarousel />
             </div>
 
@@ -710,14 +710,14 @@ export default function Landing() {
         <section id="mission" className="px-4 py-14 max-w-6xl mx-auto">
           <ScrollFloat>Why we're here</ScrollFloat>
 
-          <div className="grid grid-cols-2 gap-6 mt-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-10">
 
             {/* LEFT CARDS */}
             <div className="flex flex-col gap-6">
-              <div className="bg-[#288f88] h-48 rounded-3xl mission-top-left overflow-hidden">
+              <div className="bg-[#288f88] h-44 sm:h-48 rounded-3xl mission-top-left overflow-hidden">
                 <img src="/images/vytara/missionimg.jpg" className="w-full h-full object-cover" alt="Mission" />
               </div>
-              <div className="bg-[#10736C] h-48 rounded-3xl mission-bottom-left flex flex-col items-start justify-center p-6 text-white">
+              <div className="bg-[#10736C] h-auto sm:h-48 rounded-3xl mission-bottom-left flex flex-col items-start justify-center p-6 text-white">
                 <Brain size={40} className="mb-3" />
                 <h3 className="text-1xl font-bold">Helping you understand, not just store</h3>
                 <p className="text-sm leading-relaxed">
@@ -727,7 +727,7 @@ export default function Landing() {
             </div>
 
             {/* RIGHT BIG CARD */}
-            <div className="bg-[#134E4A] rounded-3xl mission-right h-96 flex flex-col items-start justify-center p-8 text-white text-left">
+            <div className="bg-[#134E4A] rounded-3xl mission-right h-auto md:h-96 flex flex-col items-start justify-center p-8 text-white text-left">
               <Users size={48} className="mb-4" />
               <h3 className="text-1xl font-bold mb-4">We look out for your loved ones with you</h3>
               <p className="text-sm leading-relaxed mb-3">
@@ -742,7 +742,7 @@ export default function Landing() {
           <ScrollReveal menuOpen={menu} isMobile={isMobile}>
             So what do we do exactly?
           </ScrollReveal>
-          <div className="mt-[18vh]">
+          <div className="mt-10 md:mt-[18vh]">
 
             <FeatureStackCard color="#14b8a6" top="md:top-[15vh] top-[20vh]">
               <div className="feature-card flex w-full justify-between items-center gap-8 md:flex-row flex-col">
@@ -754,7 +754,7 @@ export default function Landing() {
                     Help is 1 click away with our SOS button which alerts your family and emergency services.
                   </p>
                 </div>
-                <img src="images/vytara/sosfeature.jpg" className="rounded-2xl flex-shrink-0 md:order-2 order-1" alt="Emergency SOS" />
+                <img src="images/vytara/sosfeature.jpg" className="rounded-2xl flex-shrink-0 w-full h-40 object-cover md:w-64 md:h-40 md:order-2 order-1" alt="Emergency SOS" />
               </div>
             </FeatureStackCard>
 
@@ -768,7 +768,7 @@ export default function Landing() {
                     AI summaries that help you understand your health, at your fingertips.
                   </p>
                 </div>
-                <img src="images/vytara/safestorefeature.jpg" className="rounded-2xl flex-shrink-0 md:order-2 order-1" alt="Secure Storage" />
+                <img src="images/vytara/safestorefeature.jpg" className="rounded-2xl flex-shrink-0 w-full h-40 object-cover md:w-64 md:h-40 md:order-2 order-1" alt="Secure Storage" />
               </div>
             </FeatureStackCard>
 
@@ -782,7 +782,7 @@ export default function Landing() {
                     Monitor the health of your loved ones from anywhere.
                   </p>
                 </div>
-                <img src="images/vytara/familyfeature.jpg" className="rounded-2xl flex-shrink-0 md:order-2 order-1" alt="Family Profiles" />
+                <img src="images/vytara/familyfeature.jpg" className="rounded-2xl flex-shrink-0 w-full h-40 object-cover md:w-64 md:h-40 md:order-2 order-1" alt="Family Profiles" />
               </div>
             </FeatureStackCard>
 

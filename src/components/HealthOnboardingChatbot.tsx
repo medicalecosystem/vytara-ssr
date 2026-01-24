@@ -52,7 +52,7 @@ interface QuestionConfig {
 }
 
 const QUESTIONS: QuestionConfig[] = [
-  { key: "displayName", question: "What should we call you?", inputType: "text", required: true, placeholder: "e.g., Aisha" },
+  { key: "displayName", question: "What should we call you?", inputType: "text", required: true, placeholder: "Eg:John Doe" },
   { key: "dateOfBirth", question: "What is your date of birth?", inputType: "date", required: true },
   {
     key: "bloodGroup",
@@ -864,10 +864,10 @@ const styles: Record<string, React.CSSProperties> = {
     inset: 0,
     zIndex: 0,
     background:
-      "radial-gradient(1200px 600px at 10% 0%, rgba(127, 204, 163, 0.22), transparent 55%)," +
-      "radial-gradient(900px 520px at 95% 12%, rgba(184, 221, 194, 0.18), transparent 58%)," +
-      "radial-gradient(700px 450px at 50% 100%, rgba(154, 201, 150, 0.14), transparent 60%)," +
-      "#070A12",
+      "radial-gradient(1200px 600px at 10% 0%, rgba(127, 204, 163, 0.25), transparent 55%)," +
+      "radial-gradient(900px 520px at 95% 12%, rgba(184, 221, 194, 0.35), transparent 60%)," +
+      "radial-gradient(700px 450px at 50% 100%, rgba(154, 201, 150, 0.22), transparent 60%)," +
+      "#f7faf9",
   },
 
 
@@ -887,8 +887,8 @@ const styles: Record<string, React.CSSProperties> = {
     position: "absolute",
     inset: 0,
     zIndex: 1,
-    opacity: 0.08,
-    mixBlendMode: "overlay",
+    opacity: 0.04,
+    mixBlendMode: "soft-light",
     backgroundImage:
       "repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, rgba(0,0,0,0.00) 2px, rgba(0,0,0,0.00) 4px)," +
       "repeating-linear-gradient(90deg, rgba(255,255,255,0.04) 0px, rgba(255,255,255,0.04) 1px, rgba(0,0,0,0.00) 2px, rgba(0,0,0,0.00) 6px)",
@@ -910,7 +910,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     letterSpacing: 1.4,
     textTransform: "uppercase",
-    color: "rgba(234,240,255,0.75)",
+    color: "rgba(15, 118, 110, 0.85)",
     marginBottom: 8,
   },
 
@@ -929,15 +929,15 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "8px 0 0",
     maxWidth: 560,
     fontSize: 13,
-    color: "rgba(234,240,255,0.72)",
+    color: "#475569",
     lineHeight: 1.55,
   },
 
   badge: {
     whiteSpace: "nowrap",
-    background: "rgba(255,255,255,0.10)",
-    border: "1px solid rgba(255,255,255,0.18)",
-    color: "rgba(234,240,255,0.90)",
+    background: "rgba(20, 184, 166, 0.12)",
+    border: "1px solid rgba(15, 118, 110, 0.22)",
+    color: "#0f766e",
     padding: "6px 12px",
     borderRadius: 999,
     fontSize: 12,
@@ -960,12 +960,12 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 18,
     padding: 14,
     background:
-      "linear-gradient(180deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05))," +
-      "radial-gradient(120% 140% at 10% 0%, rgba(255,255,255,0.16), rgba(255,255,255,0.00) 56%)," +
-      "radial-gradient(120% 140% at 95% 10%, rgba(127,204,163,0.14), rgba(255,255,255,0.00) 58%)," +
-      "radial-gradient(120% 140% at 40% 120%, rgba(154,201,150,0.14), rgba(255,255,255,0.00) 58%)",
-    border: "1px solid rgba(255,255,255,0.16)",
-    boxShadow: "0 22px 70px rgba(0,0,0,0.50), inset 0 1px 0 rgba(255,255,255,0.16)",
+      "linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.75))," +
+      "radial-gradient(120% 140% at 10% 0%, rgba(255,255,255,0.95), rgba(255,255,255,0.00) 56%)," +
+      "radial-gradient(120% 140% at 95% 10%, rgba(127,204,163,0.18), rgba(255,255,255,0.00) 58%)," +
+      "radial-gradient(120% 140% at 40% 120%, rgba(154,201,150,0.18), rgba(255,255,255,0.00) 58%)",
+    border: "1px solid rgba(15, 118, 110, 0.12)",
+    boxShadow: "0 20px 60px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255,255,255,0.7)",
     backdropFilter: "blur(22px) saturate(1.6)",
     WebkitBackdropFilter: "blur(22px) saturate(1.6)",
     overflow: "hidden",
@@ -976,10 +976,10 @@ const styles: Record<string, React.CSSProperties> = {
     position: "absolute",
     inset: "-40% -30%",
     background:
-      "radial-gradient(closest-side at 30% 30%, rgba(255,255,255,0.20), rgba(255,255,255,0.00) 60%)," +
-      "linear-gradient(115deg, rgba(255,255,255,0.00) 35%, rgba(255,255,255,0.12) 45%, rgba(255,255,255,0.00) 55%)",
+      "radial-gradient(closest-side at 30% 30%, rgba(255,255,255,0.45), rgba(255,255,255,0.00) 60%)," +
+      "linear-gradient(115deg, rgba(255,255,255,0.00) 35%, rgba(255,255,255,0.3) 45%, rgba(255,255,255,0.00) 55%)",
     transform: "rotate(-10deg)",
-    opacity: 0.9,
+    opacity: 0.7,
     filter: "blur(6px)",
   },
 
@@ -988,14 +988,14 @@ const styles: Record<string, React.CSSProperties> = {
     position: "absolute",
     inset: 0,
     borderRadius: 18,
-    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.18), inset 0 -14px 28px rgba(0,0,0,0.24)",
+    boxShadow: "inset 0 0 0 1px rgba(15, 118, 110, 0.08), inset 0 -12px 20px rgba(15, 23, 42, 0.06)",
   },
 
   chatPanel: { display: "flex", flexDirection: "column", height: 560, padding: 0 },
 
   chatHeader: {
     padding: "14px 16px",
-    borderBottom: "1px solid rgba(255,255,255,0.10)",
+    borderBottom: "1px solid rgba(15, 118, 110, 0.12)",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
@@ -1003,14 +1003,14 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 2,
   },
   chatHeaderLeft: { display: "flex", alignItems: "center", gap: 10 },
-  chatHeaderRight: { fontSize: 12, color: "rgba(234,240,255,0.70)" },
+  chatHeaderRight: { fontSize: 12, color: "#64748b" },
 
   dot: {
     width: 10,
     height: 10,
     borderRadius: 999,
     background: "rgba(127, 204, 163, 0.95)",
-    boxShadow: "0 0 0 5px rgba(127, 204, 163, 0.14)",
+    boxShadow: "0 0 0 5px rgba(127, 204, 163, 0.2)",
   },
 
   chatHeaderTitle: {
@@ -1018,7 +1018,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 950,
     letterSpacing: 1.0,
     textTransform: "uppercase",
-    color: "rgba(234,240,255,0.92)",
+    color: "#0f172a",
   },
 
   chatWindow: {
@@ -1043,21 +1043,21 @@ const styles: Record<string, React.CSSProperties> = {
 
   botBubble: {
     alignSelf: "flex-start",
-    background: "rgba(255,255,255,0.10)",
-    borderColor: "rgba(255,255,255,0.14)",
-    color: "rgba(234,240,255,0.92)",
+    background: "rgba(15, 23, 42, 0.04)",
+    borderColor: "rgba(15, 118, 110, 0.12)",
+    color: "#0f172a",
   },
 
   userBubble: {
     alignSelf: "flex-end",
     background: "linear-gradient(135deg, rgba(127,204,163,0.92), rgba(154,201,150,0.76))",
-    borderColor: "rgba(255,255,255,0.18)",
-    color: "rgba(7,10,18,0.95)",
+    borderColor: "rgba(15, 118, 110, 0.18)",
+    color: "#0f172a",
   },
 
   bubbleMeta: {
     fontSize: 11,
-    opacity: 0.75,
+    opacity: 0.7,
     marginBottom: 4,
     fontWeight: 850,
   },
@@ -1070,7 +1070,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     letterSpacing: 1.2,
     textTransform: "uppercase",
-    color: "rgba(234,240,255,0.74)",
+    color: "#0f766e",
     fontWeight: 900,
     marginBottom: 10,
   },
@@ -1086,7 +1086,7 @@ const styles: Record<string, React.CSSProperties> = {
   progressPct: {
     fontSize: 12,
     fontWeight: 900,
-    color: "rgba(234,240,255,0.85)",
+    color: "#0f172a",
     minWidth: 40,
     textAlign: "right",
   },
@@ -1094,10 +1094,10 @@ const styles: Record<string, React.CSSProperties> = {
   progressBarBg: {
     flex: 1,
     height: 10,
-    backgroundColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "rgba(15, 118, 110, 0.12)",
     borderRadius: 999,
     overflow: "hidden",
-    border: "1px solid rgba(255,255,255,0.14)",
+    border: "1px solid rgba(15, 118, 110, 0.18)",
   },
 
   progressBarFill: {
@@ -1111,7 +1111,7 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 2,
     marginTop: 8,
     fontSize: 12,
-    color: "rgba(234,240,255,0.74)",
+    color: "#64748b",
     textAlign: "right",
   },
 
@@ -1121,14 +1121,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 15,
     fontWeight: 850,
     marginBottom: 12,
-    color: "rgba(234,240,255,0.96)",
+    color: "#0f172a",
   },
 
   helperText: {
     position: "relative",
     zIndex: 2,
     fontSize: 12,
-    color: "rgba(234,240,255,0.66)",
+    color: "#64748b",
     marginTop: -6,
     marginBottom: 12,
   },
@@ -1139,39 +1139,39 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     padding: "12px 12px",
     borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.16)",
-    background: "rgba(0,0,0,0.18)",
-    color: "rgba(234,240,255,0.92)",
+    border: "1px solid rgba(15, 118, 110, 0.18)",
+    background: "rgba(255,255,255,0.92)",
+    color: "#0f172a",
     outline: "none",
     fontSize: 14,
-    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
   },
 
   sendButton: {
     height: 44,
     padding: "0 14px",
     borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.18)",
+    border: "1px solid rgba(15, 118, 110, 0.2)",
     background:
-      "linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06))," +
-      "linear-gradient(135deg, rgba(127,204,163,0.95), rgba(154,201,150,0.75))",
-    color: "rgba(7,10,18,0.95)",
+      "linear-gradient(180deg, rgba(255,255,255,0.4), rgba(255,255,255,0.05))," +
+      "linear-gradient(135deg, #14b8a6, #0f766e)",
+    color: "#ffffff",
     cursor: "pointer",
     fontSize: 16,
     fontWeight: 900,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.12)",
   },
 
   quickRepliesGrid: { position: "relative", zIndex: 2, display: "flex", flexWrap: "wrap", gap: 8 },
 
   chipBtn: {
     padding: "9px 12px",
-    background: "rgba(255,255,255,0.10)",
-    border: "1px solid rgba(255,255,255,0.16)",
+    background: "rgba(15, 118, 110, 0.08)",
+    border: "1px solid rgba(15, 118, 110, 0.2)",
     borderRadius: 999,
     cursor: "pointer",
     fontSize: 13,
-    color: "rgba(234,240,255,0.90)",
+    color: "#0f172a",
   },
 
   skipBtn: {
@@ -1180,11 +1180,11 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 10,
     width: "100%",
     padding: "10px 12px",
-    background: "rgba(255,255,255,0.08)",
-    border: "1px dashed rgba(255,255,255,0.20)",
+    background: "rgba(15, 118, 110, 0.06)",
+    border: "1px dashed rgba(15, 118, 110, 0.25)",
     borderRadius: 12,
     cursor: "pointer",
-    color: "rgba(234,240,255,0.84)",
+    color: "#0f172a",
     fontWeight: 850,
   },
 
@@ -1202,9 +1202,9 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     padding: "10px 12px",
     borderRadius: 12,
-    border: "1px dashed rgba(255,255,255,0.22)",
-    background: "rgba(255,255,255,0.08)",
-    color: "rgba(234,240,255,0.85)",
+    border: "1px dashed rgba(15, 118, 110, 0.25)",
+    background: "rgba(15, 118, 110, 0.06)",
+    color: "#0f172a",
     fontWeight: 850,
     cursor: "pointer",
   },
@@ -1213,9 +1213,9 @@ const styles: Record<string, React.CSSProperties> = {
     height: 44,
     minWidth: 44,
     borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.18)",
-    background: "rgba(255,255,255,0.08)",
-    color: "rgba(234,240,255,0.85)",
+    border: "1px solid rgba(15, 118, 110, 0.2)",
+    background: "rgba(15, 118, 110, 0.08)",
+    color: "#0f172a",
     cursor: "pointer",
     fontWeight: 900,
   },
@@ -1225,8 +1225,8 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 2,
     borderRadius: 14,
     padding: 12,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(0,0,0,0.18)",
+    border: "1px solid rgba(15, 118, 110, 0.12)",
+    background: "rgba(255,255,255,0.8)",
     marginBottom: 12,
     display: "flex",
     flexDirection: "column",
@@ -1237,7 +1237,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     letterSpacing: 1.0,
     textTransform: "uppercase",
-    color: "rgba(234,240,255,0.70)",
+    color: "#0f766e",
     fontWeight: 800,
   },
 
@@ -1247,29 +1247,29 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     padding: "12px 12px",
     borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.18)",
+    border: "1px solid rgba(15, 118, 110, 0.22)",
     background:
-      "linear-gradient(180deg, rgba(255,255,255,0.20), rgba(255,255,255,0.06))," +
-      "linear-gradient(90deg, rgba(127,204,163,0.95), rgba(154,201,150,0.85), rgba(184,221,194,0.95))",
-    color: "rgba(7,10,18,0.95)",
+      "linear-gradient(180deg, rgba(255,255,255,0.5), rgba(255,255,255,0.05))," +
+      "linear-gradient(90deg, #14b8a6, #0f766e, #0ea5a4)",
+    color: "#ffffff",
     cursor: "pointer",
     fontWeight: 950,
     letterSpacing: 0.4,
-    boxShadow: "0 14px 40px rgba(0,0,0,0.35)",
+    boxShadow: "0 14px 36px rgba(15, 23, 42, 0.16)",
     marginTop: 12,
   },
 
   codeBlock: {
     position: "relative",
     zIndex: 2,
-    backgroundColor: "rgba(0,0,0,0.32)",
-    color: "rgba(234,240,255,0.88)",
+    backgroundColor: "rgba(15, 23, 42, 0.04)",
+    color: "#0f172a",
     padding: 12,
     borderRadius: 12,
     fontSize: 12,
     overflowX: "auto",
     margin: 0,
-    border: "1px solid rgba(255,255,255,0.12)",
+    border: "1px solid rgba(15, 118, 110, 0.12)",
   },
 
   errorText: {

@@ -15,6 +15,7 @@ import {
   Stethoscope,
   Pill,
   AlertCircle,
+  Bell,
   X,
 } from "lucide-react";
 
@@ -46,6 +47,24 @@ export default function HomePage() {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [isSendingSOS, setIsSendingSOS] = useState(false);
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
+  const [greeting, setGreeting] = useState("Good Morning");
+
+  useEffect(() => {
+    const updateGreeting = () => {
+      const hour = new Date().getHours();
+      if (hour < 12) {
+        setGreeting("Good Morning");
+      } else if (hour < 18) {
+        setGreeting("Good Afternoon");
+      } else {
+        setGreeting("Good Evening");
+      }
+    };
+
+    updateGreeting();
+    const interval = setInterval(updateGreeting, 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   /* =======================
      AUTH USER SETUP
@@ -202,6 +221,64 @@ export default function HomePage() {
     }
 
     fetchAppointments();
+  }, [userId]);
+
+  /* =======================
+     FETCH CARE CIRCLE INVITES
+  ======================= */
+
+  useEffect(() => {
+    if (!userId) return;
+    let isActive = true;
+
+    const fetchInvites = async () => {
+      setNotificationsLoading(true);
+      setNotificationsError("");
+      try {
+        const response = await fetch("/api/care-circle/links", {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error("Unable to load invites.");
+        }
+        const data: {
+          incoming?: Array<{
+            id: string;
+            status: string;
+            displayName: string;
+            createdAt: string;
+          }>;
+        } = await response.json();
+
+        if (!isActive) return;
+        const pendingIncoming =
+          data.incoming
+            ?.filter((invite) => invite.status === "pending")
+            .map((invite) => ({
+              id: invite.id,
+              name: invite.displayName,
+              createdAt: invite.createdAt,
+            })) ?? [];
+
+        setCareCircleInvites(pendingIncoming);
+      } catch {
+        if (!isActive) return;
+        setNotificationsError("Unable to load notifications.");
+        setCareCircleInvites([]);
+      } finally {
+        if (isActive) {
+          setNotificationsLoading(false);
+        }
+      }
+    };
+
+    fetchInvites();
+    const interval = setInterval(fetchInvites, 60_000);
+
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
   }, [userId]);
 
   /* =======================
@@ -642,7 +719,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-slate-50 text-slate-900">
-      <main className="max-w-7xl mx-auto px-6 py-12">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-12">
         {/* HERO */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center mb-20">
           <div>
@@ -651,7 +728,7 @@ export default function HomePage() {
             </span>
 
             <h2
-              className="text-5xl lg:text-6xl font-bold mb-4 leading-tight"
+              className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-4 leading-tight"
               style={{
                 background: `linear-gradient(90deg, #4FD1A6, #FFBF69)`,
                 WebkitBackgroundClip: "text",
@@ -659,7 +736,7 @@ export default function HomePage() {
                 color: "transparent",
               }}
             >
-              Welcome, {name}
+              {greeting}, {name}
             </h2>
 
             <p className="text-slate-600 text-lg max-w-md">
@@ -696,21 +773,82 @@ export default function HomePage() {
                 className={`absolute -inset-6 rounded-full bg-red-500/50 blur-[52px] animate-sos-glow-slow ${
                   isSendingSOS ? "opacity-0" : "opacity-100"
                 }`}
-                aria-hidden="true"
-              />
-              <span
-                className={`absolute -inset-2 rounded-full bg-red-500/60 blur-3xl animate-sos-glow ${
-                  isSendingSOS ? "opacity-0" : "opacity-100"
+              >
+                Get Summary
+              </button>
+
+              <button
+                onClick={handleSOS}
+                disabled={isSendingSOS}
+                className={`relative w-full sm:w-auto px-10 py-5 text-lg rounded-2xl font-bold shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl disabled:hover:scale-100 ${
+                  isSendingSOS
+                    ? "bg-red-400 cursor-not-allowed"
+                    : "bg-red-500 hover:bg-red-600"
+                } text-white ${
+                  isSendingSOS ? "" : "animate-sos-pulse"
                 }`}
-                aria-hidden="true"
-              />
-              <span className="relative z-10 flex flex-col items-center justify-center">
-                <AlertCircle size={64} />
-                <span className="text-4xl font-bold mt-4">
-                  {isSendingSOS ? "Sending..." : "SOS"}
+              >
+                <span className="relative z-10 flex items-center gap-3">
+                  <AlertCircle size={22} />
+                  <span>{isSendingSOS ? "Sending..." : "SOS"}</span>
                 </span>
-              </span>
-            </button>
+              </button>
+            </div>
+          </div>
+
+          {/* Notifications */}
+          <div className="hidden lg:flex justify-end">
+            <div className="bg-white rounded-3xl shadow-lg transition border w-full max-w-sm h-[420px] flex flex-col">
+              <div className="flex items-center gap-3 px-6 py-5 border-b">
+                <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center">
+                  <Bell size={18} className="text-teal-600" />
+                </div>
+                <h3 className="font-bold text-lg">Notifications</h3>
+                {careCircleInvites.length > 0 && (
+                  <span className="ml-auto rounded-full bg-teal-100 px-2.5 py-1 text-xs font-semibold text-teal-700">
+                    {careCircleInvites.length} new
+                  </span>
+                )}
+              </div>
+              {notificationsLoading ? (
+                <div className="flex-1 flex items-center justify-center px-6 py-4 text-sm text-slate-500">
+                  Checking for updates...
+                </div>
+              ) : notificationsError ? (
+                <div className="flex-1 flex items-center justify-center px-6 py-4 text-sm text-rose-600">
+                  {notificationsError}
+                </div>
+              ) : careCircleInvites.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center px-6 py-4 text-sm text-slate-500">
+                  No notifications yet
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+                  {careCircleInvites.map((invite) => (
+                    <button
+                      key={invite.id}
+                      type="button"
+                      onClick={() => router.push("/app/carecircle?open=incoming-invites")}
+                      className="w-full rounded-2xl border border-slate-100 bg-slate-50/80 p-3 text-left transition hover:bg-white hover:shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">
+                            Care circle invite
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            From {invite.name}
+                          </p>
+                        </div>
+                        <span className="text-[11px] text-slate-400">
+                          {formatInviteTimestamp(invite.createdAt)}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

@@ -8,6 +8,17 @@ import Plasma from "@/components/Plasma";
 
 /* ========================= SIGNUP WITH PHONE ========================= */
 
+type RememberedAccount = {
+  userId: string;
+  name: string;
+  phone: string;
+  deviceToken: string;
+  refreshToken: string;
+  accessToken?: string;
+};
+
+const REMEMBERED_ACCOUNT_KEY = "vytara_remembered_account";
+
 export default function SignupPage() {
   const router = useRouter();
 
@@ -15,6 +26,7 @@ export default function SignupPage() {
   const [otpDigits, setOtpDigits] = useState<string[]>(Array(6).fill(""));
   const [step, setStep] = useState<"phone" | "otp">("phone");
   const [loading, setLoading] = useState(false);
+  const [rememberDevice, setRememberDevice] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [timer, setTimer] = useState(0);
   const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
@@ -26,6 +38,19 @@ export default function SignupPage() {
     const id = setInterval(() => setTimer((t) => t - 1), 1000);
     return () => clearInterval(id);
   }, [timer]);
+
+  const resolveDisplayName = async (userId: string, fallback: string) => {
+    const { data } = await supabase
+      .from("personal")
+      .select("display_name")
+      .eq("id", userId)
+      .maybeSingle();
+    return data?.display_name?.trim() || fallback;
+  };
+
+  const saveRememberedAccount = (account: RememberedAccount) => {
+    window.localStorage.setItem(REMEMBERED_ACCOUNT_KEY, JSON.stringify(account));
+  };
 
   /* ========================= SEND OTP ========================= */
   const sendOtp = async () => {
@@ -100,6 +125,38 @@ export default function SignupPage() {
       return;
     }
 
+    if (rememberDevice) {
+      const deviceToken =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const fallbackName = data.user.phone ?? fullPhone;
+      const displayName = await resolveDisplayName(data.user.id, fallbackName);
+      const registerResponse = await fetch("/api/auth/remember-device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "register",
+          deviceToken,
+          label: navigator.userAgent,
+          accessToken: data.session?.access_token ?? null,
+        }),
+      });
+
+      if (!registerResponse.ok) {
+        setErrorMsg("Couldn't save this device. You can still sign up.");
+      } else if (data.session?.refresh_token) {
+        saveRememberedAccount({
+          userId: data.user.id,
+          name: displayName,
+          phone,
+          deviceToken,
+          refreshToken: data.session.refresh_token,
+          accessToken: data.session.access_token,
+        });
+      }
+    }
+
     try {
       const { error: upsertError } = await supabase
         .from("personal")
@@ -158,12 +215,12 @@ export default function SignupPage() {
                 }
               }}
             >
-              {step === "phone" && (
-                <>
-                  <div className="flex mb-4">
-                    <div className="flex items-center px-4 bg-gray-100 border-2 border-r-0 border-gray-100 rounded-l-xl text-gray-600 font-semibold">
-                      +91
-                    </div>
+            {step === "phone" && (
+              <>
+                <div className="flex mb-4">
+                  <div className="flex items-center px-4 bg-gray-100 border-2 border-r-0 border-gray-100 rounded-l-xl text-gray-600 font-semibold">
+                    +91
+                  </div>
 
                     <input
                       type="tel"
@@ -173,15 +230,25 @@ export default function SignupPage() {
                         const digitsOnly = e.target.value.replace(/\D/g, "");
                         if (digitsOnly.length <= 10) setPhone(digitsOnly);
                       }}
-                      className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-r-xl focus:border-[#14b8a6] focus:bg-white focus:outline-none transition-all text-black"
-                    />
-                  </div>
+                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-r-xl focus:border-[#14b8a6] focus:bg-white focus:outline-none transition-all text-black"
+                  />
+                </div>
 
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full bg-gradient-to-br from-[#14b8a6] to-[#0f766e] text-white py-3.5 rounded-xl font-bold shadow-lg shadow-teal-900/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70"
-                  >
+                <label className="mb-4 flex items-center gap-2 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={rememberDevice}
+                    onChange={(e) => setRememberDevice(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-[#14b8a6] focus:ring-[#14b8a6]"
+                  />
+                  Save this account on this device
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-gradient-to-br from-[#14b8a6] to-[#0f766e] text-white py-3.5 rounded-xl font-bold shadow-lg shadow-teal-900/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70"
+                >
                     {loading ? "Sending OTP..." : "Request OTP"}
                   </button>
 

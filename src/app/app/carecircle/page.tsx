@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { UserPlus, Trash2, X } from 'lucide-react';
+import { ChevronRight, UserPlus, Trash2, X } from 'lucide-react';
 import { supabase } from '@/lib/createClient';
 
 type CareCircleStatus = 'pending' | 'accepted' | 'declined';
@@ -98,6 +98,8 @@ export default function CareCirclePage() {
   const [inviteContact, setInviteContact] = useState('');
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [isSavingInvite, setIsSavingInvite] = useState(false);
+  const [showMyPendingInvites, setShowMyPendingInvites] = useState(false);
+  const [showIncomingPendingInvites, setShowIncomingPendingInvites] = useState(false);
   const [isEmergencyOpen, setIsEmergencyOpen] = useState(false);
   const [isEmergencyEditing, setIsEmergencyEditing] = useState(false);
   const [emergencyCardOwner, setEmergencyCardOwner] = useState<{
@@ -109,6 +111,16 @@ export default function CareCirclePage() {
   const [emergencyError, setEmergencyError] = useState<string | null>(null);
   const [isEmergencyLoading, setIsEmergencyLoading] = useState(false);
   const [isSavingEmergency, setIsSavingEmergency] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const openTarget = params.get('open');
+    if (openTarget === 'incoming-invites') {
+      setShowIncomingPendingInvites(true);
+      setShowMyPendingInvites(false);
+    }
+  }, []);
 
   const loadEmergencyCard = useCallback(async (userId: string) => {
     setIsEmergencyLoading(true);
@@ -473,6 +485,9 @@ export default function CareCirclePage() {
     [circleData.circlesImIn]
   );
 
+  const hasMyPendingInvites = pendingInvites.length > 0;
+  const hasIncomingPendingInvites = pendingCircleInvites.length > 0;
+
   return (
     <div className="min-h-screen bg-[#f4f7f8]">
       <main className="max-w-6xl mx-auto px-6 py-10 space-y-6">
@@ -510,48 +525,69 @@ export default function CareCirclePage() {
         </section>
 
         {isEmergencyOpen && (
-          <section className="bg-white rounded-3xl border border-white/20 shadow-xl shadow-teal-900/10 p-6 md:p-8 space-y-6">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold text-slate-900">
-                  Admission-ready emergency card
-                </h2>
-                <p className="text-sm text-slate-500">
-                  Keep a ready-to-share snapshot for hospital admissions.
-                </p>
-                {emergencyCardOwnerLabel && (
-                  <p className="mt-1 text-sm text-slate-500">
-                    Viewing {emergencyCardOwnerLabel} emergency card.
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-6"
+            onClick={() => {
+              setIsEmergencyOpen(false);
+              setIsEmergencyEditing(false);
+            }}
+          >
+            <section
+              className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-3xl border border-white/20 shadow-xl shadow-teal-900/10 p-6 md:p-8 space-y-6"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-2xl font-semibold text-slate-900">
+                    Admission-ready emergency card
+                  </h2>
+                  <p className="text-sm text-slate-500">
+                    Keep a ready-to-share snapshot for hospital admissions.
                   </p>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsEmergencyEditing(false)}
-                  className={`inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold ${
-                    !isEmergencyEditing
-                      ? 'bg-teal-600 text-white'
-                      : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  Card preview
-                </button>
-                {!isViewingExternalCard && (
+                  {emergencyCardOwnerLabel && (
+                    <p className="mt-1 text-sm text-slate-500">
+                      Viewing {emergencyCardOwnerLabel} emergency card.
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setIsEmergencyEditing(true)}
+                    onClick={() => setIsEmergencyEditing(false)}
                     className={`inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold ${
-                      isEmergencyEditing
+                      !isEmergencyEditing
                         ? 'bg-teal-600 text-white'
                         : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
                     }`}
                   >
-                    Edit card
+                    Card preview
                   </button>
-                )}
+                  {!isViewingExternalCard && (
+                    <button
+                      type="button"
+                      onClick={() => setIsEmergencyEditing(true)}
+                      className={`inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold ${
+                        isEmergencyEditing
+                          ? 'bg-teal-600 text-white'
+                          : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      Edit card
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEmergencyOpen(false);
+                      setIsEmergencyEditing(false);
+                    }}
+                    className="rounded-full border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+                    aria-label="Close emergency card"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-            </div>
 
             {isEmergencyLoading ? (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-6 text-sm text-slate-500">
@@ -890,159 +926,268 @@ export default function CareCirclePage() {
                 )}
               </div>
             )}
-          </section>
+            </section>
+          </div>
         )}
 
-        <section className="bg-white rounded-3xl border border-white/20 shadow-xl shadow-teal-900/10 p-6 md:p-8">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="grid gap-6 md:grid-cols-2">
+          <section className="bg-white rounded-3xl border border-white/20 shadow-xl shadow-teal-900/10 p-6 md:p-8">
             <div>
-              <h2 className="text-2xl font-semibold text-slate-900">Members</h2>
+              <h2 className="text-2xl font-semibold text-slate-900">
+                My Care Circle
+              </h2>
               <p className="text-slate-500 text-sm">
-                Invite and remove members from your care circle.
+                Members you&apos;ve invited to support your care.
               </p>
             </div>
-          </div>
 
-          <div className="mt-6 space-y-6">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">
-                    Members in my Care Circle
-                  </h3>
-                  <p className="text-sm text-slate-500">
-                    People you&apos;ve invited to support your care journey.
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                <h4 className="text-sm font-semibold text-slate-700">
-                  Pending invites
-                </h4>
-                {pendingInvites.length === 0 ? (
-                  <p className="text-sm text-slate-500">
-                    No pending invites yet.
-                  </p>
-                ) : (
-                  <ul className="space-y-2">
-                    {pendingInvites.map((invite) => (
-                      <li
-                        key={invite.id}
-                        className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600"
-                      >
-                        <span>{invite.contact}</span>
-                        <span className="text-xs font-semibold uppercase tracking-wide text-amber-600">
-                          Pending
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              {activeMembers.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
-                  No members have accepted your invite yet.
-                </div>
-              ) : (
-                activeMembers.map((member) => (
-                  <div
-                    key={member.id}
-                    className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4"
-                  >
-                    <p className="text-base font-semibold text-slate-900">
-                      {member.name}
+            <div className="mt-6 space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMyPendingInvites(true);
+                    setShowIncomingPendingInvites(false);
+                  }}
+                  className="w-full flex items-center justify-between text-left rounded-xl px-2 py-2 -mx-2 transition hover:bg-slate-50"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Pending invites
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(member.id)}
-                      className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-white px-3 py-1.5 text-sm text-rose-600 hover:bg-rose-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Remove
-                    </button>
+                    <p className="text-xs text-slate-500">
+                      Tap to view pending invites
+                    </p>
                   </div>
-                ))
-              )}
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">
-                    Care Circles I&apos;m part of
-                  </h3>
-                  <p className="text-sm text-slate-500">
-                    Accept or decline invites from other care circle owners.
-                  </p>
-                </div>
+                  <div className="flex items-center gap-2">
+                    {hasMyPendingInvites && (
+                      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                        {pendingInvites.length}
+                      </span>
+                    )}
+                    <ChevronRight className="h-4 w-4 text-slate-400" />
+                  </div>
+                </button>
               </div>
 
-              <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                <h4 className="text-sm font-semibold text-slate-700">
-                  Pending invites
-                </h4>
-                {pendingCircleInvites.length === 0 ? (
-                  <p className="text-sm text-slate-500">
-                    No pending invites right now.
-                  </p>
-                ) : (
-                  <ul className="space-y-2">
-                    {pendingCircleInvites.map((member) => (
-                      <li
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-700">
+                    Members
+                  </h3>
+                  <span className="text-xs font-semibold text-slate-500">
+                    {activeMembers.length}
+                  </span>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {activeMembers.length === 0 ? (
+                    <p className="text-sm text-slate-500">
+                      No members have accepted your invite yet.
+                    </p>
+                  ) : (
+                    activeMembers.map((member) => (
+                      <div
                         key={member.id}
-                        className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between"
+                        className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
                       >
-                        <span>{member.name}</span>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleAcceptCircleInvite(member.id)}
-                            className="inline-flex items-center justify-center rounded-full bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700"
-                          >
-                            Accept
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeclineCircleInvite(member.id)}
-                            className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                          >
-                            Decline
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                        <span className="font-medium text-slate-900">
+                          {member.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemove(member.id)}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-white px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Remove
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="bg-white rounded-3xl border border-white/20 shadow-xl shadow-teal-900/10 p-6 md:p-8">
+            <div>
+              <h2 className="text-2xl font-semibold text-slate-900">
+                Care Circles I&apos;m In
+              </h2>
+              <p className="text-slate-500 text-sm">
+                Circles owned by others that you&apos;re part of.
+              </p>
+            </div>
+
+            <div className="mt-6 space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowIncomingPendingInvites(true);
+                    setShowMyPendingInvites(false);
+                  }}
+                  className="w-full flex items-center justify-between text-left rounded-xl px-2 py-2 -mx-2 transition hover:bg-slate-50"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Pending invites
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Tap to view pending invites
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {hasIncomingPendingInvites && (
+                      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                        {pendingCircleInvites.length}
+                      </span>
+                    )}
+                    <ChevronRight className="h-4 w-4 text-slate-400" />
+                  </div>
+                </button>
               </div>
 
-              {activeCirclesImIn.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
-                  You are not part of any other care circles yet.
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-700">
+                    Active circles
+                  </h3>
+                  <span className="text-xs font-semibold text-slate-500">
+                    {activeCirclesImIn.length}
+                  </span>
                 </div>
-              ) : (
-                activeCirclesImIn.map((member) => (
-                  <div
-                    key={member.id}
-                    className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 md:flex-row md:items-center md:justify-between"
-                  >
-                    <p className="text-base font-semibold text-slate-900">
-                      {member.name}
+                <div className="mt-3 space-y-2">
+                  {activeCirclesImIn.length === 0 ? (
+                    <p className="text-sm text-slate-500">
+                      You are not part of any other care circles yet.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => handleViewMemberEmergencyCard(member)}
-                      className="inline-flex items-center justify-center rounded-full border border-teal-200 bg-white px-3 py-1.5 text-sm font-semibold text-teal-700 hover:bg-teal-50"
-                    >
-                      View emergency card
-                    </button>
+                  ) : (
+                    activeCirclesImIn.map((member) => (
+                      <div
+                        key={member.id}
+                        className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                      >
+                        <span className="font-medium text-slate-900">
+                          {member.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleViewMemberEmergencyCard(member)}
+                          className="inline-flex items-center justify-center rounded-full border border-teal-200 bg-white px-3 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50"
+                        >
+                          View card
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      {showMyPendingInvites && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Pending invites
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Invites you&apos;ve sent
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMyPendingInvites(false)}
+                className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
+                aria-label="Close pending invites"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-4 space-y-2">
+              {pendingInvites.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  There are no pending invites.
+                </p>
+              ) : (
+                pendingInvites.map((invite) => (
+                  <div
+                    key={invite.id}
+                    className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600"
+                  >
+                    <span>{invite.contact}</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-amber-600">
+                      Pending
+                    </span>
                   </div>
                 ))
               )}
             </div>
           </div>
-        </section>
-      </main>
+        </div>
+      )}
+
+      {showIncomingPendingInvites && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Pending invites
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Invites you&apos;ve received
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowIncomingPendingInvites(false)}
+                className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
+                aria-label="Close pending invites"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-4 space-y-3">
+              {pendingCircleInvites.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  There are no pending invites.
+                </p>
+              ) : (
+                pendingCircleInvites.map((member) => (
+                  <div
+                    key={member.id}
+                    className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <span>{member.name}</span>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleAcceptCircleInvite(member.id)}
+                        className="inline-flex items-center justify-center rounded-full bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeclineCircleInvite(member.id)}
+                        className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {isInviteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">

@@ -26,7 +26,12 @@ app = Flask(__name__)
 # CORS(app)  # Enable CORS for Next.js
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:3000", "http://127.0.0.1:3000"],
+        "origins": [
+            "http://localhost:3000",              # Local development
+            "http://127.0.0.1:3000",              # Local development
+            "https://vytara-official.vercel.app",       # ← REPLACE with your actual Vercel URL
+            "https://*.vercel.app"                # Allow all Vercel preview deployments
+        ],
         "methods": ["GET", "POST", "DELETE"],
         "allow_headers": ["Content-Type"]
     }
@@ -506,7 +511,10 @@ if __name__ == "__main__":
     print("  POST /api/process-files")
     print("  POST /api/generate-summary")
     print("  GET  /api/reports/<user_id>")
+    print("  DELETE /api/clear-cache/<user_id>")
     print("  DELETE /api/clear/<user_id>")
     print("\n" + "="*60 + "\n")
     
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    # Get port from environment variable (Render provides this)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=False, host="0.0.0.0", port=port)

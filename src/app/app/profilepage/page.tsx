@@ -2,12 +2,14 @@
 
 import {
   User, Phone, Activity, Edit2,
-  Download, Droplet, Calculator, CalendarCheck,
+  Droplet, Calculator, CalendarCheck,
   ChevronDown, Users, Menu, X, Pill, History, LogOut, Calendar, Locate, Plus
 } from 'lucide-react';
 import { supabase } from '@/lib/createClient';
 import { useRef, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Silk from '@/components/Silk';
+import jsPDF from 'jspdf';
 
 export default function ProfilePageUI() {
 
@@ -120,6 +122,139 @@ export default function ProfilePageUI() {
     setPersonalDraft((prev) => ({ ...prev, ...patch }));
   };
 
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+
+    // Title
+    doc.setFontSize(20);
+    doc.text('Medical Information Report', 20, 30);
+
+    // Personal Information
+    doc.setFontSize(16);
+    doc.text('Personal Information', 20, 50);
+    doc.setFontSize(12);
+    doc.text(`Name: ${userName}`, 20, 65);
+    doc.text(`Gender: ${gender}`, 20, 75);
+    doc.text(`Date of Birth: ${dob}`, 20, 85);
+    doc.text(`Phone: ${phoneNumber}`, 20, 95);
+    doc.text(`Blood Group: ${bloodGroup}`, 20, 105);
+    doc.text(`Address: ${address}`, 20, 115);
+    doc.text(`BMI: ${bmi}`, 20, 125);
+    doc.text(`Age: ${age}`, 20, 135);
+
+    let yPosition = 155;
+
+    // Current Medical Status
+    doc.setFontSize(16);
+    doc.text('Current Medical Status', 20, yPosition);
+    yPosition += 15;
+    doc.setFontSize(12);
+
+    if (conditions.length > 0) {
+      doc.text('Current Diagnosed Conditions:', 20, yPosition);
+      yPosition += 10;
+      conditions.forEach(condition => {
+        doc.text(`- ${condition}`, 30, yPosition);
+        yPosition += 10;
+      });
+    }
+
+    if (allergy.length > 0) {
+      doc.text('Allergies:', 20, yPosition);
+      yPosition += 10;
+      allergy.forEach(allergyItem => {
+        doc.text(`- ${allergyItem}`, 30, yPosition);
+        yPosition += 10;
+      });
+    }
+
+    if (treatment.length > 0) {
+      doc.text('Ongoing Treatments:', 20, yPosition);
+      yPosition += 10;
+      treatment.forEach(treat => {
+        doc.text(`- ${treat}`, 30, yPosition);
+        yPosition += 10;
+      });
+    }
+
+    if (currentMedications.length > 0) {
+      doc.text('Current Medications:', 20, yPosition);
+      yPosition += 10;
+      currentMedications.forEach(med => {
+        doc.text(`- ${med.name} (${med.dosage}, ${med.frequency})`, 30, yPosition);
+        yPosition += 10;
+      });
+    }
+
+    // Past Medical History
+    if (yPosition > 250) {
+      doc.addPage();
+      yPosition = 30;
+    }
+
+    doc.setFontSize(16);
+    doc.text('Past Medical History', 20, yPosition);
+    yPosition += 15;
+    doc.setFontSize(12);
+
+    if (previousDiagnosedCondition.length > 0) {
+      doc.text('Previous Diagnosed Conditions:', 20, yPosition);
+      yPosition += 10;
+      previousDiagnosedCondition.forEach(condition => {
+        doc.text(`- ${condition}`, 30, yPosition);
+        yPosition += 10;
+      });
+    }
+
+    if (pastSurgeries.length > 0) {
+      doc.text('Past Surgeries:', 20, yPosition);
+      yPosition += 10;
+      pastSurgeries.forEach(surgery => {
+        doc.text(`- ${surgery.name} (${formatMonthYear(surgery.month, surgery.year)})`, 30, yPosition);
+        yPosition += 10;
+      });
+    }
+
+    if (childhoodIllness.length > 0) {
+      doc.text('Childhood Illnesses:', 20, yPosition);
+      yPosition += 10;
+      childhoodIllness.forEach(illness => {
+        doc.text(`- ${illness}`, 30, yPosition);
+        yPosition += 10;
+      });
+    }
+
+    if (longTermTreatments.length > 0) {
+      doc.text('Long Term Treatments:', 20, yPosition);
+      yPosition += 10;
+      longTermTreatments.forEach(treatment => {
+        doc.text(`- ${treatment}`, 30, yPosition);
+        yPosition += 10;
+      });
+    }
+
+    // Family Medical History
+    if (yPosition > 250) {
+      doc.addPage();
+      yPosition = 30;
+    }
+
+    doc.setFontSize(16);
+    doc.text('Family Medical History', 20, yPosition);
+    yPosition += 15;
+    doc.setFontSize(12);
+
+    if (familyMedicalHistory.length > 0) {
+      familyMedicalHistory.forEach(history => {
+        doc.text(`${history.relation}: ${history.disease}`, 20, yPosition);
+        yPosition += 10;
+      });
+    }
+
+    // Save the PDF
+    doc.save('medical-information.pdf');
+  };
+
 useEffect(() => {
     async function fetchPersonalData(){
       if (!userId) return;
@@ -213,9 +348,36 @@ useEffect(() => {
     fetchFamilyHealthData();
   }, [userId]);
 
+  const genderLabel = gender.trim();
+  const genderTone = genderLabel.toLowerCase();
+  const genderBadgeClass =
+    genderTone === "female"
+      ? "bg-pink-100 text-pink-700 border-pink-200"
+      : genderTone === "male"
+        ? "bg-blue-100 text-blue-700 border-blue-200"
+        : "bg-slate-100 text-slate-600 border-slate-200";
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#003B46] via-[#006770] via-[#00838B] to-[#00A3A9] pb-10 font-sans">
-      
+    <div className="min-h-screen pb-10 font-sans relative">
+      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: -1 }}>
+        <Silk
+          speed={5}
+          scale={1}
+          color="#2abec0"
+          noiseIntensity={1.5}
+          rotation={0}
+        />
+      </div>
+      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: -1 }}>
+        <Silk
+          speed={5}
+          scale={1}
+          color="#2abec0"
+          noiseIntensity={1.5}
+          rotation={0}
+        />
+      </div>
+
       {/* Navbar */}
       
 
@@ -228,14 +390,21 @@ useEffect(() => {
           <div className="lg:col-span-2 bg-white rounded-3xl p-6 shadow-xl shadow-teal-900/20 border border-white/20 flex flex-col h-full relative overflow-hidden">  
             
             {/* Background Decoration */}
-            <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-teal-50 to-orange-50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 opacity-80 pointer-events-none"></div>
+            <div className="absolute top-0 right-0 w-40 h-40 sm:w-64 sm:h-64 bg-gradient-to-br from-teal-50 to-orange-50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 opacity-80 pointer-events-none"></div>
 
-            {/* Edit Button */}
+            {/* Edit and Export Buttons */}
             <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
-              <button 
+              <button
+                onClick={exportToPDF}
+                className="px-3 py-2 bg-teal-600 text-white hover:bg-teal-700 rounded-full border border-teal-600 shadow-sm text-xs font-semibold uppercase tracking-wide transition"
+                title="Export as PDF"
+              >
+                Export as PDF
+              </button>
+              <button
                 onClick={openPersonalInfoModal}
                 className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition"
-              >  
+              >
                 <Edit2 className="w-4 h-4" />
               </button>
             </div>
@@ -251,16 +420,18 @@ useEffect(() => {
                     <ChevronDown className="w-3 h-3" />
                   </button>
                 </div>
-                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-teal-100 to-blue-100 flex items-center justify-center border-[4px] border-white shadow-lg shrink-0">
-                  <User className="w-10 h-10 text-teal-700/80" />
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-teal-100 to-blue-100 flex items-center justify-center border-[4px] border-white shadow-lg shrink-0">
+                  <User className="w-8 h-8 sm:w-10 sm:h-10 text-teal-700/80" />
                 </div>
               </div>
 
               <div className="flex-1 w-full pt-2">
                 <div className="mb-4">
-                  <h2 className="text-3xl font-bold text-gray-800 tracking-tight">{userName}</h2>
+                  <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 tracking-tight">{userName}</h2>
                   <div className="flex flex-wrap items-center gap-2 mt-1">
-                    <span className="px-2.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-wide rounded-full border border-blue-200">
+                    <span
+                      className={`px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-full border ${genderBadgeClass}`}
+                    >
                       {gender}
                     </span>
                   </div>
@@ -290,7 +461,7 @@ useEffect(() => {
             </div>
 
             {/* KPI Section */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               {/* KPI 1 */}
               <div className="bg-red-50 p-4 rounded-2xl border border-red-100 hover:border-red-300 transition shadow-sm group">
                 <p className="text-[10px] text-red-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
