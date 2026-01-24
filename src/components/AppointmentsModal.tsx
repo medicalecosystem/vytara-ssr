@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Trash2, Calendar as CalendarIcon, List, Clock, MapPin } from 'lucide-react';
 
 type Appointment = {
   id: string;
@@ -108,6 +108,7 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
   const [showEventModal, setShowEventModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Appointment | null>(null);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('list'); // Default to list view
   const [eventForm, setEventForm] = useState({
     title: '',
     date: '',
@@ -172,8 +173,7 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
     setShowEventModal(true);
   };
 
-  const handleEventClick = (e: React.MouseEvent, appointment: Appointment) => {
-    e.stopPropagation();
+  const handleEventClick = (appointment: Appointment) => {
     setSelectedEvent(appointment);
     setEventForm({
       title: appointment.title,
@@ -183,7 +183,6 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
     });
     setEventTime(from24HourTime(appointment.time));
 
-    // Populate additional fields
     const fields: { [key: string]: string } = {};
     const typeFields = appointmentTypeFields[appointment.type as keyof typeof appointmentTypeFields] || [];
     typeFields.forEach(field => {
@@ -270,82 +269,249 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
     return date < today;
   };
 
+  // Get upcoming appointments sorted by date and time
+  const upcomingAppointments = appointments
+    .filter(apt => {
+      const aptDate = new Date(`${apt.date}T${apt.time}`);
+      return aptDate >= new Date();
+    })
+    .sort((a, b) => {
+      const dateA = new Date(`${a.date}T${a.time}`);
+      const dateB = new Date(`${b.date}T${b.time}`);
+      return dateA.getTime() - dateB.getTime();
+    });
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+  };
+
+  const formatTime = (timeStr: string) => {
+    const parts = from24HourTime(timeStr);
+    return `${parts.hour}:${parts.minute} ${parts.period}`;
+  };
+
   const currentTypeFields = eventForm.type ? appointmentTypeFields[eventForm.type as keyof typeof appointmentTypeFields] || [] : [];
 
   return (
     <div className="fixed inset-0 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-slate-200">
-        <div className="sticky top-0 bg-white p-6 border-b border-slate-200 flex justify-between items-center rounded-t-3xl">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden border border-slate-200 flex flex-col">
+        {/* Header */}
+        <div className="bg-white p-6 border-b border-slate-200 flex justify-between items-center rounded-t-3xl">
           <h2 className="text-2xl font-bold text-slate-900">Upcoming Appointments</h2>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition text-slate-600">
-            <X className="w-6 h-6" />
-          </button>
+          <div className="flex items-center gap-3">
+            {/* View Toggle */}
+            <div className="flex bg-slate-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`px-4 py-2 rounded-md transition flex items-center gap-2 ${
+                  viewMode === 'list'
+                    ? 'bg-white text-teal-600 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <List className="w-4 h-4" />
+                <span className="text-sm font-semibold">List</span>
+              </button>
+              <button
+                onClick={() => setViewMode('calendar')}
+                className={`px-4 py-2 rounded-md transition flex items-center gap-2 ${
+                  viewMode === 'calendar'
+                    ? 'bg-white text-teal-600 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <CalendarIcon className="w-4 h-4" />
+                <span className="text-sm font-semibold">Calendar</span>
+              </button>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition text-slate-600">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
         </div>
 
-        <div className="p-6">
-          {/* Calendar Header */}
-          <div className="flex items-center justify-between mb-8">
-            <button onClick={previousMonth} className="p-2 hover:bg-teal-50 rounded-lg transition text-teal-600">
-              <ChevronLeft className="w-6 h-6" />
-            </button>
-            <h3 className="text-2xl font-bold text-slate-900">
-              {displayDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-            </h3>
-            <button onClick={nextMonth} className="p-2 hover:bg-teal-50 rounded-lg transition text-teal-600">
-              <ChevronRight className="w-6 h-6" />
-            </button>
-          </div>
-
-          {/* Calendar Grid */}
-          <div className="grid grid-cols-7 gap-2">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-              <div key={day} className="text-center text-teal-600 p-2 font-semibold text-sm">
-                {day}
-              </div>
-            ))}
-            
-            {Array.from({ length: startingDayOfWeek }).map((_, index) => (
-              <div key={`empty-${index}`} className="p-2" />
-            ))}
-            
-            {Array.from({ length: daysInMonth }).map((_, index) => {
-              const day = index + 1;
-              const dayAppointments = getAppointmentsForDate(day);
-              const past = isPastDate(day);
-              
-              return (
-                <div
-                  key={`day-${day}`}
-                  className={`p-2 border rounded-xl min-h-[90px] cursor-pointer transition ${
-                    past
-                      ? 'bg-slate-50 border-slate-200 opacity-60'
-                      : dayAppointments.length > 0
-                      ? 'bg-teal-50 border-teal-300 hover:border-teal-500 hover:bg-teal-100'
-                      : 'border-slate-200 hover:border-teal-300 hover:bg-slate-50'
-                  }`}
-                  onClick={() => {
-                    if (!past) {
-                      handleDateClick(day);
-                    }
-                  }}
-                >
-                  <div className={`text-sm font-semibold mb-1 ${past ? 'text-slate-400' : 'text-slate-900'}`}>
-                    {day}
-                  </div>
-                  {dayAppointments.map(apt => (
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {viewMode === 'list' ? (
+            /* List View */
+            <div className="space-y-4">
+              {upcomingAppointments.length === 0 ? (
+                <div className="text-center py-12">
+                  <CalendarIcon className="w-16 h-16 mx-auto text-slate-300 mb-4" />
+                  <p className="text-slate-500 text-lg font-medium">No upcoming appointments</p>
+                  <p className="text-slate-400 text-sm mt-2">Click "Add New Appointment" to schedule one</p>
+                </div>
+              ) : (
+                upcomingAppointments.map((apt) => {
+                  const typeFields = appointmentTypeFields[apt.type as keyof typeof appointmentTypeFields] || [];
+                  return (
                     <div
                       key={apt.id}
-                      onClick={(e) => handleEventClick(e, apt)}
-                      className="text-xs bg-teal-500 text-white rounded-md px-2 py-1 mt-0.5 truncate hover:bg-teal-600 transition cursor-pointer font-medium"
-                      title={`${apt.title} at ${apt.time}`}
+                      onClick={() => handleEventClick(apt)}
+                      className="bg-gradient-to-br from-teal-50 to-white border border-teal-200 rounded-2xl p-6 hover:shadow-lg transition cursor-pointer group"
                     >
-                      {apt.time} - {apt.title}
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          {/* Type Badge */}
+                          <span className="inline-block px-3 py-1 bg-teal-500 text-white text-xs font-semibold rounded-full mb-3">
+                            {apt.type}
+                          </span>
+                          
+                          {/* Title */}
+                          <h3 className="text-xl font-bold text-slate-900 mb-3 group-hover:text-teal-600 transition">
+                            {apt.title}
+                          </h3>
+                          
+                          {/* Date & Time */}
+                          <div className="flex flex-wrap gap-4 mb-4">
+                            <div className="flex items-center gap-2 text-slate-600">
+                              <CalendarIcon className="w-4 h-4 text-teal-500" />
+                              <span className="text-sm font-medium">{formatDate(apt.date)}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-slate-600">
+                              <Clock className="w-4 h-4 text-teal-500" />
+                              <span className="text-sm font-medium">{formatTime(apt.time)}</span>
+                            </div>
+                          </div>
+
+                          {/* Additional Details */}
+                          {typeFields.length > 0 && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                              {typeFields.map(field => {
+                                const value = apt[field.name];
+                                if (value) {
+                                  return (
+                                    <div key={field.name} className="flex items-start gap-2">
+                                      <MapPin className="w-4 h-4 text-teal-500 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <p className="text-xs text-slate-500 font-medium">{field.label}</p>
+                                        <p className="text-sm text-slate-700">{value}</p>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Delete Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEvent(apt);
+                            setShowDeleteConfirmation(true);
+                          }}
+                          className="p-2 hover:bg-red-100 rounded-lg transition text-red-600"
+                          title="Delete appointment"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })
+              )}
+
+              {/* Add New Button */}
+              <button
+                onClick={() => {
+                  const today = new Date();
+                  const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                  setEventForm({
+                    title: '',
+                    date: dateStr,
+                    time: '',
+                    type: '',
+                  });
+                  setEventTime({ hour: '', minute: '', period: '' });
+                  setAdditionalFields({});
+                  setSelectedEvent(null);
+                  setShowEventModal(true);
+                }}
+                className="w-full py-4 border-2 border-dashed border-teal-300 rounded-2xl text-teal-600 hover:bg-teal-50 hover:border-teal-400 transition font-semibold"
+              >
+                + Add New Appointment
+              </button>
+            </div>
+          ) : (
+            /* Calendar View */
+            <>
+              {/* Calendar Header */}
+              <div className="flex items-center justify-between mb-8">
+                <button onClick={previousMonth} className="p-2 hover:bg-teal-50 rounded-lg transition text-teal-600">
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                <h3 className="text-2xl font-bold text-slate-900">
+                  {displayDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </h3>
+                <button onClick={nextMonth} className="p-2 hover:bg-teal-50 rounded-lg transition text-teal-600">
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Calendar Grid */}
+              <div className="grid grid-cols-7 gap-2">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                  <div key={day} className="text-center text-teal-600 p-2 font-semibold text-sm">
+                    {day}
+                  </div>
+                ))}
+                
+                {Array.from({ length: startingDayOfWeek }).map((_, index) => (
+                  <div key={`empty-${index}`} className="p-2" />
+                ))}
+                
+                {Array.from({ length: daysInMonth }).map((_, index) => {
+                  const day = index + 1;
+                  const dayAppointments = getAppointmentsForDate(day);
+                  const past = isPastDate(day);
+                  
+                  return (
+                    <div
+                      key={`day-${day}`}
+                      className={`p-2 border rounded-xl min-h-[90px] cursor-pointer transition ${
+                        past
+                          ? 'bg-slate-50 border-slate-200 opacity-60'
+                          : dayAppointments.length > 0
+                          ? 'bg-teal-50 border-teal-300 hover:border-teal-500 hover:bg-teal-100'
+                          : 'border-slate-200 hover:border-teal-300 hover:bg-slate-50'
+                      }`}
+                      onClick={() => {
+                        if (!past) {
+                          handleDateClick(day);
+                        }
+                      }}
+                    >
+                      <div className={`text-sm font-semibold mb-1 ${past ? 'text-slate-400' : 'text-slate-900'}`}>
+                        {day}
+                      </div>
+                      {dayAppointments.map(apt => (
+                        <div
+                          key={apt.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEventClick(apt);
+                          }}
+                          className="text-xs bg-teal-500 text-white rounded-md px-2 py-1 mt-0.5 truncate hover:bg-teal-600 transition cursor-pointer font-medium"
+                          title={`${apt.title} at ${apt.time}`}
+                        >
+                          {apt.time} - {apt.title}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -375,26 +541,30 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
 
               <form onSubmit={handleSaveEvent} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
               <div>
-                <label className="block text-slate-700 mb-2 font-semibold text-sm">Event Name</label>
+                <label htmlFor="event-name" className="block text-slate-700 mb-2 font-semibold text-sm">Event Name</label>
                 <input
+                  id="event-name"
+                  name="eventName"
                   type="text"
                   value={eventForm.title}
                   onChange={(e) => setEventForm({ ...eventForm, title: e.target.value })}
                   className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none"
                   placeholder="e.g., Doctor Visit"
+                  autoComplete="off"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-slate-700 mb-2 font-semibold text-sm">Event Date</label>
+                <label htmlFor="event-date" className="block text-slate-700 mb-2 font-semibold text-sm">Event Date</label>
                 <input
+                  id="event-date"
+                  name="eventDate"
                   type="date"
                   value={eventForm.date}
                   onChange={(e) => setEventForm({ ...eventForm, date: e.target.value })}
-                  className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none bg-slate-50"
+                  className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none bg-white"
                   required
-                  readOnly
                 />
               </div>
 
@@ -459,8 +629,10 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
               </div>
 
               <div>
-                <label className="block text-slate-700 mb-2 font-semibold text-sm">Type</label>
+                <label htmlFor="event-type" className="block text-slate-700 mb-2 font-semibold text-sm">Type</label>
                 <select
+                  id="event-type"
+                  name="eventType"
                   value={eventForm.type}
                   onChange={(e) => {
                     setEventForm({ ...eventForm, type: e.target.value });
@@ -485,22 +657,28 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
                   <h4 className="text-slate-900 font-semibold mb-3 text-sm">Additional Details</h4>
                   {currentTypeFields.map(field => (
                     <div key={field.name} className="mb-3">
-                      <label className="block text-slate-700 text-xs mb-1 font-medium">{field.label}</label>
+                      <label htmlFor={`field-${field.name}`} className="block text-slate-700 text-xs mb-1 font-medium">{field.label}</label>
                       {field.type === 'textarea' ? (
                         <textarea
+                          id={`field-${field.name}`}
+                          name={field.name}
                           value={additionalFields[field.name] || ''}
                           onChange={(e) => setAdditionalFields({ ...additionalFields, [field.name]: e.target.value })}
                           className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none text-sm"
                           placeholder={field.placeholder}
+                          autoComplete="off"
                           rows={3}
                         />
                       ) : (
                         <input
+                          id={`field-${field.name}`}
+                          name={field.name}
                           type={field.type}
                           value={additionalFields[field.name] || ''}
                           onChange={(e) => setAdditionalFields({ ...additionalFields, [field.name]: e.target.value })}
                           className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none text-sm"
                           placeholder={field.placeholder}
+                          autoComplete="off"
                         />
                       )}
                     </div>
