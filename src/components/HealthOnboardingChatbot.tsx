@@ -52,7 +52,7 @@ interface QuestionConfig {
 }
 
 const QUESTIONS: QuestionConfig[] = [
-  { key: "displayName", question: "What should we call you?", inputType: "text", required: true, placeholder: "e.g., Aisha" },
+  { key: "displayName", question: "What should we call you?", inputType: "text", required: true, placeholder: "Eg:John Doe" },
   { key: "dateOfBirth", question: "What is your date of birth?", inputType: "date", required: true },
   {
     key: "bloodGroup",

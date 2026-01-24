@@ -2,7 +2,7 @@
 
 import {
   User, Phone, Activity, Edit2,
-  Download, Droplet, Calculator, CalendarCheck,
+  Droplet, Calculator, CalendarCheck,
   ChevronDown, Users, Menu, X, Pill, History, LogOut, Calendar, Locate, Plus
 } from 'lucide-react';
 import { supabase } from '@/lib/createClient';
@@ -348,6 +348,15 @@ useEffect(() => {
     fetchFamilyHealthData();
   }, [userId]);
 
+  const genderLabel = gender.trim();
+  const genderTone = genderLabel.toLowerCase();
+  const genderBadgeClass =
+    genderTone === "female"
+      ? "bg-pink-100 text-pink-700 border-pink-200"
+      : genderTone === "male"
+        ? "bg-blue-100 text-blue-700 border-blue-200"
+        : "bg-slate-100 text-slate-600 border-slate-200";
+
   return (
     <div className="min-h-screen pb-10 font-sans relative">
       <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: -1 }}>
@@ -387,10 +396,10 @@ useEffect(() => {
             <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
               <button
                 onClick={exportToPDF}
-                className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition"
+                className="px-3 py-2 bg-teal-600 text-white hover:bg-teal-700 rounded-full border border-teal-600 shadow-sm text-xs font-semibold uppercase tracking-wide transition"
                 title="Export as PDF"
               >
-                <Download className="w-4 h-4" />
+                Export as PDF
               </button>
               <button
                 onClick={openPersonalInfoModal}
@@ -420,7 +429,9 @@ useEffect(() => {
                 <div className="mb-4">
                   <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 tracking-tight">{userName}</h2>
                   <div className="flex flex-wrap items-center gap-2 mt-1">
-                    <span className="px-2.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-wide rounded-full border border-blue-200">
+                    <span
+                      className={`px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-full border ${genderBadgeClass}`}
+                    >
                       {gender}
                     </span>
                   </div>
@@ -1497,4 +1508,3 @@ useEffect(() => {
     </div>
   );
 }
-
