@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ChevronRight, UserPlus, Trash2, X } from 'lucide-react';
 import { supabase } from '@/lib/createClient';
 
@@ -86,6 +87,7 @@ const emptyEmergencyCard: EmergencyCardData = {
 };
 
 export default function CareCirclePage() {
+  const searchParams = useSearchParams();
   const [circleData, setCircleData] = useState<CareCircleData>({
     circleName: 'Loading…',
     ownerName: '',
@@ -111,6 +113,14 @@ export default function CareCirclePage() {
   const [emergencyError, setEmergencyError] = useState<string | null>(null);
   const [isEmergencyLoading, setIsEmergencyLoading] = useState(false);
   const [isSavingEmergency, setIsSavingEmergency] = useState(false);
+
+  useEffect(() => {
+    const openTarget = searchParams.get('open');
+    if (openTarget === 'incoming-invites') {
+      setShowIncomingPendingInvites(true);
+      setShowMyPendingInvites(false);
+    }
+  }, [searchParams]);
 
   const loadEmergencyCard = useCallback(async (userId: string) => {
     setIsEmergencyLoading(true);

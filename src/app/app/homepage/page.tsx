@@ -796,6 +796,27 @@ type Medication = {
   frequency: string;
 };
 
+type CareCircleInvite = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
+const formatInviteTimestamp = (iso: string) => {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMinutes = Math.floor(diffMs / 60000);
+  if (diffMinutes < 1) return "Just now";
+  if (diffMinutes < 60) return `${diffMinutes}m`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d`;
+  return date.toLocaleDateString();
+};
+
 /* =======================
    PAGE COMPONENT
 ======================= */
@@ -812,6 +833,9 @@ export default function HomePage() {
   const [medicalTeam, setMedicalTeam] = useState<Doctor[]>([]);
   const [medications, setMedications] = useState<Medication[]>([]);
   const [isSendingSOS, setIsSendingSOS] = useState(false);
+  const [careCircleInvites, setCareCircleInvites] = useState<CareCircleInvite[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState("");
 
   // NEW: State for medical summary modal
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
@@ -989,6 +1013,64 @@ export default function HomePage() {
     }
 
     fetchAppointments();
+  }, [userId]);
+
+  /* =======================
+     FETCH CARE CIRCLE INVITES
+  ======================= */
+
+  useEffect(() => {
+    if (!userId) return;
+    let isActive = true;
+
+    const fetchInvites = async () => {
+      setNotificationsLoading(true);
+      setNotificationsError("");
+      try {
+        const response = await fetch("/api/care-circle/links", {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error("Unable to load invites.");
+        }
+        const data: {
+          incoming?: Array<{
+            id: string;
+            status: string;
+            displayName: string;
+            createdAt: string;
+          }>;
+        } = await response.json();
+
+        if (!isActive) return;
+        const pendingIncoming =
+          data.incoming
+            ?.filter((invite) => invite.status === "pending")
+            .map((invite) => ({
+              id: invite.id,
+              name: invite.displayName,
+              createdAt: invite.createdAt,
+            })) ?? [];
+
+        setCareCircleInvites(pendingIncoming);
+      } catch {
+        if (!isActive) return;
+        setNotificationsError("Unable to load notifications.");
+        setCareCircleInvites([]);
+      } finally {
+        if (isActive) {
+          setNotificationsLoading(false);
+        }
+      }
+    };
+
+    fetchInvites();
+    const interval = setInterval(fetchInvites, 60_000);
+
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
   }, [userId]);
 
   /* =======================
@@ -1429,10 +1511,50 @@ export default function HomePage() {
                   <Bell size={18} className="text-teal-600" />
                 </div>
                 <h3 className="font-bold text-lg">Notifications</h3>
+                {careCircleInvites.length > 0 && (
+                  <span className="ml-auto rounded-full bg-teal-100 px-2.5 py-1 text-xs font-semibold text-teal-700">
+                    {careCircleInvites.length} new
+                  </span>
+                )}
               </div>
-              <div className="flex-1 flex items-center justify-center px-6 py-4 text-sm text-slate-500">
-                No notifications yet
-              </div>
+              {notificationsLoading ? (
+                <div className="flex-1 flex items-center justify-center px-6 py-4 text-sm text-slate-500">
+                  Checking for updates...
+                </div>
+              ) : notificationsError ? (
+                <div className="flex-1 flex items-center justify-center px-6 py-4 text-sm text-rose-600">
+                  {notificationsError}
+                </div>
+              ) : careCircleInvites.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center px-6 py-4 text-sm text-slate-500">
+                  No notifications yet
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+                  {careCircleInvites.map((invite) => (
+                    <button
+                      key={invite.id}
+                      type="button"
+                      onClick={() => router.push("/app/carecircle?open=incoming-invites")}
+                      className="w-full rounded-2xl border border-slate-100 bg-slate-50/80 p-3 text-left transition hover:bg-white hover:shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">
+                            Care circle invite
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            From {invite.name}
+                          </p>
+                        </div>
+                        <span className="text-[11px] text-slate-400">
+                          {formatInviteTimestamp(invite.createdAt)}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
