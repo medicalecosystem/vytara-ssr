@@ -299,7 +299,7 @@ export default function SignUpPage() {
       if (error) throw error;
 
       alert("Sign Up Succesful");
-      router.push('/confirmemail');
+      router.push('/app/health-onboarding');
     } catch {
       alert("Sign Up Failed");
       console.error
@@ -310,10 +310,14 @@ export default function SignUpPage() {
 
   const signInWithGoogle = async(e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
+      const redirectTo = `${window.location.origin}/auth/callback?next=/app/health-onboarding`;
       const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: "http://vytara-official.vercel.app/auth/callback",
+        redirectTo,
+        queryParams: {
+          prompt: "select_account",
+        },
       },
     });
   

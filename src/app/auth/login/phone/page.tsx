@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Plasma from "@/components/Plasma";
+import { supabase } from "@/lib/createClient";
 
 /* ========================= LOGIN WITH PHONE ========================= */
 
@@ -12,11 +13,12 @@ export default function LoginWithPhone() {
 
   // Store ONLY 10 digits here (India). We prepend +91 when calling API.
   const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
+  const [otpDigits, setOtpDigits] = useState<string[]>(Array(6).fill(""));
   const [step, setStep] = useState<"phone" | "otp">("phone");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [timer, setTimer] = useState(0);
+  const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
 
   useEffect(() => {
     if (timer <= 0) return;
@@ -36,16 +38,35 @@ export default function LoginWithPhone() {
 
     setLoading(true);
 
-    const res = await fetch("/api/send-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: formattedPhone }),
+    const { data: existingUser, error: lookupError } = await supabase
+      .from("credentials")
+      .select("id")
+      .eq("phone", formattedPhone)
+      .maybeSingle();
+
+    if (lookupError) {
+      console.warn("Phone lookup failed; proceeding with OTP.", lookupError);
+    } else if (!existingUser) {
+      setLoading(false);
+      setError("User not found. Please create an account first.");
+      return;
+    }
+
+    // Use Supabase OTP directly (replacing the old /api/send-otp route) so a session is created for DB access.
+    const { error } = await supabase.auth.signInWithOtp({
+      phone: formattedPhone,
+      options: { shouldCreateUser: false },
     });
 
     setLoading(false);
 
-    if (!res.ok) {
-      setError("Failed to send OTP. Please check the number and try again.");
+    if (error) {
+      const lowerMessage = error.message.toLowerCase();
+      if (lowerMessage.includes("signups not allowed")) {
+        setError("User not found. Please create an account first.");
+      } else {
+        setError(error.message || "Failed to send OTP. Please check the number and try again.");
+      }
       return;
     }
 
@@ -56,23 +77,24 @@ export default function LoginWithPhone() {
   const verifyOtp = async () => {
     setError("");
 
-    if (otp.trim().length === 0) {
-      setError("Please enter the OTP.");
+    const otp = otpDigits.join("");
+    if (otp.length !== 6) {
+      setError("Please enter the 6-digit OTP.");
       return;
     }
 
     setLoading(true);
 
-    const res = await fetch("/api/verify-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: formattedPhone, code: otp }),
+    const { data, error } = await supabase.auth.verifyOtp({
+      phone: formattedPhone,
+      token: otp,
+      type: "sms",
     });
 
     setLoading(false);
 
-    if (!res.ok) {
-      setError("Invalid OTP. Please try again.");
+    if (error || !data?.user) {
+      setError(error?.message || "Invalid OTP. Please try again.");
       return;
     }
 
@@ -139,14 +161,57 @@ export default function LoginWithPhone() {
 
             {step === "otp" && (
               <>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="Enter OTP"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  className="w-full px-4 py-3 mb-4 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-[#14b8a6] focus:bg-white focus:outline-none transition-all text-black"
-                />
+                <div
+                  className="flex items-center justify-between gap-2 mb-4"
+                  onPaste={(e) => {
+                    const text = e.clipboardData
+                      .getData("text")
+                      .replace(/\D/g, "")
+                      .slice(0, 6);
+                    if (!text) return;
+                    e.preventDefault();
+                    const next = Array(6).fill("");
+                    text.split("").forEach((char, idx) => {
+                      next[idx] = char;
+                    });
+                    setOtpDigits(next);
+                    otpRefs.current[Math.min(text.length, 6) - 1]?.focus();
+                  }}
+                >
+                  {otpDigits.map((digit, idx) => (
+                    <input
+                      key={idx}
+                      ref={(el) => {
+                        otpRefs.current[idx] = el;
+                      }}
+                      type="text"
+                      inputMode="numeric"
+                      value={digit}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, "").slice(-1);
+                        const next = [...otpDigits];
+                        next[idx] = value;
+                        setOtpDigits(next);
+                        if (value && idx < 5) {
+                          otpRefs.current[idx + 1]?.focus();
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Backspace" && !otpDigits[idx] && idx > 0) {
+                          otpRefs.current[idx - 1]?.focus();
+                        }
+                        if (e.key === "ArrowLeft" && idx > 0) {
+                          otpRefs.current[idx - 1]?.focus();
+                        }
+                        if (e.key === "ArrowRight" && idx < 5) {
+                          otpRefs.current[idx + 1]?.focus();
+                        }
+                      }}
+                      className="w-11 h-12 text-center text-lg font-semibold bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-[#14b8a6] focus:bg-white focus:outline-none transition-all text-black"
+                      aria-label={`OTP digit ${idx + 1}`}
+                    />
+                  ))}
+                </div>
 
                 <button
                   onClick={verifyOtp}
@@ -167,7 +232,7 @@ export default function LoginWithPhone() {
                 <button
                   onClick={() => {
                     setStep("phone");
-                    setOtp("");
+                    setOtpDigits(Array(6).fill(""));
                     setError("");
                   }}
                   className="mt-2 w-full text-sm text-gray-400 hover:text-gray-600 transition-colors"

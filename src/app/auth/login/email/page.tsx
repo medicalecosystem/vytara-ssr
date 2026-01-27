@@ -41,13 +41,9 @@ export default function LoginWithEmail() {
       return;
     }
 
-    // Optional: if you want to force email verification before allowing email login:
-    // If you already turned email confirmation ON, this is useful.
     if (!data.user.email_confirmed_at) {
-      // Resend confirmation email (best-effort)
-      await supabase.auth.resend({ type: "signup", email });
       await supabase.auth.signOut();
-      setErrorMsg("Please verify your email first. We’ve resent the verification link.");
+      setErrorMsg("Please verify your email before signing in.");
       return;
     }
 
