@@ -5,11 +5,15 @@ import { usePathname, useSearchParams } from "next/navigation";
 import Script from "next/script";
 
 const refreshWeglot = () => {
-  // Weglot exposes refresh in the browser runtime.
-  // We keep this defensive to avoid runtime errors if it isn't ready yet.
-  // @ts-expect-error - Weglot is injected by the script
-  const weglot = window.Weglot;
-  weglot?.refresh?.();
+  // Weglot can be slightly behind route renders, so we refresh a few times.
+  const delays = [0, 150, 600];
+  delays.forEach((delay) => {
+    window.setTimeout(() => {
+      // @ts-expect-error - Weglot is injected by the script
+      const weglot = window.Weglot;
+      weglot?.refresh?.();
+    }, delay);
+  });
 };
 
 function WeglotSync({ enabled }: { enabled: boolean }) {
@@ -20,9 +24,7 @@ function WeglotSync({ enabled }: { enabled: boolean }) {
   useEffect(() => {
     if (!enabled) return;
     // Let the new route paint before asking Weglot to translate.
-    const id = window.setTimeout(() => {
-      refreshWeglot();
-    }, 0);
+    const id = window.setTimeout(() => refreshWeglot(), 0);
     return () => window.clearTimeout(id);
   }, [enabled, pathname, searchParams]);
 
