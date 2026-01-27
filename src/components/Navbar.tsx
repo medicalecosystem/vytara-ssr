@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePathname } from 'next/navigation';
 import { supabase } from '@/lib/createClient';
+import { href } from 'react-router-dom';
 
 export default function Navbar() {
   const router = useRouter();
@@ -15,6 +16,7 @@ export default function Navbar() {
     { label: 'Profile', href: '/app/profilepage', icon: User },
     { label: 'Vault', href: '/app/vaultpage', icon: Folder },
     { label: 'Care Circle', href: '/app/carecircle', icon: Users },
+    { label: 'Family', href: '/app/family', icon: Users},
   ];
 
   useEffect(() => {
