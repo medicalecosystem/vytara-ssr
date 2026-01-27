@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import Script from "next/script";
 
@@ -69,7 +69,9 @@ export default function WeglotProvider() {
           window.setTimeout(() => refreshWeglot(), 0);
         }}
       />
-      <WeglotSync enabled={isReady} />
+      <Suspense fallback={null}>
+        <WeglotSync enabled={isReady} />
+      </Suspense>
     </>
   );
 }
