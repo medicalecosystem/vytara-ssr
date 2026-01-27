@@ -11,6 +11,28 @@ import { useRouter } from 'next/navigation';
 import Silk from '@/components/Silk';
 import jsPDF from 'jspdf';
 
+type CacheEntry<T> = { ts: number; value: T };
+const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
+const profileCacheKey = (userId: string, key: string) => `vytara:profile:${userId}:${key}`;
+const readProfileCache = <T,>(userId: string, key: string): T | null => {
+  if (!userId || typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(profileCacheKey(userId, key));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CacheEntry<T>;
+    if (!parsed?.ts) return null;
+    if (Date.now() - parsed.ts > PROFILE_CACHE_TTL_MS) return null;
+    return parsed.value ?? null;
+  } catch {
+    return null;
+  }
+};
+const writeProfileCache = <T,>(userId: string, key: string, value: T) => {
+  if (!userId || typeof window === 'undefined') return;
+  const entry: CacheEntry<T> = { ts: Date.now(), value };
+  window.localStorage.setItem(profileCacheKey(userId, key), JSON.stringify(entry));
+};
+
 export default function ProfilePageUI() {
 
   const router = useRouter();
@@ -19,17 +41,6 @@ export default function ProfilePageUI() {
   const [isPastMedicalModalOpen, setIsPastMedicalModalOpen] = useState(false);
   const [isFamilyHistoryModalOpen, setIsFamilyHistoryModalOpen] = useState(false);
   const [userId, setUserId] = useState("");
-
-  useEffect(() => {
-    async function getUser(){
-      const { data } = await supabase.auth.getUser();
-      if(data.user){
-        setUserId(data.user.id)
-        setPhoneNumber(data.user.phone ?? "")
-      }
-    }
-    getUser();
-  }, [])
 
   {/* PERSONAL DATA */}
   const [userName, setUserName] = useState("");
@@ -56,6 +67,32 @@ export default function ProfilePageUI() {
       : normalizedGender === 'female'
         ? 'bg-pink-100 text-pink-700 border-pink-200'
         : 'bg-slate-100 text-slate-700 border-slate-200';
+
+  useEffect(() => {
+    const init = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const nextUserId = session?.user?.id ?? '';
+      setUserId((prev) => (prev === nextUserId ? prev : nextUserId));
+      const phoneFromSession = session?.user?.phone ?? '';
+      if (phoneFromSession) {
+        setPhoneNumber((prev) => prev || phoneFromSession);
+      }
+    };
+    init();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const nextUserId = session?.user?.id ?? '';
+      setUserId((prev) => (prev === nextUserId ? prev : nextUserId));
+      const phoneFromSession = session?.user?.phone ?? '';
+      if (phoneFromSession) {
+        setPhoneNumber((prev) => prev || phoneFromSession);
+      }
+    });
+
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
   {/* MEDICAL DATA */}
   const [conditions, setConditions] = useState<string[]>([]);
@@ -266,6 +303,20 @@ export default function ProfilePageUI() {
 useEffect(() => {
     async function fetchPersonalData(){
       if (!userId) return;
+      const cachedPersonal = readProfileCache<{
+        display_name: string | null;
+        phone: string | null;
+        gender: string | null;
+        address: string | null;
+      }>(userId, 'personal');
+      if (cachedPersonal) {
+        if (cachedPersonal.display_name) {
+          setUserName(cachedPersonal.display_name);
+        }
+        setPhoneNumber((prev) => cachedPersonal.phone || prev || '');
+        setGender((prev) => cachedPersonal.gender || prev || '');
+        setAddress((prev) => cachedPersonal.address || prev || '');
+      }
       const { data, error } = await supabase
         .from("personal")
         .select("display_name, phone, gender, address")
@@ -284,6 +335,12 @@ useEffect(() => {
         setPhoneNumber((prev) => data.phone || prev || "");
         setGender((prev) => data.gender || prev || "");
         setAddress((prev) => data.address || prev || "");
+        writeProfileCache(userId, 'personal', {
+          display_name: data.display_name ?? null,
+          phone: data.phone ?? null,
+          gender: data.gender ?? null,
+          address: data.address ?? null,
+        });
       }
     }
     fetchPersonalData();
@@ -294,6 +351,42 @@ useEffect(() => {
   useEffect(() => {
     async function fetchHealthData(){
       if (!userId) return;
+      const cachedHealth = readProfileCache<{
+        date_of_birth: string | null;
+        blood_group: string | null;
+        current_diagnosed_condition: string[] | null;
+        allergies: string[] | null;
+        ongoing_treatments: string[] | null;
+        current_medication: Medication[] | null;
+        bmi: number | string | null;
+        age: number | string | null;
+        previous_diagnosed_conditions: string[] | null;
+        past_surgeries: PastSurgery[] | null;
+        childhood_illness: string[] | null;
+        long_term_treatments: string[] | null;
+      }>(userId, 'health');
+      if (cachedHealth) {
+        setConditions(cachedHealth.current_diagnosed_condition || []);
+        setAllergy(cachedHealth.allergies || []);
+        setTreatment(cachedHealth.ongoing_treatments || []);
+        setCurrentMedications(cachedHealth.current_medication || []);
+        setBmi(
+          cachedHealth.bmi !== null && cachedHealth.bmi !== undefined
+            ? String(cachedHealth.bmi)
+            : ''
+        );
+        setAge(
+          cachedHealth.age !== null && cachedHealth.age !== undefined
+            ? String(cachedHealth.age)
+            : ''
+        );
+        setBloodGroup(cachedHealth.blood_group || '');
+        setDob(cachedHealth.date_of_birth || '');
+        setPreviousDiagnosedCondition(cachedHealth.previous_diagnosed_conditions || []);
+        setPastSurgeries(cachedHealth.past_surgeries || []);
+        setChildhoodIllness(cachedHealth.childhood_illness || []);
+        setLongTermTreatments(cachedHealth.long_term_treatments || []);
+      }
       const { data, error } = await supabase
         .from("health")
         .select(`
@@ -332,6 +425,20 @@ useEffect(() => {
         setPastSurgeries((data.past_surgeries as PastSurgery[]) || []);
         setChildhoodIllness((data.childhood_illness as string[]) || []);
         setLongTermTreatments((data.long_term_treatments as string[]) || []);
+        writeProfileCache(userId, 'health', {
+          date_of_birth: data.date_of_birth ?? null,
+          blood_group: data.blood_group ?? null,
+          current_diagnosed_condition: (data.current_diagnosed_condition as string[]) || [],
+          allergies: (data.allergies as string[]) || [],
+          ongoing_treatments: (data.ongoing_treatments as string[]) || [],
+          current_medication: (data.current_medication as Medication[]) || [],
+          bmi: data.bmi ?? null,
+          age: data.age ?? null,
+          previous_diagnosed_conditions: (data.previous_diagnosed_conditions as string[]) || [],
+          past_surgeries: (data.past_surgeries as PastSurgery[]) || [],
+          childhood_illness: (data.childhood_illness as string[]) || [],
+          long_term_treatments: (data.long_term_treatments as string[]) || [],
+        });
       }
     }
     fetchHealthData();
@@ -339,6 +446,11 @@ useEffect(() => {
 
   useEffect(() => {
     async function fetchFamilyHealthData() {
+      if (!userId) return;
+      const cachedFamilyHistory = readProfileCache<string[]>(userId, 'family_history');
+      if (cachedFamilyHistory) {
+        setFamilyMedicalHistory(cachedFamilyHistory);
+      }
       const { data, error } = await supabase
         .from("personal")
         .select("family_history")
@@ -351,6 +463,7 @@ useEffect(() => {
 
       if (data && data.family_history) {
         setFamilyMedicalHistory(data.family_history.familyMedicalHistory || []);
+        writeProfileCache(userId, 'family_history', data.family_history.familyMedicalHistory || []);
       }
     }
     fetchFamilyHealthData();

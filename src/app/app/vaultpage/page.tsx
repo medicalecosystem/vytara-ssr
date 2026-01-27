@@ -493,6 +493,28 @@ type MedicalFile = {
   folder: MedicalFolder;
 };
 
+type CacheEntry<T> = { ts: number; value: T };
+const VAULT_CACHE_TTL_MS = 5 * 60 * 1000;
+const vaultCacheKey = (userId: string, key: string) => `vytara:vault:${userId}:${key}`;
+const readVaultCache = <T,>(userId: string, key: string): T | null => {
+  if (!userId || typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(vaultCacheKey(userId, key));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CacheEntry<T>;
+    if (!parsed?.ts) return null;
+    if (Date.now() - parsed.ts > VAULT_CACHE_TTL_MS) return null;
+    return parsed.value ?? null;
+  } catch {
+    return null;
+  }
+};
+const writeVaultCache = <T,>(userId: string, key: string, value: T) => {
+  if (!userId || typeof window === 'undefined') return;
+  const entry: CacheEntry<T> = { ts: Date.now(), value };
+  window.localStorage.setItem(vaultCacheKey(userId, key), JSON.stringify(entry));
+};
+
 export default function VaultPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [files, setFiles] = useState<MedicalFile[]>([]);
@@ -536,12 +558,27 @@ export default function VaultPage() {
   /* ---------------- AUTH + FETCH ---------------- */
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data }) => {
-      if (!data.user) return;
-      setUserId(data.user.id);
-      fetchFiles(data.user.id, selectedCategory);
-      fetchCounts(data.user.id);
+    const init = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const nextUserId = session?.user?.id ?? null;
+      if (!nextUserId) return;
+      setUserId((prev) => (prev === nextUserId ? prev : nextUserId));
+      fetchFiles(nextUserId, selectedCategory);
+      fetchCounts(nextUserId);
+    };
+    init();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const nextUserId = session?.user?.id ?? null;
+      if (!nextUserId) return;
+      setUserId((prev) => (prev === nextUserId ? prev : nextUserId));
+      fetchFiles(nextUserId, selectedCategory);
+      fetchCounts(nextUserId);
     });
+
+    return () => sub.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -582,7 +619,13 @@ export default function VaultPage() {
   }, [filterMenuOpen]);
 
   const fetchFiles = async (uid: string, category: Category) => {
-    setLoading(true);
+    const cacheKey = `files:${category}`;
+    const cachedFiles = readVaultCache<MedicalFile[]>(uid, cacheKey);
+    const hadCache = Boolean(cachedFiles);
+    if (cachedFiles) {
+      setFiles(cachedFiles);
+    }
+    setLoading(!hadCache);
 
     const folderMap: Record<Category, MedicalFolder[]> = {
       all: ['reports', 'prescriptions', 'insurance', 'bills'],
@@ -607,18 +650,22 @@ export default function VaultPage() {
       }
     }
 
-    setFiles(
-      results.sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() -
-          new Date(a.created_at).getTime()
-      )
+    const sortedResults = results.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() -
+        new Date(a.created_at).getTime()
     );
+    setFiles(sortedResults);
+    writeVaultCache(uid, cacheKey, sortedResults);
 
     setLoading(false);
   };
 
   const fetchCounts = async (uid: string) => {
+    const cachedCounts = readVaultCache<Record<MedicalFolder, number>>(uid, 'counts');
+    if (cachedCounts) {
+      setCounts(cachedCounts);
+    }
     const folders: MedicalFolder[] = [
       'reports',
       'prescriptions',
@@ -638,6 +685,7 @@ export default function VaultPage() {
     }
 
     setCounts(nextCounts);
+    writeVaultCache(uid, 'counts', nextCounts);
   };
 
   /* ---------------- UPLOAD ---------------- */

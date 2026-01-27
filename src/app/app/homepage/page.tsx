@@ -30,6 +30,34 @@ type Appointment = {
   type: string;
 };
 
+type CacheEntry<T> = {
+  ts: number;
+  value: T;
+};
+
+const HOME_CACHE_TTL_MS = 5 * 60 * 1000;
+const homeCacheKey = (userId: string, key: string) => `vytara:home:${userId}:${key}`;
+
+const readHomeCache = <T,>(userId: string, key: string): T | null => {
+  if (!userId || typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(homeCacheKey(userId, key));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CacheEntry<T>;
+    if (!parsed?.ts) return null;
+    if (Date.now() - parsed.ts > HOME_CACHE_TTL_MS) return null;
+    return parsed.value ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const writeHomeCache = <T,>(userId: string, key: string, value: T) => {
+  if (!userId || typeof window === "undefined") return;
+  const entry: CacheEntry<T> = { ts: Date.now(), value };
+  window.localStorage.setItem(homeCacheKey(userId, key), JSON.stringify(entry));
+};
+
 /* =======================
    PAGE COMPONENT
 ======================= */
@@ -70,13 +98,17 @@ export default function HomePage() {
 
   useEffect(() => {
     const init = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user?.id) setUserId(data.user.id);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const nextUserId = session?.user?.id ?? "";
+      setUserId((prev) => (prev === nextUserId ? prev : nextUserId));
     };
     init();
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserId(session?.user?.id ?? "");
+      const nextUserId = session?.user?.id ?? "";
+      setUserId((prev) => (prev === nextUserId ? prev : nextUserId));
     });
 
     return () => sub.subscription.unsubscribe();
@@ -89,6 +121,11 @@ export default function HomePage() {
   useEffect(() => {
     async function fetchProfileData() {
       if (userId) {
+        const cachedDisplayName = readHomeCache<string>(userId, "display_name");
+        if (cachedDisplayName) {
+          setName(cachedDisplayName);
+        }
+
         const { data, error } = await supabase
           .from("personal")
           .select("display_name")
@@ -97,6 +134,7 @@ export default function HomePage() {
 
         if (data?.display_name) {
           setName(data.display_name || "");
+          writeHomeCache(userId, "display_name", data.display_name || "");
         }
 
         if (error) {
@@ -115,6 +153,11 @@ export default function HomePage() {
     if (!userId) return;
 
     const fetchEmergencyContacts = async () => {
+      const cachedContacts = readHomeCache<EmergencyContact[]>(userId, "emergency_contacts");
+      if (cachedContacts) {
+        setEmergencyContacts(cachedContacts);
+      }
+
       const { data, error } = await supabase
         .from("user_emergency_contacts")
         .select("contacts")
@@ -132,6 +175,7 @@ export default function HomePage() {
       }
 
       setEmergencyContacts(data?.contacts || []);
+      writeHomeCache(userId, "emergency_contacts", data?.contacts || []);
     };
 
     fetchEmergencyContacts();
@@ -145,6 +189,11 @@ export default function HomePage() {
     if (!userId) return;
 
     async function fetchMedicalTeam() {
+      const cachedTeam = readHomeCache<Doctor[]>(userId, "medical_team");
+      if (cachedTeam) {
+        setMedicalTeam(cachedTeam);
+      }
+
       const { data, error } = await supabase
         .from("user_medical_team")
         .select("doctors")
@@ -160,6 +209,7 @@ export default function HomePage() {
       }
 
       setMedicalTeam(data?.doctors || []);
+      writeHomeCache(userId, "medical_team", data?.doctors || []);
     }
 
     fetchMedicalTeam();
@@ -173,6 +223,11 @@ export default function HomePage() {
     if (!userId) return;
 
     async function fetchMedications() {
+      const cachedMeds = readHomeCache<Medication[]>(userId, "medications");
+      if (cachedMeds) {
+        setMedications(cachedMeds);
+      }
+
       const { data, error } = await supabase
         .from("user_medications")
         .select("medications")
@@ -188,6 +243,7 @@ export default function HomePage() {
       }
 
       setMedications(data?.medications || []);
+      writeHomeCache(userId, "medications", data?.medications || []);
     }
 
     fetchMedications();
@@ -201,6 +257,11 @@ export default function HomePage() {
     if (!userId) return;
 
     async function fetchAppointments() {
+      const cachedAppointments = readHomeCache<Appointment[]>(userId, "appointments");
+      if (cachedAppointments) {
+        setAppointments(cachedAppointments);
+      }
+
       const { data, error } = await supabase
         .from("user_appointments")
         .select("appointments")
@@ -216,6 +277,7 @@ export default function HomePage() {
       }
 
       setAppointments(data?.appointments || []);
+      writeHomeCache(userId, "appointments", data?.appointments || []);
     }
 
     fetchAppointments();
@@ -259,6 +321,7 @@ export default function HomePage() {
     }
 
     setAppointments(updatedAppointments);
+    writeHomeCache(userId, "appointments", updatedAppointments);
   };
 
   const handleDeleteAppointment = async (id: string) => {
@@ -284,6 +347,7 @@ export default function HomePage() {
     }
 
     setAppointments(updatedAppointments);
+    writeHomeCache(userId, "appointments", updatedAppointments);
   };
 
   /* =======================

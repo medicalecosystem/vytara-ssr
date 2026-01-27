@@ -85,6 +85,28 @@ const emptyEmergencyCard: EmergencyCardData = {
   emergency_instructions: '',
 };
 
+type CacheEntry<T> = { ts: number; value: T };
+const CARECIRCLE_CACHE_TTL_MS = 5 * 60 * 1000;
+const careCircleCacheKey = (userId: string, key: string) => `vytara:carecircle:${userId}:${key}`;
+const readCareCircleCache = <T,>(userId: string, key: string): T | null => {
+  if (!userId || typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(careCircleCacheKey(userId, key));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CacheEntry<T>;
+    if (!parsed?.ts) return null;
+    if (Date.now() - parsed.ts > CARECIRCLE_CACHE_TTL_MS) return null;
+    return parsed.value ?? null;
+  } catch {
+    return null;
+  }
+};
+const writeCareCircleCache = <T,>(userId: string, key: string, value: T) => {
+  if (!userId || typeof window === 'undefined') return;
+  const entry: CacheEntry<T> = { ts: Date.now(), value };
+  window.localStorage.setItem(careCircleCacheKey(userId, key), JSON.stringify(entry));
+};
+
 export default function CareCirclePage() {
   const [circleData, setCircleData] = useState<CareCircleData>({
     circleName: 'Loading…',
@@ -188,11 +210,26 @@ export default function CareCirclePage() {
   }, []);
 
   const loadCareCircle = useCallback(async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
+    if (error || !session?.user) {
       return;
     }
-    const user = data.user;
+    const user = session.user;
+    setCurrentUserId((prev) => (prev === user.id ? prev : user.id));
+
+    const cachedCircleData = readCareCircleCache<CareCircleData>(user.id, 'circleData');
+    if (cachedCircleData) {
+      setCircleData(cachedCircleData);
+      setEmergencyCardOwner((prev) => prev || { id: user.id, name: cachedCircleData.ownerName });
+    }
+    const cachedPendingInvites = readCareCircleCache<PendingInvite[]>(user.id, 'pendingInvites');
+    if (cachedPendingInvites) {
+      setPendingInvites(cachedPendingInvites);
+    }
+
     let displayName =
       user.user_metadata?.full_name ??
       user.user_metadata?.name ??
@@ -211,7 +248,6 @@ export default function CareCirclePage() {
 
     const circleName = `${displayName}'s Care Circle`;
 
-    setCurrentUserId(user.id);
     await loadEmergencyCard(user.id);
     setEmergencyCardOwner((prev) => {
       if (!prev || prev.id === user.id) {
@@ -257,22 +293,24 @@ export default function CareCirclePage() {
       status: link.status,
     }));
 
-    setPendingInvites(
-      linksData.outgoing
-        .filter((link) => link.status === 'pending')
-        .map((link) => ({
-          id: link.id,
-          contact: link.displayName,
-          sentAt: link.createdAt,
-        }))
-    );
+    const nextPendingInvites = linksData.outgoing
+      .filter((link) => link.status === 'pending')
+      .map((link) => ({
+        id: link.id,
+        contact: link.displayName,
+        sentAt: link.createdAt,
+      }));
+    setPendingInvites(nextPendingInvites);
 
-    setCircleData({
+    const nextCircleData: CareCircleData = {
       circleName,
       ownerName: displayName,
       myCircleMembers,
       circlesImIn,
-    });
+    };
+    setCircleData(nextCircleData);
+    writeCareCircleCache(user.id, 'pendingInvites', nextPendingInvites);
+    writeCareCircleCache(user.id, 'circleData', nextCircleData);
   }, [loadEmergencyCard]);
 
   useEffect(() => {
