@@ -1,5 +1,4 @@
 'use client';
-'use client';
 
 import React, {
   useState,
@@ -14,123 +13,27 @@ import Link from 'next/link';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 gsap.registerPlugin(ScrollTrigger);
-interface TextChildrenProps {
-  children: string;
-}
 
 function Background() {
   return (
-    <>
-      <style>{`
-        
-        .beams-gradient {
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(135deg, #134e4a 0%, #14b8a6 50%, #134e4a 100%);
-          overflow: hidden;
-          z-index: 0;
-        }
-
-        .beam {
-          position: absolute;
-          width: 2px;
-          height: 100%;
-          background: linear-gradient(
-            to bottom,
-            transparent,
-            rgba(20, 184, 166, 0.3),
-            transparent
-          );
-          animation: beam-animation 8s ease-in-out infinite;
-          filter: blur(1px);
-        }
-
-        @keyframes beam-animation {
-          0%, 100% {
-            opacity: 0.3;
-            transform: translateY(0px);
-          }
-          50% {
-            opacity: 0.8;
-            transform: translateY(-50px);
-          }
-        }
-
-        .beam:nth-child(1) {
-          left: 10%;
-          animation-delay: 0s;
-          height: 150%;
-        }
-
-        .beam:nth-child(2) {
-          left: 20%;
-          animation-delay: 1s;
-          height: 200%;
-        }
-
-        .beam:nth-child(3) {
-          left: 30%;
-          animation-delay: 2s;
-          height: 180%;
-        }
-
-        .beam:nth-child(4) {
-          left: 50%;
-          animation-delay: 3s;
-          height: 200%;
-        }
-
-        .beam:nth-child(5) {
-          left: 70%;
-          animation-delay: 2s;
-          height: 180%;
-        }
-
-        .beam:nth-child(6) {
-          left: 80%;
-          animation-delay: 1s;
-          height: 200%;
-        }
-
-        .beam:nth-child(7) {
-          left: 90%;
-          animation-delay: 0s;
-          height: 150%;
-        }
-
-        .radial-gradient-overlay {
-          position: absolute;
-          inset: 0;
-          background: radial-gradient(
-            ellipse at center,
-            transparent 0%,
-            rgba(255, 255, 255, 0.8) 100%
-          );
-          pointer-events: none;
-          z-index: 1;
-        }
-      `}</style>
-
-      <div className="beams-gradient">
-        <div className="beam"></div>
-        <div className="beam"></div>
-        <div className="beam"></div>
-        <div className="beam"></div>
-        <div className="beam"></div>
-        <div className="beam"></div>
-        <div className="beam"></div>
-        <div className="radial-gradient-overlay"></div>
-      </div>
-    </>
+    <div className="absolute inset-0 bg-white overflow-hidden z-0">
+      <div className="absolute w-64 h-64 bg-[#134E4A] rounded-full opacity-40 blur-3xl top-10 left-10"></div>
+      <div className="absolute w-64 h-64 bg-[#14b8a6] rounded-full opacity-40 blur-3xl top-180 left-0"></div>
+      <div className="absolute w-80 h-80 bg-[#14b8a6] rounded-full opacity-40 blur-3xl top-1/4 right-20"></div>
+      <div className="absolute w-96 h-96 bg-[#134E4A] rounded-full opacity-40 blur-3xl bottom-20 left-1/3"></div>
+      <div className="absolute w-72 h-72 bg-[#14b8a6] rounded-full opacity-40 blur-3xl top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"></div>
+      <div className="absolute w-64 h-64 bg-[#134E4A] rounded-full opacity-60 blur-3xl bottom-120 right-10"></div>
+      <div className="absolute w-80 h-80 bg-[#14b8a6] rounded-full opacity-40 blur-3xl top-3/4 left-10"></div>
+      <div className="absolute w-96 h-96 bg-[#14b8a6] rounded-full opacity-60 blur-3xl top-20 right-1/4"></div>
+      <div className="absolute w-72 h-72 bg-[#14b8a6] rounded-full opacity-40 blur-3xl bottom-1/3 right-1/3"></div>
+      <div className="absolute w-64 h-64 bg-[#134E4A] rounded-full opacity-40 blur-3xl top-1/3 left-20"></div>
+      <div className="absolute w-80 h-80 bg-[#14b8a6] rounded-full opacity-40 blur-3xl bottom-40 left-1/4"></div>
+    </div>
   );
 }
 
 /* ========================= ScrollFloat ========================= */
-interface TextChildrenProps {
-  children: string;
-}
-
-const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
+const ScrollFloat = ({ children }: { children: React.ReactNode }) => {
   const ref = useRef<HTMLHeadingElement | null>(null);
 
   const chars = useMemo(() => {
@@ -143,10 +46,11 @@ const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
   }, [children]);
 
   useLayoutEffect(() => {
-    if (!ref.current) return;
+    const el = ref.current;
+    if (!el) return;
 
     const ctx = gsap.context(() => {
-      const chars = ref.current!.querySelectorAll('span');
+      const chars = el.querySelectorAll('span');
 
       gsap.fromTo(
         chars,
@@ -188,17 +92,17 @@ const ScrollFloat: React.FC<TextChildrenProps> = ({ children }) => {
 };
 
 /* ========================= ScrollReveal With Title Pin + Color Sync ========================= */
-const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean; isMobile?: boolean }> = ({
-    children,
-    menuOpen = false,
-    isMobile = false
-  }) => {
+interface ScrollRevealProps {
+  children: React.ReactNode;
+  menuOpen?: boolean;
+}
 
+const ScrollReveal: React.FC<ScrollRevealProps> = ({ children, menuOpen = false }) => {
   const ref = useRef<HTMLHeadingElement | null>(null);
 
   const words = useMemo(
     () =>
-      children.split(' ').map((w, i) => (
+      (typeof children === 'string' ? children : '').split(' ').map((w, i) => (
         <span key={i} className="inline-block mr-2 word">
           {w}
         </span>
@@ -233,14 +137,14 @@ const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean; isMobile?
       // pin title
       ScrollTrigger.create({
         trigger: '#features',
-        start: !isMobile ? 'top top+=90' : 'top top+=60',
+        start: window.innerWidth >= 768 ? 'top top+=90' : 'top top+=60',
         end: 'bottom top',
         pin: ref.current,
         pinSpacing: false
       });
 
       // CARD COLOR SYNC: desktop (>= 768px) OR mobile when menu is open
-      if (!isMobile || menuOpen) {
+      if (window.innerWidth >= 768 || menuOpen) {
         const cards = document.querySelectorAll('.feature-card');
 
         ScrollTrigger.create({
@@ -299,7 +203,7 @@ const ScrollReveal: React.FC<TextChildrenProps & { menuOpen?: boolean; isMobile?
     <h2
       ref={ref}
       className={`text-[clamp(1.8rem,4vw,3rem)] font-serif text-black text-center leading-tight whitespace-nowrap z-50 ${
-        menuOpen && isMobile ? 'hidden' : 'block'
+        menuOpen && window.innerWidth < 768 ? 'hidden' : 'block'
       }`}
     >
       {words}
@@ -321,12 +225,13 @@ const FeatureStackCard: React.FC<FeatureStackCardProps> = ({
   top = 'top-[15vh]'
 }) => (
   <div
-    className={`feature-stack-card w-full h-auto md:h-80 rounded-[32px] shadow-xl flex items-center justify-between px-6 md:px-10 py-8 md:py-0 md:sticky ${top} md:flex-row flex-col`}
+    className={`feature-stack-card w-full h-80 md:h-80 rounded-[32px] shadow-xl flex items-center justify-between px-10 sticky ${top} md:flex-row flex-col`}
     style={{ backgroundColor: color }}
   >
     {children}
   </div>
 );
+
 
 /* ========================= ROTATING CARDS CAROUSEL ========================= */
 interface Card {
@@ -334,7 +239,11 @@ interface Card {
   image: string;
 }
 
-const RotatingCardsCarousel = () => {
+interface RotatingCardsCarouselProps {
+  isMobile: boolean;
+}
+
+const RotatingCardsCarousel = ({ isMobile }: RotatingCardsCarouselProps) => {
   const cards: Card[] = [
     { id: 1, image: '/images/vytara/homepagess.png' },
     { id: 2, image: '/images/vytara/vaulpagess.png' },
@@ -355,30 +264,30 @@ const RotatingCardsCarousel = () => {
     return () => clearInterval(interval);
   }, [selectedCard]);
 
-  const getCardPosition = (index: number): number => {
+  const getCardPosition = (index: number) => {
     const adjustedIndex = (index - rotation + 3) % 3;
     const distance = (adjustedIndex + 1) % 3;
     return distance;
   };
 
-  const getZIndex = (pos: number): number => {
+  const getZIndex = (pos: number) => {
     if (pos === 0) return 30;
     if (pos === 1) return 20;
     return 10;
   };
 
-  const getScale = (pos: number): number => {
+  const getScale = (pos: number) => {
     if (pos === 0) return 1;
     return 0.65;
   };
 
-  const getOpacity = (pos: number): number => {
+  const getOpacity = (pos: number) => {
     if (pos === 0) return 1;
     if (pos === 1) return 0.7;
     return 0.7;
   };
 
-  const getYOffset = (pos: number): number => {
+  const getYOffset = (pos: number) => {
     if (pos === 0) return 0;
     if (pos === 1) return -70;
     return 70;
@@ -399,7 +308,7 @@ const RotatingCardsCarousel = () => {
             return (
               <div
                 key={card.id}
-                className="absolute w-64 h-48 md:w-[40rem] md:h-[21rem] cursor-pointer transition-all duration-700 ease-out"
+                className={`absolute w-64 h-48 md:w-[40rem] md:h-[21rem] transition-all duration-700 ease-out ${!isMobile ? 'cursor-pointer' : ''}`}
                 style={{
                   zIndex: zIndex,
                   transform: `translateY(${yOffset}px) scale(${scale})`,
@@ -407,9 +316,9 @@ const RotatingCardsCarousel = () => {
                   left: '50%',
                   marginLeft: '-128px',
                   marginTop: '-96px',
-                  pointerEvents: position === 0 ? 'auto' : 'none',
+                  pointerEvents: isMobile ? 'none' : (position === 0 ? 'auto' : 'none'),
                 }}
-                onClick={() => setSelectedCard(card)}
+                onClick={!isMobile ? () => setSelectedCard(card) : undefined}
               >
                 <img
                   src={card.image}
@@ -424,8 +333,8 @@ const RotatingCardsCarousel = () => {
 
       {/* Enlarged Card Modal */}
       {selectedCard && (
-        <div className="fixed top-1/2 left-1/2 md:left-[66.67%] transform -translate-x-1/2 -translate-y-1/2 w-[90vw] h-[60vh] md:w-[50rem] md:h-[30rem] bg-black bg-opacity-50 rounded-3xl flex items-center justify-center z-50">
-          <div className="relative w-full h-full rounded-3xl">
+        <div className="fixed top-1/2 left-[66.67%] transform -translate-x-1/2 -translate-y-1/2 w-[50rem] h-[30rem] bg-black bg-opacity-50 rounded-3xl flex items-center justify-center z-50">
+          <div className="relative w-[50rem] h-[30rem] rounded-3xl">
             <img
               src={selectedCard.image}
               className="w-full h-full object-cover rounded-3xl shadow-2xl"
@@ -448,21 +357,19 @@ const RotatingCardsCarousel = () => {
 
 /* ========================= MAIN PAGE ========================= */
 export default function Landing() {
-
+  const [menu, setMenu] = useState(false);
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [heroExpanded, setHeroExpanded] = useState<number[]>([]);
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    const checkScreen = () => setIsMobile(window.innerWidth < 768);
-
-    checkScreen(); // initial
-    window.addEventListener('resize', checkScreen);
-
-    return () => window.removeEventListener('resize', checkScreen);
+    setIsMobile(window.innerWidth < 768);
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const [menu, setMenu] = useState(false);
-  const [expanded, setExpanded] = useState<number | null>(null);
-  const [heroExpanded, setHeroExpanded] = useState<number | null>(null);
+  
 
   /* ----- MISSION ANIMATION ----- */
   useEffect(() => {
@@ -533,7 +440,7 @@ export default function Landing() {
     <div className="relative z-10 bg-transparent"></div>
         {/* NAV */}
         <nav className="sticky top-0 z-50 bg-white">
-          <div className="flex items-center justify-between px-4 sm:px-6 py-4 md:grid md:grid-cols-3 md:gap-0">
+          <div className="flex items-center justify-between px-6 py-4 md:grid md:grid-cols-3 md:gap-0">
 
             {/* LOGO */}
             <div className="flex gap-2 items-center md:justify-start">
@@ -602,83 +509,167 @@ export default function Landing() {
 
         {/* WHAT IS VYTARA */}
         <div className="px-4 pt-12 pb-4 md:pb-8 w-full">
-          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">What Is Vytara?</h1>
-          <p className="text-center text-gray-600 italic text-base mt-4">Vytara is your one stop destination to have full control over your medical status and care for your loved one's wellness better</p>
+          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">The <em>complete</em> AI-powered platform for your health</h1>
+          <p className="text-center text-gray-600 italic text-base mt-4">vytara remembers for you, explains your health, acts when you can't and cares for your loved one's with you.
+</p>
         </div>
 
         {/* HERO TITLE */}
         <div className="px-4 pt-6 md:pt-12 pb-8 w-full">
-          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">Why Use Vytara?</h1>
+          <h1 className="text-4xl md:text-5xl font-bold text-black text-center">Why you should join us</h1>
         </div>
 
         {/* ===== HERO ===== */}
-        <section id="hero" className="px-4 sm:px-6 md:px-8 pt-6 md:pt-20 pb-12 md:pb-20 w-full min-h-[60vh] md:min-h-[80vh] relative">
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 scale-[0.9] md:scale-100">
-
-            {/* LEFT CARDS */}
-            <div className="col-span-1 md:col-span-1 flex flex-col gap-4 relative z-10 w-full md:w-auto md:absolute md:left-8 md:top-0 md:h-[55vh] mb-6 md:mb-0">
-              {[
-                {
-                  title: 'Disorganized Documents?',
-                  icon: Lock,
-                  expandedText: 'No more scattered documents, Vytara has all your medical documents securely stored in one place'
-                },
-                {
-                  title: 'Emergency Requirements?',
-                  icon: AlertCircle,
-                  expandedText: 'Emergency services are one click away from reaching you at your most vulnerable times.'
-                },
-                {
-                  title: 'Unmonitored Wellness?',
-                  icon: Users,
-                  expandedText: 'Freely monitor the wellness of your loved ones with Vytara'
-                }
-              ].map(({ title, icon: Icon, expandedText }, i) => (
-                <div
-                  key={i}
-                  onClick={() => isMobile && setHeroExpanded(heroExpanded === i ? null : i)}
-                  className={`group relative w-full sm:w-72 md:w-48 h-36 sm:h-40 md:h-48 flex-1 rounded-2xl cursor-pointer transition-all duration-300 origin-bottom-right md:hover:w-96 md:hover:h-96 ${
-                    i % 2 === 0 ? 'bg-[#14b8a6]' : 'bg-[#134E4A]'
-                  } ${isMobile && heroExpanded === i ? 'h-60 sm:h-72' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
-                >
-                  <div className="flex flex-col items-center justify-center h-full p-4">
-                    <h3 className="text-sm font-normal text-center mb-2">{title}</h3>
-                    <Icon className="w-20 h-20 scale-[110%] mx-auto" />
+        <section id="hero" className="px-8 pt-6 md:pt-20 pb-12 md:pb-20 w-full min-h-[80vh] relative">
+          {/* MOBILE LAYOUT - Flex Column */}
+          <div className="md:hidden">
+            <div className="flex flex-col gap-10">
+              {/* LEFT CARDS */}
+              <div className="flex flex-col gap-4 w-full">
+                {/* Disorganized Documents - Left, expands right */}
+                <div className="relative flex items-center self-start">
+                  <div
+                    onClick={() => setHeroExpanded(prev => {
+                      if (!Array.isArray(prev)) return [0];
+                      return prev.includes(0) ? prev.filter(i => i !== 0) : [...prev, 0];
+                    })}
+                    className={`group relative w-24 h-24 rounded-l-2xl cursor-pointer transition-all duration-300 origin-left ${
+                      'bg-[#14b8a6]'
+                    } ${Array.isArray(heroExpanded) && heroExpanded.includes(0) ? 'w-72' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
+                  >
+                    <div className="flex flex-col items-center justify-center h-full p-2">
+                      <h3 className="text-xs font-normal text-center mb-1">Disorganized Documents?</h3>
+                      <Lock className="w-8 h-8 scale-[110%] mx-auto" />
+                    </div>
+                    <div className={`absolute left-0 top-0 h-full w-full bg-blue-200 flex items-center justify-center p-3 transition-all duration-300 ${
+                      Array.isArray(heroExpanded) && heroExpanded.includes(0) ? 'opacity-100' : 'opacity-0'
+                    }`}>
+                      <p className="text-xs text-gray-800 text-center">No more scattered documents, Vytara has all your medical documents securely stored in one place</p>
+                    </div>
                   </div>
                   <div
-                    className={`absolute inset-0 flex items-center justify-center p-6 text-center transition-all duration-300 bg-black/35 backdrop-blur-sm ${
-                      !isMobile
-                        ? 'opacity-0 group-hover:opacity-100'
-                        : heroExpanded === i
-                        ? 'opacity-100'
-                        : 'opacity-0'
-                    }`}
+                    onClick={() => setHeroExpanded(prev => {
+                      if (!Array.isArray(prev)) return [0];
+                      return prev.includes(0) ? prev.filter(i => i !== 0) : [...prev, 0];
+                    })}
+                    className="w-6 h-24 bg-[#5eead4] rounded-r-2xl flex items-center justify-center cursor-pointer"
                   >
-                    <p className="text-sm leading-relaxed text-white font-medium">
-                      {expandedText}
-                    </p>
+                    <span className="text-white font-bold text-lg">{heroExpanded.includes(0) ? '<' : '>'}</span>
                   </div>
                 </div>
-              ))}
-            </div>
 
-            {/* ROTATING CARDS CAROUSEL - Not limited to columns to prevent cutoff */}
-            <div className="col-span-1 md:col-span-5 rounded-2xl overflow-hidden bg-transparent h-[45vh] sm:h-[52vh] md:h-[64vh] w-full relative mt-6 md:mt-0 md:absolute md:top-5 md:-right-5 md:ml-0">
-              <RotatingCardsCarousel />
-            </div>
+                {/* Emergency Services - Right, expands left */}
+                <div className="relative flex items-center self-end">
+                  <div
+                    onClick={() => setHeroExpanded(heroExpanded.includes(1) ? heroExpanded.filter(i => i !== 1) : [...heroExpanded, 1])}
+                    className="w-6 h-24 bg-[#207a74] rounded-l-2xl flex items-center justify-center cursor-pointer"
+                  >
+                    <span className="text-white font-bold text-lg">{heroExpanded.includes(1) ? '>' : '<'}</span>
+                  </div>
+                  <div
+                    onClick={() => setHeroExpanded(heroExpanded.includes(1) ? heroExpanded.filter(i => i !== 1) : [...heroExpanded, 1])}
+                    className={`group relative w-24 h-24 rounded-r-2xl cursor-pointer transition-all duration-300 origin-right ${
+                      'bg-[#134E4A]'
+                    } ${heroExpanded.includes(1) ? 'w-72' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
+                  >
+                    <div className="flex flex-col items-center justify-center h-full p-2">
+                      <h3 className="text-xs font-normal text-center mb-1">Emergency Services?</h3>
+                      <AlertCircle className="w-8 h-8 scale-[110%] mx-auto" />
+                    </div>
+                    <div className={`absolute left-0 top-0 h-full w-full bg-blue-200 flex items-center justify-center p-3 transition-all duration-300 ${
+                      heroExpanded.includes(1) ? 'opacity-100' : 'opacity-0'
+                    }`}>
+                      <p className="text-xs text-gray-800 text-center">Emergency services are one click away from reaching you at your most vulnerable times.</p>
+                    </div>
+                  </div>
+                </div>
 
+                {/* Unmonitored Wellness - Left, expands right */}
+                <div className="relative flex items-center self-start">
+                  <div
+                    onClick={() => setHeroExpanded(prev => {
+                      if (!Array.isArray(prev)) return [2];
+                      return prev.includes(2) ? prev.filter(i => i !== 2) : [...prev, 2];
+                    })}
+                    className={`group relative w-24 h-24 rounded-l-2xl cursor-pointer transition-all duration-300 origin-left ${
+                      'bg-[#14b8a6]'
+                    } ${Array.isArray(heroExpanded) && heroExpanded.includes(2) ? 'w-72' : ''} text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
+                  >
+                    <div className="flex flex-col items-center justify-center h-full p-2">
+                      <h3 className="text-xs font-normal text-center mb-1">Unmonitored Wellness?</h3>
+                      <Users className="w-8 h-8 scale-[110%] mx-auto" />
+                    </div>
+                    <div className={`absolute left-0 top-0 h-full w-full bg-blue-200 flex items-center justify-center p-3 transition-all duration-300 ${
+                      Array.isArray(heroExpanded) && heroExpanded.includes(2) ? 'opacity-100' : 'opacity-0'
+                    }`}>
+                      <p className="text-xs text-gray-800 text-center">Freely monitor the wellness of your loved ones with Vytara</p>
+                    </div>
+                  </div>
+                  <div
+                    onClick={() => setHeroExpanded(prev => {
+                      if (!Array.isArray(prev)) return [2];
+                      return prev.includes(2) ? prev.filter(i => i !== 2) : [...prev, 2];
+                    })}
+                    className="w-6 h-24 bg-[#5eead4] rounded-r-2xl flex items-center justify-center cursor-pointer"
+                  >
+                    <span className="text-white font-bold text-lg">{heroExpanded.includes(2) ? '<' : '>'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ROTATING CARDS CAROUSEL */}
+              <div className="rounded-2xl overflow-hidden bg-transparent h-[64vh] relative top-0">
+                <RotatingCardsCarousel isMobile={isMobile} />
+              </div>
+            </div>
+          </div>
+
+          {/* DESKTOP LAYOUT - Grid (Previous Code Style) */}
+          <div className="hidden md:block">
+            <div className="grid grid-cols-6 gap-1 scale-100">
+              {/* LEFT CARDS */}
+              <div className="col-span-1 flex flex-col gap-4 relative z-10 h-[55vh]">
+                {[
+                  {
+                    title: 'Disorganized Documents?',
+                    icon: Lock,
+                    expandedText: 'No more scattered documents, Vytara has all your medical documents securely stored in one place'
+                  },
+                  {
+                    title: 'Emergency Requirements?',
+                    icon: AlertCircle,
+                    expandedText: 'Emergency services are one click away from reaching you at your most vulnerable times.'
+                  },
+                  {
+                    title: 'Unmonitored Wellness?',
+                    icon: Users,
+                    expandedText: 'Freely monitor the wellness of your loved ones with Vytara'
+                  }
+                ].map(({ title, icon: Icon, expandedText }, i) => (
+                  <div
+                    key={i}
+                    className={`group relative w-48 h-48 flex-1 rounded-2xl cursor-pointer transition-all duration-300 origin-bottom-right hover:w-96 hover:h-96 ${
+                      i % 2 === 0 ? 'bg-[#14b8a6]' : 'bg-[#134E4A]'
+                    } text-white border-8 border-white/20 shadow-[4px_0_12px_rgba(255,255,255,0.3)] overflow-hidden`}
+                  >
+                    <div className="flex flex-col items-center justify-center h-full p-4">
+                      <h3 className="text-sm font-normal text-center mb-2">{title}</h3>
+                      <Icon className="w-20 h-20 scale-[110%] mx-auto" />
+                    </div>
+                    <div className={`absolute left-0 top-0 h-full w-80 bg-blue-200 flex items-center justify-center p-4 transition-all duration-300 opacity-0 group-hover:opacity-100`}>
+                      <p className="text-sm text-gray-800 text-center">{expandedText}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* ROTATING CARDS CAROUSEL */}
+              <div className="col-span-5 rounded-2xl overflow-hidden bg-transparent h-[64vh]">
+                <RotatingCardsCarousel isMobile={isMobile} />
+              </div>
+            </div>
           </div>
         </section>
-
-        {/* GET STARTED
-        <section className="px-4 py-20 text-center">
-          <button
-            onClick={() => nav('login')}
-            className="bg-gradient-to-r from-[#14b8a6] to-[#134E4A] text-white px-8 py-4 rounded-full font-semibold text-lg hover:from-[#134E4A] hover:to-[#14b8a6] transition"
-          >
-            Get Started
-          </button>
-        </section> */}
 
         {/* GET STARTED */}
         <section className="px-4 py-20 text-center">
@@ -710,24 +701,24 @@ export default function Landing() {
         <section id="mission" className="px-4 py-14 max-w-6xl mx-auto">
           <ScrollFloat>Why we're here</ScrollFloat>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-10">
+          <div className="grid grid-cols-2 gap-6 mt-10">
 
             {/* LEFT CARDS */}
             <div className="flex flex-col gap-6">
-              <div className="bg-[#288f88] h-44 sm:h-48 rounded-3xl mission-top-left overflow-hidden">
+              <div className="bg-[#288f88] h-48 rounded-3xl mission-top-left overflow-hidden">
                 <img src="/images/vytara/missionimg.jpg" className="w-full h-full object-cover" alt="Mission" />
               </div>
-              <div className="bg-[#10736C] h-auto sm:h-48 rounded-3xl mission-bottom-left flex flex-col items-start justify-center p-6 text-white">
+              <div className="bg-[#10736C] h-48 rounded-3xl mission-bottom-left flex flex-col items-start justify-center p-6 text-white">
                 <Brain size={40} className="mb-3" />
                 <h3 className="text-1xl font-bold">Helping you understand, not just store</h3>
                 <p className="text-sm leading-relaxed">
-                  Our AI explains what matters from your reports so you’re never left guessing.
+                  Our AI explains what matters so you’re never left guessing.
                 </p>
               </div>
             </div>
 
             {/* RIGHT BIG CARD */}
-            <div className="bg-[#134E4A] rounded-3xl mission-right h-auto md:h-96 flex flex-col items-start justify-center p-8 text-white text-left">
+            <div className="bg-[#134E4A] rounded-3xl mission-right h-96 flex flex-col items-start justify-center p-8 text-white text-left">
               <Users size={48} className="mb-4" />
               <h3 className="text-1xl font-bold mb-4">We look out for your loved ones with you</h3>
               <p className="text-sm leading-relaxed mb-3">
@@ -739,10 +730,9 @@ export default function Landing() {
         </section>
 {/* ===== FEATURES ===== */}
         <section id="features" className="px-4 py-8 max-w-5xl mx-auto">
-          <ScrollReveal menuOpen={menu} isMobile={isMobile}>
-            So what do we do exactly?
-          </ScrollReveal>
-          <div className="mt-10 md:mt-[18vh]">
+          <ScrollReveal menuOpen={menu}>So what do we do exactly?</ScrollReveal>
+
+          <div className="mt-[18vh]">
 
             <FeatureStackCard color="#14b8a6" top="md:top-[15vh] top-[20vh]">
               <div className="feature-card flex w-full justify-between items-center gap-8 md:flex-row flex-col">
@@ -754,7 +744,7 @@ export default function Landing() {
                     Help is 1 click away with our SOS button which alerts your family and emergency services.
                   </p>
                 </div>
-                <img src="images/vytara/sosfeature.jpg" className="rounded-2xl flex-shrink-0 w-full h-40 object-cover md:w-64 md:h-40 md:order-2 order-1" alt="Emergency SOS" />
+                <img src="images/vytara/sosfeature.jpg" className="rounded-2xl flex-shrink-0 md:order-2 order-1" alt="Emergency SOS" />
               </div>
             </FeatureStackCard>
 
@@ -768,7 +758,7 @@ export default function Landing() {
                     AI summaries that help you understand your health, at your fingertips.
                   </p>
                 </div>
-                <img src="images/vytara/safestorefeature.jpg" className="rounded-2xl flex-shrink-0 w-full h-40 object-cover md:w-64 md:h-40 md:order-2 order-1" alt="Secure Storage" />
+                <img src="images/vytara/safestorefeature.jpg" className="rounded-2xl flex-shrink-0 md:order-2 order-1" alt="Secure Storage" />
               </div>
             </FeatureStackCard>
 
@@ -782,7 +772,7 @@ export default function Landing() {
                     Monitor the health of your loved ones from anywhere.
                   </p>
                 </div>
-                <img src="images/vytara/familyfeature.jpg" className="rounded-2xl flex-shrink-0 w-full h-40 object-cover md:w-64 md:h-40 md:order-2 order-1" alt="Family Profiles" />
+                <img src="images/vytara/familyfeature.jpg" className="rounded-2xl flex-shrink-0 md:order-2 order-1" alt="Family Profiles" />
               </div>
             </FeatureStackCard>
 
@@ -790,7 +780,6 @@ export default function Landing() {
         </section>
 
 
-        {/* FOOTER */}
         {/* FOOTER */}
         <footer
           id="footer"
@@ -802,7 +791,7 @@ export default function Landing() {
               {/* BRAND */}
               <div className="md:col-span-1">
                 <div className="flex gap-2 items-center mb-4">
-                  <div className="w-8 h-8 bg-gradient-to-r from-[#14b8a6] to-[#134E4A] rounded-lg" />
+                  <div className="w-8 h-8 bg-gradient-to-r from-[#134E4A] to-[#14b8a6] rounded-lg" />
                   <p className="font-bold text-[#14b8a6] text-xl">Vytara</p>
                 </div>
                 <p className="text-gray-400 text-sm">
@@ -815,7 +804,7 @@ export default function Landing() {
                 <h3 className="font-semibold text-lg mb-4">Contact Us</h3>
                 <div className="space-y-2 text-gray-400 text-sm">
                   <p>Email: hello@vytara.com</p>
-                  <p>Phone: 9511701519</p>
+                  <p>Phone: 07738322228</p>
                   <p>Address: 327, 3rd Floor, Ajmera Sikova, ICRC, Ghatkopar West, Mumbai 400086</p>
                 </div>
               </div>
@@ -836,7 +825,7 @@ export default function Landing() {
             <div className="md:hidden">
               {/* BRAND */}
               <div className="flex gap-2 items-center">
-                <div className="w-6 h-6 bg-gradient-to-r from-[#14b8a6] to-[#134E4A] rounded-lg" />
+                <div className="w-6 h-6 bg-gradient-to-r from-[#134E4A] to-[#14b8a6] rounded-lg" />
                 <p className="font-bold text-[#14b8a6] text-lg">Vytara</p>
               </div>
 
@@ -847,7 +836,7 @@ export default function Landing() {
                   <h3 className="font-semibold text-xs mb-1">Contact Us</h3>
                   <div className="space-y-0.5 text-gray-400 text-xs">
                     <p>Email: hello@vytara.com</p>
-                    <p>Phone: 9511701519</p>
+                    <p>Phone: 07738322228</p>
                     <p>Address: 327, 3rd Floor, Ajmera Sikova, ICRC, Ghatkopar West, Mumbai 400086</p>
                   </div>
                 </div>
@@ -871,25 +860,7 @@ export default function Landing() {
           </div>
         </footer>
 
-        <style>{`
-          @keyframes slide-in-left {
-            from { opacity: 0; transform: translateX(-50px); }
-            to { opacity: 1; transform: translateX(0); }
-          }
 
-          @keyframes slide-in-right {
-            from { opacity: 0; transform: translateX(50px); }
-            to { opacity: 1; transform: translateX(0); }
-          }
-
-          .animate-slide-in-left {
-            animation: slide-in-left 0.7s ease-out forwards;
-          }
-
-          .animate-slide-in-right {
-            animation: slide-in-right 0.7s ease-out forwards;
-          }
-        `}</style>
       </div>
     </div>
   );
