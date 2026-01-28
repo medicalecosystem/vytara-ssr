@@ -134,7 +134,7 @@ export default function Navbar() {
             Logout
           </button>
         </div>
-        <nav className="flex items-center gap-2 overflow-x-auto px-4 pb-3">
+        <nav className="flex flex-wrap gap-2 px-4 pb-3">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
@@ -142,7 +142,7 @@ export default function Navbar() {
               <button
                 key={item.href}
                 onClick={() => router.push(item.href)}
-                className={`flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition ${
+                className={`flex min-w-[8rem] flex-1 items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition ${
                   isActive
                     ? 'bg-teal-500/30 text-white'
                     : 'text-teal-100/80 hover:bg-white/10 hover:text-white'
