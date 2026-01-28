@@ -396,7 +396,7 @@ Further information about cookies, including how to see what cookies have been s
             <h3 className="font-semibold text-lg mb-4">Contact Us</h3>
             <div className="space-y-2 text-gray-400 text-sm">
               <p>Email: hello@vytara.com</p>
-              <p>Phone: 07738322228</p>
+              <p>Phone: 09511701519</p>
               <p>Address: 327, 3rd Floor, Ajmera Sikova, ICRC, Ghatkopar West, Mumbai 400086</p>
             </div>
           </div>
@@ -428,7 +428,7 @@ Further information about cookies, including how to see what cookies have been s
               <h3 className="font-semibold text-xs mb-1">Contact Us</h3>
               <div className="space-y-0.5 text-gray-400 text-xs">
                 <p>Email: hello@vytara.com</p>
-                <p>Phone: 07738322228</p>
+                <p>Phone: 09511701519</p>
                 <p>Address: 327, 3rd Floor, Ajmera Sikova, ICRC, Ghatkopar West, Mumbai 400086</p>
               </div>
             </div>
@@ -456,4 +456,5 @@ Further information about cookies, including how to see what cookies have been s
 };
 
 export default CookiePolicyLayout;
+
 
