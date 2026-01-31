@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePathname } from 'next/navigation';
 import { supabase } from '@/lib/createClient';
-import { href } from 'react-router-dom';
 
 export default function Navbar() {
   const router = useRouter();
