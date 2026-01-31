@@ -2,6 +2,11 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
+type FamilyLink = {
+  family_id: string | null;
+  status: string;
+};
+
 async function getFamilyId(supabase: ReturnType<typeof createServerClient>, userId: string) {
   const { data: userLinks, error } = await supabase
     .from('family_links')
@@ -10,8 +15,8 @@ async function getFamilyId(supabase: ReturnType<typeof createServerClient>, user
 
   if (error) throw error;
 
-  const acceptedLink = (userLinks || []).find((link) => link.status === 'accepted');
-  const pendingLink = (userLinks || []).find((link) => link.status === 'pending');
+  const acceptedLink = (userLinks || []).find((link: FamilyLink) => link.status === 'accepted');
+  const pendingLink = (userLinks || []).find((link: FamilyLink) => link.status === 'pending');
   return acceptedLink?.family_id ?? pendingLink?.family_id ?? null;
 }
 
