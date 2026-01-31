@@ -12,6 +12,8 @@ type FamilyLink = {
   recipient_relation: string | null;
 };
 
+type FamilyLinkStatus = Pick<FamilyLink, 'family_id' | 'status'>;
+
 async function getFamilyId(supabase: ReturnType<typeof createServerClient>, userId: string) {
   const { data: userLinks, error } = await supabase
     .from('family_links')
@@ -20,8 +22,9 @@ async function getFamilyId(supabase: ReturnType<typeof createServerClient>, user
 
   if (error) throw error;
 
-  const acceptedLink = (userLinks || []).find((link) => link.status === 'accepted');
-  const pendingLink = (userLinks || []).find((link) => link.status === 'pending');
+  const links = (userLinks ?? []) as FamilyLinkStatus[];
+  const acceptedLink = links.find((link) => link.status === 'accepted');
+  const pendingLink = links.find((link) => link.status === 'pending');
   return acceptedLink?.family_id ?? pendingLink?.family_id ?? null;
 }
 
