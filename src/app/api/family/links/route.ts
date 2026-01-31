@@ -2,10 +2,18 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
+type LinkRow = {
+  id: string;
+  requester_id?: string;
+  recipient_id?: string;
+  status: string;
+  created_at: string;
+};
+
 export async function GET() {
   try {
     const cookieStore = await cookies();
-    
+
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -22,14 +30,15 @@ export async function GET() {
         },
       }
     );
-    
-    const { data: { session } } = await supabase.auth.getSession();
-    
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
     if (!session?.user) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
-    // Fetch outgoing links (people you invited)
     const { data: outgoingLinks, error: outgoingError } = await supabase
       .from('family_links')
       .select('id, recipient_id, status, created_at')
@@ -37,7 +46,6 @@ export async function GET() {
 
     if (outgoingError) throw outgoingError;
 
-    // Fetch incoming links (people who invited you)
     const { data: incomingLinks, error: incomingError } = await supabase
       .from('family_links')
       .select('id, requester_id, status, created_at')
@@ -45,50 +53,80 @@ export async function GET() {
 
     if (incomingError) throw incomingError;
 
-    // Get display names for outgoing
-    const outgoing = await Promise.all(
-      (outgoingLinks || []).map(async (link) => {
-        const { data: personal } = await supabase
-          .from('personal')
-          .select('display_name')
-          .eq('id', link.recipient_id)
-          .maybeSingle();
+    const { data: userFamilyLinks, error: userFamilyLinksError } = await supabase
+      .from('family_links')
+      .select('family_id, status')
+      .or(`requester_id.eq.${session.user.id},recipient_id.eq.${session.user.id}`);
 
-        return {
-          id: link.id,
-          memberId: link.recipient_id,
-          status: link.status,
-          displayName: personal?.display_name || 'Unknown',
-          createdAt: link.created_at,
-        };
-      })
-    );
+    if (userFamilyLinksError) throw userFamilyLinksError;
 
-    // Get display names for incoming
-    const incoming = await Promise.all(
-      (incomingLinks || []).map(async (link) => {
-        const { data: personal } = await supabase
-          .from('personal')
-          .select('display_name')
-          .eq('id', link.requester_id)
-          .maybeSingle();
+    const acceptedFamilyLink = (userFamilyLinks || []).find((link) => link.status === 'accepted');
+    const pendingFamilyLink = (userFamilyLinks || []).find((link) => link.status === 'pending');
+    const familyId = acceptedFamilyLink?.family_id ?? pendingFamilyLink?.family_id ?? null;
 
-        return {
-          id: link.id,
-          memberId: link.requester_id,
-          status: link.status,
-          displayName: personal?.display_name || 'Unknown',
-          createdAt: link.created_at,
-        };
-      })
-    );
+    const { data: familyLinks, error: familyLinksError } = familyId
+      ? await supabase
+          .from('family_links')
+          .select('requester_id, recipient_id, status')
+          .eq('family_id', familyId)
+          .eq('status', 'accepted')
+      : { data: [], error: null };
 
-    return NextResponse.json({ outgoing, incoming });
+    if (familyLinksError) throw familyLinksError;
+
+    const memberIds = new Set<string>();
+    memberIds.add(session.user.id);
+    (familyLinks || []).forEach((link) => {
+      if (link.requester_id) memberIds.add(link.requester_id);
+      if (link.recipient_id) memberIds.add(link.recipient_id);
+    });
+
+    const displayIds = new Set<string>(memberIds);
+    (outgoingLinks || []).forEach((link) => {
+      if (link.recipient_id) displayIds.add(link.recipient_id);
+    });
+    (incomingLinks || []).forEach((link) => {
+      if (link.requester_id) displayIds.add(link.requester_id);
+    });
+
+    const { data: personalRows } = await supabase
+      .from('personal')
+      .select('id, display_name')
+      .in('id', Array.from(displayIds));
+
+    const displayNameById = new Map<string, string>();
+    (personalRows || []).forEach((row) => {
+      displayNameById.set(row.id, row.display_name || 'Unknown');
+    });
+
+    const outgoing = (outgoingLinks || []).map((link: LinkRow) => ({
+      id: link.id,
+      memberId: link.recipient_id || '',
+      status: link.status,
+      displayName: displayNameById.get(link.recipient_id || '') || 'Unknown',
+      createdAt: link.created_at,
+    }));
+
+    const incoming = (incomingLinks || []).map((link: LinkRow) => ({
+      id: link.id,
+      memberId: link.requester_id || '',
+      status: link.status,
+      displayName: displayNameById.get(link.requester_id || '') || 'Unknown',
+      createdAt: link.created_at,
+    }));
+
+    const familyMembers = Array.from(memberIds).map((id) => ({
+      id,
+      displayName: displayNameById.get(id) || 'Unknown',
+    }));
+
+    return NextResponse.json({
+      familyMembers,
+      outgoing,
+      incoming,
+    });
   } catch (error) {
     console.error('Error fetching family links:', error);
-    return NextResponse.json(
-      { message: 'Failed to fetch family links' },
-      { status: 500 }
-    );
+    return NextResponse.json({ message: 'Failed to fetch family links' }, { status: 500 });
   }
 }
