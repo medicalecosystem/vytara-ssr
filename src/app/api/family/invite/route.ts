@@ -35,6 +35,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Contact is required' }, { status: 400 });
     }
 
+    const { data: existingFamilyLink } = await supabase
+      .from('family_links')
+      .select('family_id, status')
+      .or(`requester_id.eq.${session.user.id},recipient_id.eq.${session.user.id}`)
+      .in('status', ['accepted', 'pending'])
+      .limit(1)
+      .maybeSingle();
+
+    const familyId = existingFamilyLink?.family_id ?? crypto.randomUUID();
+
     // Find user by phone number
     const { data: users, error: userError } = await supabase
       .from('personal')
@@ -63,6 +73,7 @@ export async function POST(request: Request) {
       .insert({
         requester_id: session.user.id,
         recipient_id: users.id,
+        family_id: familyId,
         relation: 'family', // ✅ Add this required field
         status: 'pending',
       });
