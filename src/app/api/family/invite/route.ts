@@ -49,17 +49,28 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create family link
+    // Check if user is trying to invite themselves
+    if (users.id === session.user.id) {
+      return NextResponse.json(
+        { message: 'You cannot invite yourself' },
+        { status: 400 }
+      );
+    }
+
+    // Create family link - ADD THE RELATION FIELD
     const { error: linkError } = await supabase
       .from('family_links')
       .insert({
         requester_id: session.user.id,
         recipient_id: users.id,
+        relation: 'family', // ✅ Add this required field
         status: 'pending',
       });
 
     if (linkError) {
-      if (linkError.code === '23505') { // Duplicate key error
+      console.error('Link error:', linkError); // Add logging to see the actual error
+      
+      if (linkError.code === '23505') {
         return NextResponse.json(
           { message: 'Invite already sent to this user' },
           { status: 409 }
