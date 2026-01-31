@@ -41,37 +41,95 @@ export default function FamilyPage() {
   const [isSavingInvite, setIsSavingInvite] = useState(false);
 
   const loadFamily = useCallback(async () => {
-    const { data } = await supabase.auth.getUser();
-    if (!data?.user) return;
+    // Get session instead of just user
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
+    
+    if (error || !session?.user) {
+      return;
+    }
 
-    const user = data.user;
-    const displayName =
+    const user = session.user;
+    setCurrentUserId((prev) => (prev === user.id ? prev : user.id));
+
+    // Get initial display name from user metadata
+    let displayName =
       user.user_metadata?.full_name ??
-      user.email?.split('@')[0] ??
+      user.user_metadata?.name ??
+      user.phone ??
       'Your';
 
-    setCurrentUserId(user.id);
+    // Fetch display name from personal table (like Care Circle does)
+    const { data: personal } = await supabase
+      .from('personal')
+      .select('display_name')
+      .eq('id', user.id)
+      .maybeSingle();
 
-    const response = await fetch('/api/family/links', { cache: 'no-store' });
-    if (!response.ok) return;
+    if (personal?.display_name) {
+      displayName = personal.display_name;
+    }
 
-    const linksData = await response.json();
+    const familyName = `${displayName}'s Family`;
 
-    setPendingInvites(
-      linksData.outgoing
-        .filter((l: any) => l.status === 'pending')
-        .map((l: any) => ({
-          id: l.id,
-          contact: l.contact,
-          sentAt: l.createdAt,
-        }))
-    );
+    // Fetch family links
+    const response = await fetch('/api/family/links', { 
+      cache: 'no-store' 
+    });
+    
+    if (!response.ok) {
+      return;
+    }
+
+    const linksData: {
+      outgoing: Array<{
+        id: string;
+        memberId: string;
+        status: FamilyStatus;
+        displayName: string;
+        createdAt: string;
+      }>;
+      incoming: Array<{
+        id: string;
+        memberId: string;
+        status: FamilyStatus;
+        displayName: string;
+        createdAt: string;
+      }>;
+    } = await response.json();
+
+    // Map outgoing links to family members
+    const myFamilyMembers = linksData.outgoing.map((link) => ({
+      id: link.memberId,
+      name: link.displayName,
+      status: link.status,
+    }));
+
+    // Map incoming links
+    const familiesImIn = linksData.incoming.map((link) => ({
+      id: link.memberId,
+      name: link.displayName,
+      status: link.status,
+    }));
+
+    // Extract pending invites
+    const nextPendingInvites = linksData.outgoing
+      .filter((link) => link.status === 'pending')
+      .map((link) => ({
+        id: link.id,
+        contact: link.displayName,
+        sentAt: link.createdAt,
+      }));
+
+    setPendingInvites(nextPendingInvites);
 
     setFamilyData({
-      familyName: `${displayName}'s Family`,
+      familyName,
       ownerName: displayName,
-      myFamilyMembers: linksData.outgoing,
-      familiesImIn: linksData.incoming,
+      myFamilyMembers,
+      familiesImIn,
     });
   }, []);
 
@@ -88,12 +146,18 @@ export default function FamilyPage() {
       .eq('requester_id', currentUserId)
       .eq('recipient_id', memberId);
 
-    loadFamily();
+    await loadFamily(); // Add await here
   };
 
   const handleInviteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inviteContact.trim()) return;
+    const trimmed = inviteContact.trim();
+    if (!trimmed) return;
+
+    if (!currentUserId) {
+      setInviteError('Please sign in again to send invites.');
+      return;
+    }
 
     setIsSavingInvite(true);
     setInviteError(null);
@@ -101,12 +165,12 @@ export default function FamilyPage() {
     const response = await fetch('/api/family/invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contact: inviteContact.trim() }),
+      body: JSON.stringify({ contact: trimmed }),
     });
 
     if (!response.ok) {
-      const err = await response.json();
-      setInviteError(err.message || 'Failed to send invite');
+      const errorPayload: { message?: string } = await response.json();
+      setInviteError(errorPayload.message ?? 'Unable to send invite.');
       setIsSavingInvite(false);
       return;
     }
@@ -114,7 +178,7 @@ export default function FamilyPage() {
     setInviteContact('');
     setIsInviteOpen(false);
     setIsSavingInvite(false);
-    loadFamily();
+    await loadFamily(); // Add await here
   };
 
   const activeMembers = useMemo(
@@ -178,12 +242,12 @@ export default function FamilyPage() {
 
       {/* Invite Modal */}
       {isInviteOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md">
             <div className="flex justify-between items-center">
               <h3 className="text-black font-semibold text-lg">Invite family member</h3>
               <button onClick={() => setIsInviteOpen(false)}>
-                <X />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
@@ -192,20 +256,29 @@ export default function FamilyPage() {
                 value={inviteContact}
                 onChange={e => setInviteContact(e.target.value)}
                 placeholder="+91 98765 43210"
-                className="w-full border rounded-xl px-3 py-2"
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
               />
 
               {inviteError && (
                 <p className="text-rose-600 text-sm">{inviteError}</p>
               )}
 
-              <button
-                type="submit"
-                disabled={isSavingInvite}
-                className="w-full bg-teal-600 text-white py-2 rounded-xl"
-              >
-                {isSavingInvite ? 'Sending…' : 'Send invite'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsInviteOpen(false)}
+                  className="flex-1 border border-slate-200 text-slate-600 py-2 rounded-xl hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingInvite}
+                  className="flex-1 bg-teal-600 text-white py-2 rounded-xl hover:bg-teal-700 disabled:opacity-50"
+                >
+                  {isSavingInvite ? 'Sending…' : 'Send invite'}
+                </button>
+              </div>
             </form>
           </div>
         </div>
