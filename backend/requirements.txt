@@ -1,0 +1,12 @@
+faster-whisper
+transformers
+sentencepiece
+sounddevice
+numpy
+pyaudio
+pygame
+elevenlabs
+groq
+fastapi
+uvicorn
+scipy

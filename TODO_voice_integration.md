@@ -1,0 +1,7 @@
+- [x] Update backend/audio.py: Add play_audio function to save audio bytes to temp file and play with pygame
+- [x] Update backend/assistant_controller.py: Modify _speak_async to generate and play audio
+- [x] Update backend/main.py: Use play_audio(speak(reply)) in the thread
+- [x] Update src/components/ChatWidget.jsx: Add mute button and state; skip audio playback if muted
+- [ ] Test voice playback in standalone assistant
+- [ ] Test mute functionality in web app
+- [ ] Verify reduced delay with turbo model

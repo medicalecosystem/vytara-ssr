@@ -1,0 +1,4 @@
+- [x] Investigate voice delay in assistant
+- [x] Make speak asynchronous in main.py for standalone assistant
+- [x] Optimize speak function to generate audio first then play with pygame
+- [ ] Test the changes to ensure voice replies faster
