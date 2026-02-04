@@ -698,7 +698,7 @@ export default function FamilyPage() {
       return;
     }
 
-    const nextFamily = {
+    const nextFamily: FamilyInfo = {
       id: row.family_id,
       name: row.name,
       role: 'owner',
