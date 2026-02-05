@@ -178,10 +178,11 @@ DATES: {', '.join(report_dates) if report_dates else 'Not detected'}
 
 RULES:
 - Be factual and precise
-- Show trends ONLY if multiple reports of same type exist but if present focus more on trends
+- Show trends ONLY if multiple reports of same type exist but if present focus more on trends.
 - List key findings for different report types
 - Highlight abnormalities
-- Keep it brief and readable"""
+- Keep it brief and readable
+- Do not Miss even a single value in the reports, Show trend of each and every value if multiple reports of same type exist"""
 
         user_prompt = f"""Analyze these medical reports and create a summary.
 
