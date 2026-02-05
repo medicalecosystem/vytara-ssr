@@ -183,7 +183,7 @@ RULES:
 - Highlight abnormalities
 - Keep it brief and readable
 - The Summary should consist of all the numeric values present in all the reports along with their units.
-- Do not Miss even a single value in the reports, Show trend of each and every value if multiple reports of same type exist"""
+- Show trend of each and every value if multiple reports of same type exist"""
 
         user_prompt = f"""Analyze these medical reports and create a summary.
 
