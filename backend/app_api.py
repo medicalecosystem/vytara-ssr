@@ -9,6 +9,12 @@ import shutil
 from datetime import datetime
 import io
 
+# ✅ Load environment variables from .env (local dev)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
 # Import RAG pipeline
 from rag_pipeline.clean_chunk import clean_text, chunk_text
 from rag_pipeline.embed_store import build_faiss_index
@@ -31,8 +37,9 @@ CORS(app, resources={
             "http://localhost:3000",
             "http://127.0.0.1:3000",
             "https://vytara-official.vercel.app",
-            "https://*.vercel.app"
-            "https://sauncier-instigative-yolande.ngrok-free.dev"
+            "https://*.vercel.app",
+            "https://sauncier-instigative-yolande.ngrok-free.dev",
+            "https://uncensorious-convectional-brianne.ngrok-free.dev"
         ],
         "methods": ["GET", "POST", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
