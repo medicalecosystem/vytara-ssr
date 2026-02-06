@@ -215,6 +215,7 @@ export default function FamilyPage() {
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isJoinRequestsOpen, setIsJoinRequestsOpen] = useState(false);
+  const [isDeleteFamilyOpen, setIsDeleteFamilyOpen] = useState(false);
 
   const [createName, setCreateName] = useState('');
   const [joinCode, setJoinCode] = useState('');
@@ -230,12 +231,14 @@ export default function FamilyPage() {
   const [joinRequests, setJoinRequests] = useState<JoinRequestDisplay[]>([]);
   const [joinRequestsLoading, setJoinRequestsLoading] = useState(false);
   const [joinRequestsError, setJoinRequestsError] = useState<string | null>(null);
+  const [deleteFamilyError, setDeleteFamilyError] = useState<string | null>(null);
   const [pendingJoinFamily, setPendingJoinFamily] = useState<string | null>(null);
   const [pendingRequest, setPendingRequest] = useState<PendingRequestInfo | null>(null);
 
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [isInviteLoading, setIsInviteLoading] = useState(false);
+  const [isDeletingFamily, setIsDeletingFamily] = useState(false);
 
   const [createdFamily, setCreatedFamily] = useState<FamilyInfo | null>(null);
   const [createdInviteCode, setCreatedInviteCode] = useState<string | null>(null);
@@ -675,6 +678,16 @@ export default function FamilyPage() {
 
   const openJoinRequestsModal = () => setIsJoinRequestsOpen(true);
   const closeJoinRequestsModal = () => setIsJoinRequestsOpen(false);
+  const openDeleteFamilyModal = () => {
+    if (!family || family.role !== 'owner') return;
+    setDeleteFamilyError(null);
+    setIsDeleteFamilyOpen(true);
+  };
+  const closeDeleteFamilyModal = () => {
+    setIsDeleteFamilyOpen(false);
+    setDeleteFamilyError(null);
+    setIsDeletingFamily(false);
+  };
 
   const handleCopy = async (value: string) => {
     try {
@@ -1084,6 +1097,44 @@ export default function FamilyPage() {
     await loadMembers(family.id);
   };
 
+  const handleDeleteFamily = async () => {
+    if (!family) return;
+    if (family.role !== 'owner') {
+      setDeleteFamilyError('Only the family owner can delete this family.');
+      return;
+    }
+
+    setIsDeletingFamily(true);
+    setDeleteFamilyError(null);
+
+    const response = await fetch('/api/family/delete', {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      const payload: { message?: string } = await response.json().catch(() => ({}));
+      setDeleteFamilyError(payload.message ?? 'Unable to delete the family. Please try again.');
+      setIsDeletingFamily(false);
+      return;
+    }
+
+    setIsDeleteFamilyOpen(false);
+    setIsDeletingFamily(false);
+    setIsJoinRequestsOpen(false);
+    setIsInviteOpen(false);
+    setJoinRequests([]);
+    setMembers([]);
+    setPendingJoinFamily(null);
+    setPendingRequest(null);
+    setFamily(null);
+    setPageMessage('Your family has been deleted.');
+    lastFamilyActionRef.current = null;
+    if (selectedMember) {
+      closeMemberDetailsModal();
+    }
+    await loadFamily(userId);
+  };
+
   return (
     <div className="min-h-screen bg-white p-6 md:p-10">
       <div className="mx-auto max-w-5xl space-y-6">
@@ -1114,19 +1165,28 @@ export default function FamilyPage() {
                 Invite Member
               </button>
               {family.role === 'owner' ? (
-                <button
-                  type="button"
-                  onClick={openJoinRequestsModal}
-                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:text-slate-900 transition bg-white"
-                >
-                  Join Requests{joinRequests.length > 0 ? ` (${joinRequests.length})` : ''}
-                  {joinRequests.length > 0 ? (
-                    <span className="relative ml-2 inline-flex h-2.5 w-2.5 items-center justify-center">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400/70" />
-                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" />
-                    </span>
-                  ) : null}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={openJoinRequestsModal}
+                    className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:text-slate-900 transition bg-white"
+                  >
+                    Join Requests{joinRequests.length > 0 ? ` (${joinRequests.length})` : ''}
+                    {joinRequests.length > 0 ? (
+                      <span className="relative ml-2 inline-flex h-2.5 w-2.5 items-center justify-center">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400/70" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" />
+                      </span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openDeleteFamilyModal}
+                    className="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-600 hover:border-rose-300 hover:text-rose-700 transition"
+                  >
+                    Delete Family
+                  </button>
+                </>
               ) : null}
             </div>
           </div>
@@ -1500,6 +1560,40 @@ export default function FamilyPage() {
                 ))}
               </ul>
             )}
+          </div>
+        </Modal>
+      ) : null}
+
+      {isDeleteFamilyOpen && family ? (
+        <Modal onClose={closeDeleteFamilyModal}>
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900">Delete family</h2>
+              <p className="text-sm text-slate-500 mt-1">
+                Deleting a family cannot be undone. You and your family members will be removed
+                from the family and you will no longer have access to each other&apos;s info.
+              </p>
+            </div>
+            {deleteFamilyError ? (
+              <p className="text-sm text-rose-600">{deleteFamilyError}</p>
+            ) : null}
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeDeleteFamilyModal}
+                className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteFamily}
+                disabled={isDeletingFamily}
+                className="inline-flex items-center justify-center rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isDeletingFamily ? 'Deleting…' : 'Delete Family'}
+              </button>
+            </div>
           </div>
         </Modal>
       ) : null}

@@ -14,14 +14,11 @@ pdf2image==1.17.0
 Pillow==12.0.0
 pdfplumber==0.11.8
 pypdf==6.5.0
-opencv-python==4.13.0.90
 
 # RAG Pipeline
 faiss-cpu==1.13.2
 scikit-learn==1.8.0
 numpy==2.4.0
-
-gunicorn==24.1.1
 
 # Optional: For better performance
 # faiss-gpu==1.7.4  # Use this instead of faiss-cpu if you have GPU

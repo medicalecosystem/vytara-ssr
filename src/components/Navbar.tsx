@@ -29,6 +29,11 @@ export default function Navbar() {
     window.localStorage.setItem('vytara_nav_collapsed', collapsed ? '1' : '0');
   }, [collapsed]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.dataset.navCollapsed = effectiveCollapsed ? "true" : "false";
+  }, [effectiveCollapsed]);
+
   const clearSupabaseAuthCookies = () => {
     if (typeof document === "undefined") return;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

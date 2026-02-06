@@ -555,6 +555,15 @@ export default function VaultPage() {
     fileName: '',
   });
 
+  const resetUploadData = () => {
+    setUploadData({ category: 'lab-reports', file: null, fileName: '' });
+  };
+
+  const handleCloseUploadModal = () => {
+    setShowUploadModal(false);
+    resetUploadData();
+  };
+
   /* ---------------- AUTH + FETCH ---------------- */
 
   useEffect(() => {
@@ -749,7 +758,7 @@ export default function VaultPage() {
     );
 
     setShowUploadModal(false);
-    setUploadData({ category: 'lab-reports', file: null, fileName: '' });
+    resetUploadData();
     fetchFiles(userId, selectedCategory);
     fetchCounts(userId);
   };
@@ -1392,14 +1401,14 @@ export default function VaultPage() {
 
       {/* UPLOAD MODAL */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowUploadModal(false)}>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={handleCloseUploadModal}>
           <div
             onClick={(e) => e.stopPropagation()}
             className="relative bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl"
           >
             <button
               type="button"
-              onClick={() => setShowUploadModal(false)}
+              onClick={handleCloseUploadModal}
               className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
               aria-label="Close modal"
             >

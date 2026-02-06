@@ -11,6 +11,7 @@ export default function AppLayout({
       <Navbar />
       <main className="flex-1 min-w-0">{children}</main>
       <ChatWidget />
+      <div id="vytara-translate" className="vytara-translate-anchor" />
     </div>
   );
 }

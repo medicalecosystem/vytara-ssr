@@ -1,4 +1,4 @@
-# rag_pipeline/embed_store.py   
+# backend/rag_pipeline/embed_store.py
 
 import os
 import pickle
@@ -7,145 +7,200 @@ import faiss
 from typing import List
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-# === FIX: Use absolute paths ===
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-INDEX_PATH = os.path.join(SCRIPT_DIR, "index.faiss")
-CHUNKS_PATH = os.path.join(SCRIPT_DIR, "chunks.pkl")
-VECTORIZER_PATH = os.path.join(SCRIPT_DIR, "vectorizer.pkl")
 
-print(f"📍 Embed Store Paths:")
-print(f"   INDEX: {INDEX_PATH}")
-print(f"   CHUNKS: {CHUNKS_PATH}")
-print(f"   VECTORIZER: {VECTORIZER_PATH}")
+# Fixed dimension for consistency
+EMBEDDING_DIM = 384
 
-# Simple TF-IDF based embeddings (NO PyTorch required!)
-VECTORIZER = None
+def create_vectorizer():
+    """Create TF-IDF vectorizer with FIXED dimensions"""
+    return TfidfVectorizer(
+        max_features=EMBEDDING_DIM,  # Fixed dimension
+        ngram_range=(1, 2),
+        min_df=1,
+        max_df=1.0,
+        stop_words=None,
+        token_pattern=r'\b\w+\b',
+        lowercase=True
+    )
 
-def get_vectorizer():
-    global VECTORIZER
-    if VECTORIZER is None:
-        print("📥 Initializing TF-IDF vectorizer...")
-        VECTORIZER = TfidfVectorizer(
-            max_features=384,
-            ngram_range=(1, 2),
-            min_df=1,
-            stop_words=None,
-            token_pattern=r'\b\w+\b'
-        )
-        print("✅ Vectorizer ready!")
-    return VECTORIZER
 
-def _get_embedding(text: str, fitted_vectorizer=None) -> np.ndarray:
-    if len(text) > 5000:
-        text = text[:5000]
+def embed_texts(texts: List[str], vectorizer=None) -> tuple:
+    """
+    Create TF-IDF embeddings with FIXED dimensions
+    Returns: (embeddings, fitted_vectorizer)
+    """
+    print(f"\n📊 Embedding {len(texts)} chunks...", flush=True)
     
-    if fitted_vectorizer is None:
-        raise ValueError("Vectorizer must be fitted first")
-    
-    embedding = fitted_vectorizer.transform([text]).toarray()[0]
-    return embedding.astype('float32')
-
-def embed_texts(texts: List[str]) -> List[np.ndarray]:
-    print(f"📊 Embedding {len(texts)} chunks using TF-IDF...")
-    
-    valid_texts = [t for t in texts if t and t.strip()]
+    # Filter empty texts
+    valid_texts = [t.strip() for t in texts if t and t.strip()]
     
     if not valid_texts:
         raise ValueError("All chunks are empty!")
     
-    print(f"   Valid chunks: {len(valid_texts)}")
+    print(f"   Valid chunks: {len(valid_texts)}", flush=True)
     
-    if len(valid_texts) == 1 and len(valid_texts[0].split()) < 5:
-        print("   ⚠️ Very short text detected, adding padding...")
-        valid_texts.append("medical report document patient test result analysis")
+    # Check vocabulary
+    total_words = sum(len(t.split()) for t in valid_texts)
+    unique_words = len(set(' '.join(valid_texts).split()))
     
-    vectorizer = get_vectorizer()
+    print(f"   Total words: {total_words}", flush=True)
+    print(f"   Unique words: {unique_words}", flush=True)
+    
+    # Create or use provided vectorizer
+    if vectorizer is None:
+        vectorizer = create_vectorizer()
     
     try:
+        print("   🔧 Fitting vectorizer...", flush=True)
+        
+        # Fit and transform - will always be EMBEDDING_DIM dimensions
         embeddings_matrix = vectorizer.fit_transform(valid_texts).toarray()
         
-        # === FIX: Use VECTORIZER_PATH constant ===
-        print(f"💾 Saving vectorizer to: {VECTORIZER_PATH}")
-        with open(VECTORIZER_PATH, "wb") as f:
-            pickle.dump(vectorizer, f)
-        print(f"✅ Vectorizer saved successfully!")
+        print(f"   ✅ Embeddings shape: {embeddings_matrix.shape}", flush=True)
         
-        actual_count = len(texts)
-        return [emb.astype('float32') for emb in embeddings_matrix[:actual_count]]
+        # Ensure exactly EMBEDDING_DIM dimensions
+        if embeddings_matrix.shape[1] < EMBEDDING_DIM:
+            # Pad with zeros if needed
+            padding = np.zeros((embeddings_matrix.shape[0], EMBEDDING_DIM - embeddings_matrix.shape[1]))
+            embeddings_matrix = np.hstack([embeddings_matrix, padding])
+            print(f"   ⚠️  Padded to {EMBEDDING_DIM} dimensions", flush=True)
         
-    except ValueError as e:
-        if "empty vocabulary" in str(e):
-            print("   ⚠️ Text too short for TF-IDF, using simple character encoding...")
-            embeddings = []
-            for text in valid_texts:
-                vec = np.zeros(384, dtype='float32')
-                vec[0] = len(text)
-                vec[1] = text.count(' ')
-                vec[2] = sum(c.isdigit() for c in text)
-                vec[3] = sum(c.isalpha() for c in text)
-                for i, char in enumerate(text[:380]):
-                    vec[4 + i] = ord(char) / 255.0
-                embeddings.append(vec)
-            
-            vectorizer = get_vectorizer()
-            vectorizer.fit(["dummy medical text for vectorizer"])
-            
-            # === FIX: Use VECTORIZER_PATH constant ===
-            print(f"💾 Saving fallback vectorizer to: {VECTORIZER_PATH}")
-            with open(VECTORIZER_PATH, "wb") as f:
-                pickle.dump(vectorizer, f)
-            
-            return embeddings
-        else:
-            raise
-
-def build_faiss_index(chunks: List[str]):
-    if not chunks:
-        raise ValueError("No chunks to index")
-    
-    print("🔧 Building FAISS index...")
-    
-    try:
-        embeddings = embed_texts(chunks)
+        # Convert to list of vectors
+        embeddings = [emb.astype('float32') for emb in embeddings_matrix]
+        
+        return embeddings, vectorizer
+        
     except Exception as e:
-        print(f"⚠️ Embedding failed: {e}")
-        print("   Creating minimal index with extracted text...")
-        embeddings = []
-        for chunk in chunks:
-            vec = np.random.randn(384).astype('float32')
-            embeddings.append(vec)
+        print(f"   ❌ Embedding failed: {e}", flush=True)
+        raise
+
+
+def build_faiss_index(chunks: List[str], temp_dir: str) -> tuple:
+    """
+    Build FAISS index from text chunks IN MEMORY
     
-    dim = embeddings[0].shape[0]
-    emb_matrix = np.stack(embeddings)
+    Args:
+        chunks: List of text chunks
+        temp_dir: Temporary directory for this request
     
-    faiss.normalize_L2(emb_matrix)
+    Returns:
+        (index, chunks, vectorizer) - all in memory
+    """
+    if not chunks:
+        raise ValueError("No chunks provided to index")
     
+    print(f"\n🔧 Building FAISS index...", flush=True)
+    print(f"   Chunks: {len(chunks)}", flush=True)
+    
+    # Create embeddings
+    try:
+        embeddings, vectorizer = embed_texts(chunks)
+    except Exception as e:
+        print(f"❌ Failed to create embeddings: {e}", flush=True)
+        raise
+    
+    # Stack into matrix
+    embedding_matrix = np.stack(embeddings)
+    dim = embedding_matrix.shape[1]
+    
+    print(f"   Dimensions: {dim}", flush=True)
+    print(f"   Matrix shape: {embedding_matrix.shape}", flush=True)
+    
+    # Verify dimension
+    if dim != EMBEDDING_DIM:
+        raise ValueError(f"Dimension mismatch! Expected {EMBEDDING_DIM}, got {dim}")
+    
+    # Normalize for cosine similarity
+    print(f"   🔧 Normalizing vectors...", flush=True)
+    faiss.normalize_L2(embedding_matrix)
+    
+    # Create FAISS index
+    print(f"   🔧 Creating FAISS index...", flush=True)
     index = faiss.IndexFlatIP(dim)
-    index.add(emb_matrix)
+    index.add(embedding_matrix)
     
-    os.makedirs(os.path.dirname(INDEX_PATH) or ".", exist_ok=True)
+    print(f"   ✅ Index created: {index.ntotal} vectors", flush=True)
     
-    print(f"💾 Saving index to: {INDEX_PATH}")
-    faiss.write_index(index, INDEX_PATH)
+    # Save to temp directory (for this request only)
+    index_path = os.path.join(temp_dir, "index.faiss")
+    chunks_path = os.path.join(temp_dir, "chunks.pkl")
+    vectorizer_path = os.path.join(temp_dir, "vectorizer.pkl")
     
-    print(f"💾 Saving chunks to: {CHUNKS_PATH}")
-    with open(CHUNKS_PATH, "wb") as f:
+    faiss.write_index(index, index_path)
+    
+    with open(chunks_path, "wb") as f:
         pickle.dump(chunks, f)
     
-    print("✅ Index built successfully!")
-    return True
+    with open(vectorizer_path, "wb") as f:
+        pickle.dump(vectorizer, f)
+    
+    print(f"   ✅ Saved to temp: {temp_dir}", flush=True)
+    print("✅ FAISS index built successfully!", flush=True)
+    
+    # Return in-memory objects
+    return index, chunks, vectorizer
 
-def load_index_and_chunks():
-    if not os.path.exists(INDEX_PATH):
-        raise FileNotFoundError(f"Index not found at: {INDEX_PATH}. Please upload reports first.")
-    if not os.path.exists(CHUNKS_PATH):
-        raise FileNotFoundError(f"Chunks not found at: {CHUNKS_PATH}. Please upload reports first.")
+
+def load_index_and_chunks(temp_dir: str):
+    """Load FAISS index and chunks from temp directory"""
+    print(f"\n📂 Loading from temp: {temp_dir}...", flush=True)
     
-    print(f"📂 Loading index from: {INDEX_PATH}")
-    index = faiss.read_index(INDEX_PATH)
+    index_path = os.path.join(temp_dir, "index.faiss")
+    chunks_path = os.path.join(temp_dir, "chunks.pkl")
+    vectorizer_path = os.path.join(temp_dir, "vectorizer.pkl")
     
-    print(f"📂 Loading chunks from: {CHUNKS_PATH}")
-    with open(CHUNKS_PATH, "rb") as f:
+    if not os.path.exists(index_path):
+        raise FileNotFoundError(f"Index not found: {index_path}")
+    if not os.path.exists(chunks_path):
+        raise FileNotFoundError(f"Chunks not found: {chunks_path}")
+    if not os.path.exists(vectorizer_path):
+        raise FileNotFoundError(f"Vectorizer not found: {vectorizer_path}")
+    
+    # Load index
+    index = faiss.read_index(index_path)
+    print(f"   ✅ Index loaded: {index.ntotal} vectors", flush=True)
+    
+    # Load chunks
+    with open(chunks_path, "rb") as f:
         chunks = pickle.load(f)
+    print(f"   ✅ Chunks loaded: {len(chunks)} chunks", flush=True)
     
-    return index, chunks
+    # Load vectorizer
+    with open(vectorizer_path, "rb") as f:
+        vectorizer = pickle.load(f)
+    print(f"   ✅ Vectorizer loaded", flush=True)
+    
+    return index, chunks, vectorizer
+
+
+def search_similar(query: str, temp_dir: str, top_k: int = 5):
+    """Search for similar chunks using temp directory"""
+    # Load from temp
+    index, chunks, vectorizer = load_index_and_chunks(temp_dir)
+    
+    # Embed query using SAME vectorizer
+    try:
+        query_embedding = vectorizer.transform([query]).toarray()[0].astype('float32')
+        
+        # Ensure correct dimension
+        if len(query_embedding) < EMBEDDING_DIM:
+            padding = np.zeros(EMBEDDING_DIM - len(query_embedding), dtype='float32')
+            query_embedding = np.concatenate([query_embedding, padding])
+        
+        query_embedding = query_embedding.reshape(1, -1)
+        faiss.normalize_L2(query_embedding)
+        
+    except Exception as e:
+        print(f"❌ Query embedding failed: {e}", flush=True)
+        raise
+    
+    # Search
+    scores, indices = index.search(query_embedding, min(top_k, len(chunks)))
+    
+    # Return results
+    results = []
+    for score, idx in zip(scores[0], indices[0]):
+        if idx < len(chunks):
+            results.append((chunks[idx], float(score)))
+    
+    return results

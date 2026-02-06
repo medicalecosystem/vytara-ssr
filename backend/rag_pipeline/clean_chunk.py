@@ -2,144 +2,177 @@
 
 import re
 
-SECTION_PATTERNS = [
-    r"COMPLETE BLOOD COUNT",
-    r"\bCBC\b",
-    r"BLOOD GLUCOSE",
-    r"FASTING",
-    r"\bTSH\b",
-    r"THYROID",
-    r"VITAMIN D",
-    r"VITAMIN B12",
-    r"25[-\s]?HYDROXYVITAMIN D",
-    r"IMMUNOLOGY",
-    r"LIPID PROFILE",
-    r"LIVER FUNCTION",
-    r"KIDNEY FUNCTION",
-    r"HEMOGLOBIN",
-    r"URINALYSIS",
-    r"FOLLOW[-\s]?UP",
-    r"MEDICAL REPORT",
-    r"PATIENT NAME",
-    r"INVESTIGATIONS?",
-    r"ESR",
-    r"CLINICAL",
-]
-
-SECTION_REGEX = re.compile(
-    r"(" + "|".join(SECTION_PATTERNS) + r")",
-    flags=re.I
-)
 
 def clean_text(text: str) -> str:
+    """
+    Clean extracted text
+    """
     if not text:
         return ""
     
-    REMOVE_PATTERNS = [
+    # Remove common noise
+    noise_patterns = [
         r"scan to validate.*",
         r"page\s*\d+\s*of\s*\d+",
         r"barcode id.*",
         r"end of report.*",
+        r"={5,}",
+        r"-{5,}",
     ]
     
-    for pattern in REMOVE_PATTERNS:
+    for pattern in noise_patterns:
         text = re.sub(pattern, "", text, flags=re.I)
     
+    # Normalize whitespace
     text = text.replace("\r", "")
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     
     return text.strip()
 
-def chunk_by_report(text: str):
-    """Split text by FILE: markers first"""
-    file_pattern = r"={50,}\nFILE: (.*?)\n={50,}"
-    matches = list(re.finditer(file_pattern, text))
-    
-    chunks = []
-    for i, match in enumerate(matches):
-        start = match.end()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        file_content = text[start:end].strip()
-        
-        if len(file_content.split()) > 15:  # At least 15 words
-            chunks.append(file_content)
-    
-    return chunks
 
-def chunk_by_sections(text: str):
-    """Split by medical sections"""
-    matches = list(SECTION_REGEX.finditer(text))
-    chunks = []
+def chunk_text(text: str, max_words: int = 300, overlap_words: int = 50) -> list:
+    """
+    Intelligent chunking for medical documents
     
-    if matches:
-        for i, match in enumerate(matches):
-            start = match.start()
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-            section = text[start:end].strip()
-            
-            if len(section.split()) > 10:
-                chunks.append(section)
+    Strategy:
+    1. Split by double newlines (paragraphs)
+    2. Combine paragraphs into chunks of ~max_words
+    3. Add overlap between chunks for context
     
-    return chunks
-
-def chunk_by_paragraphs(text: str, max_words: int = 250, overlap_words: int = 30):
-    """Fallback: chunk by paragraphs and words"""
+    Args:
+        text: Text to chunk
+        max_words: Maximum words per chunk
+        overlap_words: Words to overlap between chunks
+    
+    Returns:
+        List of text chunks
+    """
+    if not text or not text.strip():
+        return []
+    
+    # Split into paragraphs
     paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+    
+    if not paragraphs:
+        # Fallback: split by single newlines
+        paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
+    
+    if not paragraphs:
+        # Last resort: return whole text if it has enough words
+        words = text.split()
+        if len(words) >= 20:
+            return [text]
+        else:
+            return []
     
     chunks = []
     current_chunk = []
-    current_words = 0
+    current_word_count = 0
     
     for para in paragraphs:
-        para_words = len(para.split())
+        para_words = para.split()
+        para_word_count = len(para_words)
         
-        if current_words + para_words <= max_words:
-            current_chunk.append(para)
-            current_words += para_words
-        else:
+        # If single paragraph is too long, split it
+        if para_word_count > max_words:
+            # Save current chunk first
             if current_chunk:
                 chunks.append('\n\n'.join(current_chunk))
-            current_chunk = [para]
-            current_words = para_words
+                current_chunk = []
+                current_word_count = 0
+            
+            # Split long paragraph into sentences
+            sentences = re.split(r'[.!?]+', para)
+            temp_chunk = []
+            temp_count = 0
+            
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                
+                sent_words = len(sentence.split())
+                
+                if temp_count + sent_words <= max_words:
+                    temp_chunk.append(sentence)
+                    temp_count += sent_words
+                else:
+                    if temp_chunk:
+                        chunks.append('. '.join(temp_chunk) + '.')
+                    temp_chunk = [sentence]
+                    temp_count = sent_words
+            
+            if temp_chunk:
+                chunks.append('. '.join(temp_chunk) + '.')
+            
+            continue
+        
+        # Add paragraph to current chunk
+        if current_word_count + para_word_count <= max_words:
+            current_chunk.append(para)
+            current_word_count += para_word_count
+        else:
+            # Save current chunk and start new one
+            if current_chunk:
+                chunks.append('\n\n'.join(current_chunk))
+            
+            # Add overlap from previous chunk
+            if chunks and overlap_words > 0:
+                prev_words = chunks[-1].split()[-overlap_words:]
+                overlap_text = ' '.join(prev_words)
+                current_chunk = [overlap_text, para]
+                current_word_count = len(prev_words) + para_word_count
+            else:
+                current_chunk = [para]
+                current_word_count = para_word_count
     
+    # Add final chunk
     if current_chunk:
-        chunks.append('\n\n'.join(current_chunk))
+        chunk_text = '\n\n'.join(current_chunk)
+        # Only add if it has enough content
+        if len(chunk_text.split()) >= 10:
+            chunks.append(chunk_text)
+    
+    # Filter out very short chunks
+    chunks = [c for c in chunks if len(c.split()) >= 10]
     
     return chunks
 
-def chunk_text(text: str, max_words: int = 250, overlap_words: int = 30):
+
+# Test function
+if __name__ == "__main__":
+    test_text = """
+    Patient Name: John Doe
+    Age: 45 years
+    Date: 15/01/2025
+    
+    COMPLETE BLOOD COUNT
+    Hemoglobin: 14.5 g/dL (13-17)
+    WBC: 8000 /cumm (4000-11000)
+    Platelets: 250000 /cumm (150000-450000)
+    
+    INTERPRETATION:
+    All values within normal range.
+    No abnormalities detected.
+    
+    FOLLOW UP:
+    Repeat test after 6 months if symptoms persist.
+    Maintain healthy diet and exercise.
     """
-    Multi-strategy chunking:
-    1. Try splitting by FILE markers (best for multiple reports)
-    2. Try splitting by medical sections
-    3. Fallback to paragraph-based chunking
-    """
-    if not text:
-        return []
     
-    # Strategy 1: Split by FILE markers
-    file_chunks = chunk_by_report(text)
-    if len(file_chunks) > 1:
-        print(f"✓ Chunked by FILE markers: {len(file_chunks)} chunks")
-        return file_chunks
+    print("Original text:")
+    print(test_text)
+    print("\n" + "="*80 + "\n")
     
-    # Strategy 2: Split by medical sections
-    section_chunks = chunk_by_sections(text)
-    if len(section_chunks) >= 3:
-        print(f"✓ Chunked by sections: {len(section_chunks)} chunks")
-        return section_chunks
+    cleaned = clean_text(test_text)
+    print("Cleaned text:")
+    print(cleaned)
+    print("\n" + "="*80 + "\n")
     
-    # Strategy 3: Paragraph-based chunking
-    para_chunks = chunk_by_paragraphs(text, max_words, overlap_words)
-    if para_chunks:
-        print(f"✓ Chunked by paragraphs: {len(para_chunks)} chunks")
-        return para_chunks
-    
-    # Last resort: return as single chunk if it has enough words
-    if len(text.split()) > 15:
-        print(f"⚠ Using entire text as single chunk")
-        return [text]
-    
-    print(f"❌ No valid chunks created")
-    return []
+    chunks = chunk_text(cleaned, max_words=50, overlap_words=10)
+    print(f"Created {len(chunks)} chunks:")
+    for i, chunk in enumerate(chunks, 1):
+        print(f"\nChunk {i}:")
+        print(chunk)
+        print(f"({len(chunk.split())} words)")

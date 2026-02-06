@@ -104,6 +104,34 @@
   text-decoration: none;
 }
 
+body {
+  --sidebar-offset: 0rem;
+}
+
+@media (min-width: 768px) {
+  body {
+    --sidebar-offset: 16rem;
+  }
+
+  body[data-nav-collapsed="true"] {
+    --sidebar-offset: 5rem;
+  }
+}
+
+.vytara-translate-anchor {
+  position: fixed;
+  bottom: 1.5rem;
+  left: calc(var(--sidebar-offset, 0px) + 1rem);
+  z-index: 50;
+  transition: left 200ms ease;
+}
+
+@media (max-width: 767px) {
+  .vytara-translate-anchor {
+    left: 1rem;
+  }
+}
+
 :root {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
