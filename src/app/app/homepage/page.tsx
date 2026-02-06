@@ -1,4 +1,3 @@
-//homepage/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -282,10 +281,6 @@ export default function HomePage() {
 
     fetchAppointments();
   }, [userId]);
-
-  /* =======================
-     FETCH CARE CIRCLE INVITES
-  ======================= */
 
   /* =======================
      APPOINTMENTS: ADD / UPDATE / DELETE
@@ -633,7 +628,6 @@ export default function HomePage() {
       taken,
     };
 
-    // Add log directly to the medication
     const updatedMedications = medications.map((m) => {
       if (m.id === medicationId) {
         return {
@@ -730,27 +724,36 @@ export default function HomePage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-12">
         {/* HERO */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center mb-20">
-          <div>
-            <span className="inline-block bg-teal-500 text-white px-4 py-1 rounded-full text-sm font-semibold mb-6">
-              Health Companion
-            </span>
+          {/* Left Column */}
+          <div className="space-y-8">
+            <div>
+              <span className="inline-block bg-teal-500 text-white px-4 py-1 rounded-full text-sm font-semibold mb-6">
+                Health Companion
+              </span>
 
-            <h2
-              className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-4 leading-tight"
-              style={{
-                background: `linear-gradient(90deg, #4FD1A6, #FFBF69)`,
-                WebkitBackgroundClip: "text",
-                backgroundClip: "text",
-                color: "transparent",
-              }}
-            >
-              {greeting}, {name}
-            </h2>
+              <h2
+                className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-4 leading-tight"
+                style={{
+                  background: `linear-gradient(90deg, #4FD1A6, #FFBF69)`,
+                  WebkitBackgroundClip: "text",
+                  backgroundClip: "text",
+                  color: "transparent",
+                }}
+              >
+                {greeting}, {name}
+              </h2>
 
-            <p className="text-slate-600 text-lg max-w-md">
-              Designed with empathy. Built for clarity. Ready when you need it.
-            </p>
+              <p className="text-slate-600 text-lg max-w-md">
+                Designed with empathy. Built for clarity. Ready when you need it.
+              </p>
+            </div>
 
+            {/* Mobile-only Notification Button (above Get Summary button) */}
+            <div className="lg:hidden">
+              <NotificationsPanel userId={userId} appointments={appointments} />
+            </div>
+
+            {/* Action Buttons */}
             <div className="mt-8 flex flex-wrap items-center gap-4">
               <button
                 onClick={() => setIsSummaryModalOpen(true)}
@@ -780,8 +783,11 @@ export default function HomePage() {
               </button>
             </div>
           </div>
-        
-          <NotificationsPanel userId={userId} appointments={appointments} />
+
+          {/* Desktop Notification Panel */}
+          <div className="hidden lg:block">
+            <NotificationsPanel userId={userId} appointments={appointments} />
+          </div>
         </div>
 
         {/* MODALS */}

@@ -484,7 +484,6 @@ export default function Landing() {
           {menu && (
             <div className="bg-white shadow-md md:hidden z-[60]">
               {[
-                ['Get Started', 'login'],
                 ['Watch Demo', 'demo'],
                 ['Mission', 'mission'],
                 ['Features', 'features'],

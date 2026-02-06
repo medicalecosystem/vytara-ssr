@@ -49,62 +49,60 @@ export default function ChatWidget() {
     <>
       {/* Floating Button */}
       <button
-  className={styles.fab}
-  onClick={() => setOpen(o => !o)}
-  aria-label="Open assistant"
->
-  <span className={styles.chatIcon} />
-</button>
-
+        className={styles.fab}
+        onClick={() => setOpen(o => !o)}
+        aria-label="Open assistant"
+      >
+        <span className={styles.chatIcon} />
+      </button>
 
       <div
-  className={`${styles.window} ${open ? styles.open : styles.closed}`}
-        >
-          {/* Header */}
-          <div className={styles.header}>
-            <div>
-              <strong>Vytara Assistant</strong>
-              <span>Healthcare Support</span>
-            </div>
-            <button onClick={() => setOpen(false)}>✕</button>
+        className={`${styles.window} ${open ? styles.open : styles.closed}`}
+      >
+        {/* Header */}
+        <div className={styles.header}>
+          <div>
+            <strong>Vytara Assistant</strong>
+            <span>Healthcare Support</span>
           </div>
-
-          {/* Messages */}
-          <div className={styles.messages}>
-            {messages.map((m, i) => (
-              <div
-                key={i}
-                className={m.role === "user"
-                  ? styles.user
-                  : styles.bot}
-              >
-                {m.content}
-              </div>
-            ))}
-
-            {loading && (
-              <div className={styles.bot}>Analyzing…</div>
-            )}
-            <div ref={endRef} />
-          </div>
-
-          {/* Input */}
-          <div className={styles.input}>
-            <textarea
-              placeholder="Ask about records, care, or emergencies…"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  sendMessage();
-                }
-              }}
-            />
-            <button onClick={sendMessage}>Send</button>
-          </div>
+          <button onClick={() => setOpen(false)}>✕</button>
         </div>
-      
+
+        {/* Messages */}
+        <div className={styles.messages}>
+          {messages.map((m, i) => (
+            <div
+              key={i}
+              className={m.role === "user"
+                ? styles.user
+                : styles.bot}
+            >
+              {m.content}
+            </div>
+          ))}
+
+          {loading && (
+            <div className={styles.bot}>Analyzing…</div>
+          )}
+          <div ref={endRef} />
+        </div>
+
+        {/* Input */}
+        <div className={styles.input}>
+          <textarea
+            placeholder="Ask about records, care, or emergencies…"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+              }
+            }}
+          />
+          <button onClick={sendMessage}>Send</button>
+        </div>
+      </div>
     </>
   );
 }

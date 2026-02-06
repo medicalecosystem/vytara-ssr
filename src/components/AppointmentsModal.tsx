@@ -82,6 +82,7 @@ const from24HourTime = (time: string): TimeParts => {
 
   const hour24 = Number(match[1]);
   const minute = match[2];
+
   if (!Number.isFinite(hour24)) return { hour: '', minute: '', period: '' };
 
   const period = hour24 >= 12 ? 'PM' : 'AM';
@@ -102,24 +103,32 @@ const clampTimePart = (value: string, max: number) => {
   return String(Math.min(numeric, max));
 };
 
-export function AppointmentsModal({ appointments, onClose, onAddAppointment, onDeleteAppointment }: Props) {
+export function AppointmentsModal({
+  appointments,
+  onClose,
+  onAddAppointment,
+  onDeleteAppointment,
+}: Props) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isClient, setIsClient] = useState(false);
   const [showEventModal, setShowEventModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Appointment | null>(null);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
-  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('list'); // Default to list view
+  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('list');
+
   const [eventForm, setEventForm] = useState({
     title: '',
     date: '',
     time: '',
     type: '',
   });
+
   const [eventTime, setEventTime] = useState<TimeParts>({
     hour: '',
     minute: '',
     period: '',
   });
+
   const [additionalFields, setAdditionalFields] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
@@ -185,7 +194,7 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
 
     const fields: { [key: string]: string } = {};
     const typeFields = appointmentTypeFields[appointment.type as keyof typeof appointmentTypeFields] || [];
-    typeFields.forEach(field => {
+    typeFields.forEach((field) => {
       fields[field.name] = appointment[field.name] || '';
     });
     setAdditionalFields(fields);
@@ -194,6 +203,7 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
 
   const handleSaveEvent = (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!eventForm.title.trim()) {
       alert('Please enter the event name.');
       return;
@@ -214,20 +224,21 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
       alert('Please select an appointment type.');
       return;
     }
+
     if (eventForm.title && eventForm.date && eventForm.time && eventForm.type) {
       const appointmentDateTime = new Date(`${eventForm.date}T${eventForm.time}`);
       const now = new Date();
-
       if (appointmentDateTime <= now) {
         alert('Please select a future date and time for the appointment.');
         return;
       }
 
       const appointmentData: Appointment = {
-        id: selectedEvent?.id || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`),
+        id: selectedEvent?.id || crypto.randomUUID(),
         ...eventForm,
         ...additionalFields,
       };
+
       onAddAppointment(appointmentData);
       setShowEventModal(false);
       setEventForm({ title: '', date: '', time: '', type: '' });
@@ -259,7 +270,7 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
 
   const getAppointmentsForDate = (day: number) => {
     const dateStr = `${displayDate.getFullYear()}-${String(displayDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return appointments.filter(apt => apt.date === dateStr);
+    return appointments.filter((apt) => apt.date === dateStr);
   };
 
   const isPastDate = (day: number) => {
@@ -269,9 +280,8 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
     return date < today;
   };
 
-  // Get upcoming appointments sorted by date and time
   const upcomingAppointments = appointments
-    .filter(apt => {
+    .filter((apt) => {
       const aptDate = new Date(`${apt.date}T${apt.time}`);
       return aptDate >= new Date();
     })
@@ -283,11 +293,11 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { 
-      weekday: 'short', 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
+    return date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
     });
   };
 
@@ -296,56 +306,58 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
     return `${parts.hour}:${parts.minute} ${parts.period}`;
   };
 
-  const currentTypeFields = eventForm.type ? appointmentTypeFields[eventForm.type as keyof typeof appointmentTypeFields] || [] : [];
+  const currentTypeFields = eventForm.type
+    ? appointmentTypeFields[eventForm.type as keyof typeof appointmentTypeFields] || []
+    : [];
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center p-4 pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(1rem+env(safe-area-inset-bottom))] md:pt-4 md:pb-4 z-50">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-5xl w-full max-h-[calc(100vh-2rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] md:max-h-[90vh] overflow-hidden border border-slate-200 flex flex-col">
+    <div className="fixed inset-0 flex items-center justify-center p-3 sm:p-4 z-50 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-5xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden border border-slate-200 flex flex-col">
         {/* Header */}
-        <div className="bg-white p-6 border-b border-slate-200 flex justify-between items-center rounded-t-3xl">
-          <h2 className="text-2xl font-bold text-slate-900">Upcoming Appointments</h2>
-          <div className="flex items-center gap-3">
+        <div className="bg-white p-4 sm:p-6 border-b border-slate-200 flex justify-between items-center rounded-t-2xl sm:rounded-t-3xl flex-shrink-0">
+          <h2 className="text-lg sm:text-2xl font-bold text-slate-900">Appointments</h2>
+          <div className="flex items-center gap-2 sm:gap-3">
             {/* View Toggle */}
-            <div className="flex bg-slate-100 rounded-lg p-1">
+            <div className="flex bg-slate-100 rounded-lg p-0.5 sm:p-1">
               <button
                 onClick={() => setViewMode('list')}
-                className={`px-4 py-2 rounded-md transition flex items-center gap-2 ${
+                className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-md transition flex items-center gap-1 sm:gap-2 ${
                   viewMode === 'list'
                     ? 'bg-white text-teal-600 shadow-sm'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <List className="w-4 h-4" />
-                <span className="text-sm font-semibold">List</span>
+                <List className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="text-xs sm:text-sm font-semibold hidden xs:inline">List</span>
               </button>
               <button
                 onClick={() => setViewMode('calendar')}
-                className={`px-4 py-2 rounded-md transition flex items-center gap-2 ${
+                className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-md transition flex items-center gap-1 sm:gap-2 ${
                   viewMode === 'calendar'
                     ? 'bg-white text-teal-600 shadow-sm'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <CalendarIcon className="w-4 h-4" />
-                <span className="text-sm font-semibold">Calendar</span>
+                <CalendarIcon className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="text-xs sm:text-sm font-semibold hidden xs:inline">Calendar</span>
               </button>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition text-slate-600">
-              <X className="w-6 h-6" />
+            <button onClick={onClose} className="p-1.5 sm:p-2 hover:bg-slate-100 rounded-lg transition text-slate-600">
+              <X className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
           </div>
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {viewMode === 'list' ? (
             /* List View */
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {upcomingAppointments.length === 0 ? (
-                <div className="text-center py-12">
-                  <CalendarIcon className="w-16 h-16 mx-auto text-slate-300 mb-4" />
-                  <p className="text-slate-500 text-lg font-medium">No upcoming appointments</p>
-                  <p className="text-slate-400 text-sm mt-2">Click "Add New Appointment" to schedule one</p>
+                <div className="text-center py-8 sm:py-12">
+                  <CalendarIcon className="w-12 h-12 sm:w-16 sm:h-16 mx-auto text-slate-300 mb-3 sm:mb-4" />
+                  <p className="text-slate-500 text-base sm:text-lg font-medium">No upcoming appointments</p>
+                  <p className="text-slate-400 text-xs sm:text-sm mt-2">Click "Add New Appointment" to schedule one</p>
                 </div>
               ) : (
                 upcomingAppointments.map((apt) => {
@@ -354,44 +366,40 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
                     <div
                       key={apt.id}
                       onClick={() => handleEventClick(apt)}
-                      className="bg-gradient-to-br from-teal-50 to-white border border-teal-200 rounded-2xl p-6 hover:shadow-lg transition cursor-pointer group"
+                      className="bg-gradient-to-br from-teal-50 to-white border border-teal-200 rounded-xl sm:rounded-2xl p-4 sm:p-6 hover:shadow-lg transition cursor-pointer group"
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          {/* Type Badge */}
-                          <span className="inline-block px-3 py-1 bg-teal-500 text-white text-xs font-semibold rounded-full mb-3">
+                      <div className="flex items-start justify-between gap-3 sm:gap-4">
+                        <div className="flex-1 min-w-0">
+                          <span className="inline-block px-2 sm:px-3 py-0.5 sm:py-1 bg-teal-500 text-white text-[10px] sm:text-xs font-semibold rounded-full mb-2 sm:mb-3">
                             {apt.type}
                           </span>
-                          
-                          {/* Title */}
-                          <h3 className="text-xl font-bold text-slate-900 mb-3 group-hover:text-teal-600 transition">
+
+                          <h3 className="text-base sm:text-xl font-bold text-slate-900 mb-2 sm:mb-3 group-hover:text-teal-600 transition truncate">
                             {apt.title}
                           </h3>
-                          
-                          {/* Date & Time */}
-                          <div className="flex flex-wrap gap-4 mb-4">
-                            <div className="flex items-center gap-2 text-slate-600">
-                              <CalendarIcon className="w-4 h-4 text-teal-500" />
-                              <span className="text-sm font-medium">{formatDate(apt.date)}</span>
+
+                          <div className="flex flex-wrap gap-2 sm:gap-4 mb-3 sm:mb-4">
+                            <div className="flex items-center gap-1.5 sm:gap-2 text-slate-600">
+                              <CalendarIcon className="w-3 h-3 sm:w-4 sm:h-4 text-teal-500 flex-shrink-0" />
+                              <span className="text-xs sm:text-sm font-medium">{formatDate(apt.date)}</span>
                             </div>
-                            <div className="flex items-center gap-2 text-slate-600">
-                              <Clock className="w-4 h-4 text-teal-500" />
-                              <span className="text-sm font-medium">{formatTime(apt.time)}</span>
+                            <div className="flex items-center gap-1.5 sm:gap-2 text-slate-600">
+                              <Clock className="w-3 h-3 sm:w-4 sm:h-4 text-teal-500 flex-shrink-0" />
+                              <span className="text-xs sm:text-sm font-medium">{formatTime(apt.time)}</span>
                             </div>
                           </div>
 
-                          {/* Additional Details */}
                           {typeFields.length > 0 && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                              {typeFields.map(field => {
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 mt-3 sm:mt-4">
+                              {typeFields.map((field) => {
                                 const value = apt[field.name];
                                 if (value) {
                                   return (
-                                    <div key={field.name} className="flex items-start gap-2">
-                                      <MapPin className="w-4 h-4 text-teal-500 mt-0.5 flex-shrink-0" />
-                                      <div>
-                                        <p className="text-xs text-slate-500 font-medium">{field.label}</p>
-                                        <p className="text-sm text-slate-700">{value}</p>
+                                    <div key={field.name} className="flex items-start gap-1.5 sm:gap-2">
+                                      <MapPin className="w-3 h-3 sm:w-4 sm:h-4 text-teal-500 mt-0.5 flex-shrink-0" />
+                                      <div className="min-w-0">
+                                        <p className="text-[10px] sm:text-xs text-slate-500 font-medium">{field.label}</p>
+                                        <p className="text-xs sm:text-sm text-slate-700 truncate">{value}</p>
                                       </div>
                                     </div>
                                   );
@@ -402,17 +410,16 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
                           )}
                         </div>
 
-                        {/* Delete Button */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedEvent(apt);
                             setShowDeleteConfirmation(true);
                           }}
-                          className="p-2 hover:bg-red-100 rounded-lg transition text-red-600"
+                          className="p-1.5 sm:p-2 hover:bg-red-100 rounded-lg transition text-red-600 flex-shrink-0"
                           title="Delete appointment"
                         >
-                          <Trash2 className="w-5 h-5" />
+                          <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
                         </button>
                       </div>
                     </div>
@@ -420,7 +427,6 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
                 })
               )}
 
-              {/* Add New Button */}
               <button
                 onClick={() => {
                   const today = new Date();
@@ -436,7 +442,7 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
                   setSelectedEvent(null);
                   setShowEventModal(true);
                 }}
-                className="w-full py-4 border-2 border-dashed border-teal-300 rounded-2xl text-teal-600 hover:bg-teal-50 hover:border-teal-400 transition font-semibold"
+                className="w-full py-3 sm:py-4 border-2 border-dashed border-teal-300 rounded-xl sm:rounded-2xl text-teal-600 hover:bg-teal-50 hover:border-teal-400 transition font-semibold text-sm sm:text-base"
               >
                 + Add New Appointment
               </button>
@@ -444,40 +450,38 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
           ) : (
             /* Calendar View */
             <>
-              {/* Calendar Header */}
-              <div className="flex items-center justify-between mb-8">
-                <button onClick={previousMonth} className="p-2 hover:bg-teal-50 rounded-lg transition text-teal-600">
-                  <ChevronLeft className="w-6 h-6" />
+              <div className="flex items-center justify-between mb-6 sm:mb-8">
+                <button onClick={previousMonth} className="p-1.5 sm:p-2 hover:bg-teal-50 rounded-lg transition text-teal-600">
+                  <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
                 </button>
-                <h3 className="text-2xl font-bold text-slate-900">
+                <h3 className="text-lg sm:text-2xl font-bold text-slate-900">
                   {displayDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                 </h3>
-                <button onClick={nextMonth} className="p-2 hover:bg-teal-50 rounded-lg transition text-teal-600">
-                  <ChevronRight className="w-6 h-6" />
+                <button onClick={nextMonth} className="p-1.5 sm:p-2 hover:bg-teal-50 rounded-lg transition text-teal-600">
+                  <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
                 </button>
               </div>
 
-              {/* Calendar Grid */}
-              <div className="grid grid-cols-7 gap-2">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                  <div key={day} className="text-center text-teal-600 p-2 font-semibold text-sm">
+              <div className="grid grid-cols-7 gap-1 sm:gap-2">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                  <div key={day} className="text-center text-teal-600 p-1 sm:p-2 font-semibold text-[10px] sm:text-sm">
                     {day}
                   </div>
                 ))}
-                
+
                 {Array.from({ length: startingDayOfWeek }).map((_, index) => (
-                  <div key={`empty-${index}`} className="p-2" />
+                  <div key={`empty-${index}`} className="p-1 sm:p-2" />
                 ))}
-                
+
                 {Array.from({ length: daysInMonth }).map((_, index) => {
                   const day = index + 1;
                   const dayAppointments = getAppointmentsForDate(day);
                   const past = isPastDate(day);
-                  
+
                   return (
                     <div
                       key={`day-${day}`}
-                      className={`p-2 border rounded-xl min-h-[90px] cursor-pointer transition ${
+                      className={`p-1 sm:p-2 border rounded-lg sm:rounded-xl min-h-[60px] sm:min-h-[90px] cursor-pointer transition ${
                         past
                           ? 'bg-slate-50 border-slate-200 opacity-60'
                           : dayAppointments.length > 0
@@ -485,25 +489,25 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
                           : 'border-slate-200 hover:border-teal-300 hover:bg-slate-50'
                       }`}
                       onClick={() => {
-                        if (!past) {
-                          handleDateClick(day);
-                        }
+                        if (!past) handleDateClick(day);
                       }}
                     >
-                      <div className={`text-sm font-semibold mb-1 ${past ? 'text-slate-400' : 'text-slate-900'}`}>
+                      <div className={`text-[10px] sm:text-sm font-semibold mb-0.5 sm:mb-1 ${past ? 'text-slate-400' : 'text-slate-900'}`}>
                         {day}
                       </div>
-                      {dayAppointments.map(apt => (
+
+                      {dayAppointments.map((apt) => (
                         <div
                           key={apt.id}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleEventClick(apt);
                           }}
-                          className="text-xs bg-teal-500 text-white rounded-md px-2 py-1 mt-0.5 truncate hover:bg-teal-600 transition cursor-pointer font-medium"
+                          className="text-[9px] sm:text-xs bg-teal-500 text-white rounded-md px-1 sm:px-2 py-0.5 sm:py-1 mt-0.5 truncate hover:bg-teal-600 transition cursor-pointer font-medium"
                           title={`${apt.title} at ${apt.time}`}
                         >
-                          {apt.time} - {apt.title}
+                          <span className="hidden sm:inline">{apt.time} - </span>
+                          {apt.title}
                         </div>
                       ))}
                     </div>
@@ -517,14 +521,17 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
 
       {/* Add/Edit Event Modal */}
       {showEventModal && (
-        <div className="fixed inset-0 flex items-center justify-center p-4 z-[60] overflow-y-auto">
-          <div className="relative overflow-hidden rounded-[28px] max-w-md w-full my-8 border border-white/30 bg-white/20 shadow-[0_18px_60px_-28px_rgba(15,23,42,0.45)] ring-1 ring-white/40 backdrop-blur-2xl backdrop-saturate-150">
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-gradient-to-br from-white/45 via-white/18 to-white/8" />
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.35),rgba(255,255,255,0)_55%)]" />
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] ring-1 ring-white/20" />
+        <div className="fixed inset-0 flex items-center justify-center p-3 sm:p-4 z-[60] bg-black/50 backdrop-blur-sm overflow-y-auto">
+          <div className="relative overflow-hidden rounded-2xl sm:rounded-[28px] max-w-md w-full my-4 sm:my-8 border border-white/30 bg-white/20 shadow-[0_18px_60px_-28px_rgba(15,23,42,0.45)] ring-1 ring-white/40 backdrop-blur-2xl backdrop-saturate-150">
+            <div className="pointer-events-none absolute inset-0 rounded-2xl sm:rounded-[28px] bg-gradient-to-br from-white/45 via-white/18 to-white/8" />
+            <div className="pointer-events-none absolute inset-0 rounded-2xl sm:rounded-[28px] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.35),rgba(255,255,255,0)_55%)]" />
+            <div className="pointer-events-none absolute inset-0 rounded-2xl sm:rounded-[28px] ring-1 ring-white/20" />
+
             <div className="relative z-10">
-              <div className="p-6 border-b border-white/40 bg-white/35 backdrop-blur-md flex justify-between items-center">
-                <h3 className="text-xl font-bold text-slate-900">{selectedEvent ? 'Edit Appointment' : 'Add Appointment'}</h3>
+              <div className="p-4 sm:p-6 border-b border-white/40 bg-white/35 backdrop-blur-md flex justify-between items-center">
+                <h3 className="text-lg sm:text-xl font-bold text-slate-900">
+                  {selectedEvent ? 'Edit Appointment' : 'Add Appointment'}
+                </h3>
                 <button
                   onClick={() => {
                     setShowEventModal(false);
@@ -533,183 +540,197 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
                     setEventTime({ hour: '', minute: '', period: '' });
                     setAdditionalFields({});
                   }}
-                  className="p-2 hover:bg-white/60 rounded-lg transition text-slate-600"
+                  className="p-1.5 sm:p-2 hover:bg-white/60 rounded-lg transition text-slate-600"
                 >
-                  <X className="w-6 h-6" />
+                  <X className="w-5 h-5 sm:w-6 sm:h-6" />
                 </button>
               </div>
 
-              <form onSubmit={handleSaveEvent} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-              <div>
-                <label htmlFor="event-name" className="block text-slate-700 mb-2 font-semibold text-sm">Event Name</label>
-                <input
-                  id="event-name"
-                  name="eventName"
-                  type="text"
-                  value={eventForm.title}
-                  onChange={(e) => setEventForm({ ...eventForm, title: e.target.value })}
-                  className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none"
-                  placeholder="e.g., Doctor Visit"
-                  autoComplete="off"
-                  required
-                />
-              </div>
+              <form onSubmit={handleSaveEvent} className="p-4 sm:p-6 space-y-3 sm:space-y-4 max-h-[60vh] sm:max-h-[70vh] overflow-y-auto">
+                <div>
+                  <label htmlFor="event-name" className="block text-slate-700 mb-1.5 sm:mb-2 font-semibold text-xs sm:text-sm">
+                    Event Name
+                  </label>
+                  <input
+                    id="event-name"
+                    type="text"
+                    value={eventForm.title}
+                    onChange={(e) => setEventForm({ ...eventForm, title: e.target.value })}
+                    className="w-full px-3 sm:px-4 py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none text-sm sm:text-base"
+                    placeholder="e.g., Doctor Visit"
+                    autoComplete="off"
+                    required
+                  />
+                </div>
 
-              <div>
-                <label htmlFor="event-date" className="block text-slate-700 mb-2 font-semibold text-sm">Event Date</label>
-                <input
-                  id="event-date"
-                  name="eventDate"
-                  type="date"
-                  value={eventForm.date}
-                  onChange={(e) => setEventForm({ ...eventForm, date: e.target.value })}
-                  className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none bg-white"
-                  required
-                />
-              </div>
+                <div>
+                  <label htmlFor="event-date" className="block text-slate-700 mb-1.5 sm:mb-2 font-semibold text-xs sm:text-sm">
+                    Event Date
+                  </label>
+                  <input
+                    id="event-date"
+                    type="date"
+                    value={eventForm.date}
+                    onChange={(e) => setEventForm({ ...eventForm, date: e.target.value })}
+                    className="w-full px-3 sm:px-4 py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none bg-white text-sm sm:text-base"
+                    required
+                  />
+                </div>
 
-              <div>
-                <label className="block text-slate-700 mb-2 font-semibold text-sm">Event Time</label>
-                <div className="rounded-xl border border-slate-300 bg-slate-50 p-3">
-                  <div className="grid grid-cols-[1fr_auto_1fr_auto_2.5fr] items-center gap-2">
-                    <input
-                      type="text"
-                      value={eventTime.hour}
-                      onChange={(e) => updateTime({ hour: clampTimePart(e.target.value, 12) })}
-                      placeholder="HH"
-                      inputMode="numeric"
-                      maxLength={2}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-sm font-semibold tracking-wide focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none"
-                      aria-label="Hour"
-                    />
-                    <span className="text-slate-500 font-semibold">:</span>
-                    <input
-                      type="text"
-                      value={eventTime.minute}
-                      onChange={(e) => {
-                        updateTime({ minute: clampTimePart(e.target.value, 59) });
-                      }}
-                      onBlur={() => {
-                        if (!eventTime.minute) return;
-                        updateTime({ minute: eventTime.minute.padStart(2, '0') });
-                      }}
-                      placeholder="MM"
-                      inputMode="numeric"
-                      maxLength={2}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-sm font-semibold tracking-wide focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none"
-                      aria-label="Minute"
-                    />
-                    <div className="grid grid-rows-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => updateTime({ period: 'AM' })}
-                        className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                          eventTime.period === 'AM'
-                            ? 'border-teal-500 bg-teal-500 text-white shadow'
-                            : 'border-slate-200 bg-white text-slate-700 hover:border-teal-300'
-                        }`}
-                        aria-pressed={eventTime.period === 'AM'}
-                      >
-                        AM
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateTime({ period: 'PM' })}
-                        className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                          eventTime.period === 'PM'
-                            ? 'border-teal-500 bg-teal-500 text-white shadow'
-                            : 'border-slate-200 bg-white text-slate-700 hover:border-teal-300'
-                        }`}
-                        aria-pressed={eventTime.period === 'PM'}
-                      >
-                        PM
-                      </button>
+                <div>
+                  <label className="block text-slate-700 mb-1.5 sm:mb-2 font-semibold text-xs sm:text-sm">Event Time</label>
+                  <div className="rounded-xl border border-slate-300 bg-slate-50 p-2.5 sm:p-3">
+                    <div className="grid grid-cols-[1fr_auto_1fr_auto_2.5fr] items-center gap-1.5 sm:gap-2">
+                      <input
+                        type="text"
+                        value={eventTime.hour}
+                        onChange={(e) => updateTime({ hour: clampTimePart(e.target.value, 12) })}
+                        placeholder="HH"
+                        inputMode="numeric"
+                        maxLength={2}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-1.5 sm:py-2 text-center text-xs sm:text-sm font-semibold tracking-wide focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none"
+                        aria-label="Hour"
+                      />
+
+                      <span className="text-slate-500 font-semibold text-sm sm:text-base">:</span>
+
+                      <input
+                        type="text"
+                        value={eventTime.minute}
+                        onChange={(e) => updateTime({ minute: clampTimePart(e.target.value, 59) })}
+                        onBlur={() => {
+                          if (!eventTime.minute) return;
+                          updateTime({ minute: eventTime.minute.padStart(2, '0') });
+                        }}
+                        placeholder="MM"
+                        inputMode="numeric"
+                        maxLength={2}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-1.5 sm:py-2 text-center text-xs sm:text-sm font-semibold tracking-wide focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none"
+                        aria-label="Minute"
+                      />
+
+                      <div className="grid grid-rows-2 gap-1.5 sm:gap-2">
+                        <button
+                          type="button"
+                          onClick={() => updateTime({ period: 'AM' })}
+                          className={`rounded-lg border px-2 sm:px-3 py-1 sm:py-2 text-xs sm:text-sm font-semibold transition ${
+                            eventTime.period === 'AM'
+                              ? 'border-teal-500 bg-teal-500 text-white shadow'
+                              : 'border-slate-200 bg-white text-slate-700 hover:border-teal-300'
+                          }`}
+                          aria-pressed={eventTime.period === 'AM'}
+                        >
+                          AM
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => updateTime({ period: 'PM' })}
+                          className={`rounded-lg border px-2 sm:px-3 py-1 sm:py-2 text-xs sm:text-sm font-semibold transition ${
+                            eventTime.period === 'PM'
+                              ? 'border-teal-500 bg-teal-500 text-white shadow'
+                              : 'border-slate-200 bg-white text-slate-700 hover:border-teal-300'
+                          }`}
+                          aria-pressed={eventTime.period === 'PM'}
+                        >
+                          PM
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-1.5 sm:mt-2 text-[10px] sm:text-xs text-slate-500">
+                      {eventTime.hour && eventTime.minute && eventTime.period
+                        ? `Selected: ${eventTime.hour.padStart(2, '0')}:${eventTime.minute.padStart(2, '0')} ${eventTime.period}`
+                        : 'Select a time for the appointment'}
                     </div>
                   </div>
-                  <div className="mt-2 text-xs text-slate-500">
-                    {eventTime.hour && eventTime.minute && eventTime.period
-                      ? `Selected: ${eventTime.hour.padStart(2, '0')}:${eventTime.minute.padStart(2, '0')} ${eventTime.period}`
-                      : 'Select a time for the appointment'}
-                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label htmlFor="event-type" className="block text-slate-700 mb-2 font-semibold text-sm">Type</label>
-                <select
-                  id="event-type"
-                  name="eventType"
-                  value={eventForm.type}
-                  onChange={(e) => {
-                    setEventForm({ ...eventForm, type: e.target.value });
-                    setAdditionalFields({});
-                  }}
-                  className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none"
-                  required
-                >
-                  <option value="">Select Type</option>
-                  <option value="Doctor Visit">Doctor Visit</option>
-                  <option value="Lab Test">Lab Test</option>
-                  <option value="Hospital">Hospital</option>
-                  <option value="Therapy">Therapy</option>
-                  <option value="Follow-up">Follow-up</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              {/* Dynamic Fields Based on Type */}
-              {currentTypeFields.length > 0 && (
-                <div className="bg-teal-50 p-4 rounded-lg border border-teal-200">
-                  <h4 className="text-slate-900 font-semibold mb-3 text-sm">Additional Details</h4>
-                  {currentTypeFields.map(field => (
-                    <div key={field.name} className="mb-3">
-                      <label htmlFor={`field-${field.name}`} className="block text-slate-700 text-xs mb-1 font-medium">{field.label}</label>
-                      {field.type === 'textarea' ? (
-                        <textarea
-                          id={`field-${field.name}`}
-                          name={field.name}
-                          value={additionalFields[field.name] || ''}
-                          onChange={(e) => setAdditionalFields({ ...additionalFields, [field.name]: e.target.value })}
-                          className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none text-sm"
-                          placeholder={field.placeholder}
-                          autoComplete="off"
-                          rows={3}
-                        />
-                      ) : (
-                        <input
-                          id={`field-${field.name}`}
-                          name={field.name}
-                          type={field.type}
-                          value={additionalFields[field.name] || ''}
-                          onChange={(e) => setAdditionalFields({ ...additionalFields, [field.name]: e.target.value })}
-                          className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none text-sm"
-                          placeholder={field.placeholder}
-                          autoComplete="off"
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="flex gap-2 pt-4">
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition font-semibold text-sm"
-                >
-                  {selectedEvent ? 'Update' : 'Add Appointment'}
-                </button>
-                {selectedEvent && eventForm.title && (
-                  <button
-                    type="button"
-                    onClick={handleDeleteEvent}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition"
+                <div>
+                  <label htmlFor="event-type" className="block text-slate-700 mb-1.5 sm:mb-2 font-semibold text-xs sm:text-sm">
+                    Type
+                  </label>
+                  <select
+                    id="event-type"
+                    value={eventForm.type}
+                    onChange={(e) => {
+                      setEventForm({ ...eventForm, type: e.target.value });
+                      setAdditionalFields({});
+                    }}
+                    className="w-full px-3 sm:px-4 py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none text-sm sm:text-base"
+                    required
                   >
-                    <Trash2 className="w-4 h-4" />
-                    Delete
-                  </button>
+                    <option value="">Select Type</option>
+                    <option value="Doctor Visit">Doctor Visit</option>
+                    <option value="Lab Test">Lab Test</option>
+                    <option value="Hospital">Hospital</option>
+                    <option value="Therapy">Therapy</option>
+                    <option value="Follow-up">Follow-up</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                {/* Dynamic Fields Based on Type */}
+                {currentTypeFields.length > 0 && (
+                  <div className="bg-teal-50 p-3 sm:p-4 rounded-lg border border-teal-200">
+                    <h4 className="text-slate-900 font-semibold mb-2 sm:mb-3 text-xs sm:text-sm">Additional Details</h4>
+                    {currentTypeFields.map((field) => (
+                      <div key={field.name} className="mb-2 sm:mb-3">
+                        <label
+                          htmlFor={`field-${field.name}`}
+                          className="block text-slate-700 text-[10px] sm:text-xs mb-1 font-medium"
+                        >
+                          {field.label}
+                        </label>
+                        {field.type === 'textarea' ? (
+                          <textarea
+                            id={`field-${field.name}`}
+                            value={additionalFields[field.name] || ''}
+                            onChange={(e) =>
+                              setAdditionalFields({ ...additionalFields, [field.name]: e.target.value })
+                            }
+                            className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none text-xs sm:text-sm"
+                            placeholder={field.placeholder}
+                            autoComplete="off"
+                            rows={3}
+                          />
+                        ) : (
+                          <input
+                            id={`field-${field.name}`}
+                            type={field.type}
+                            value={additionalFields[field.name] || ''}
+                            onChange={(e) =>
+                              setAdditionalFields({ ...additionalFields, [field.name]: e.target.value })
+                            }
+                            className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-slate-300 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none text-xs sm:text-sm"
+                            placeholder={field.placeholder}
+                            autoComplete="off"
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </div>
+
+                <div className="flex gap-2 pt-3 sm:pt-4">
+                  <button
+                    type="submit"
+                    className="flex-1 px-3 sm:px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition font-semibold text-xs sm:text-sm"
+                  >
+                    {selectedEvent ? 'Update' : 'Add Appointment'}
+                  </button>
+
+                  {selectedEvent && eventForm.title && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteEvent}
+                      className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition text-xs sm:text-sm"
+                    >
+                      <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">Delete</span>
+                    </button>
+                  )}
+                </div>
               </form>
             </div>
           </div>
@@ -718,25 +739,25 @@ export function AppointmentsModal({ appointments, onClose, onAddAppointment, onD
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirmation && (
-        <div className="fixed inset-0 flex items-center justify-center p-4 z-[70]">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200">
-            <div className="p-6 border-b border-slate-200">
-              <h3 className="text-xl font-bold text-slate-900">Confirm Deletion</h3>
+        <div className="fixed inset-0 flex items-center justify-center p-3 sm:p-4 z-[70] bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200">
+            <div className="p-4 sm:p-6 border-b border-slate-200">
+              <h3 className="text-lg sm:text-xl font-bold text-slate-900">Confirm Deletion</h3>
             </div>
-            <div className="p-6">
-              <p className="text-slate-700 mb-6">
+            <div className="p-4 sm:p-6">
+              <p className="text-slate-700 mb-4 sm:mb-6 text-sm sm:text-base">
                 Are you sure you want to delete this appointment? This action cannot be undone.
               </p>
-              <div className="flex gap-3">
+              <div className="flex gap-2 sm:gap-3">
                 <button
                   onClick={cancelDeleteEvent}
-                  className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition font-semibold text-sm"
+                  className="flex-1 px-3 sm:px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition font-semibold text-xs sm:text-sm"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={confirmDeleteEvent}
-                  className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition font-semibold text-sm"
+                  className="flex-1 px-3 sm:px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition font-semibold text-xs sm:text-sm"
                 >
                   Delete
                 </button>
