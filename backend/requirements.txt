@@ -4,7 +4,10 @@ flask-cors==6.0.2
 supabase==2.27.0
 python-dotenv==1.2.1
 requests==2.32.5
+<<<<<<< HEAD
 groq==0.4.1
+=======
+>>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
 
 # OCR Libraries
 ruamel.yaml==0.18.6

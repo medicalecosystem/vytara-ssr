@@ -104,6 +104,7 @@
   line-height: 1;
 }
 
+<<<<<<< HEAD
 /* Language Selector */
 .languageSelector {
   display: flex;
@@ -130,6 +131,8 @@
   color: #e5e7eb;
 }
 
+=======
+>>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
 /* Messages */
 .messages {
   flex: 1;

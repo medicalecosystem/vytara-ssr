@@ -21,11 +21,14 @@ import numpy as np
 from PIL import Image
 import pdfplumber
 
+<<<<<<< HEAD
 # Import FAQ assistant
 from faq_engine import find_faq_match
 from language import detect_language
 from llm import get_reply
 
+=======
+>>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
 
 app = Flask(__name__)
 
@@ -49,6 +52,7 @@ CORS(app, resources={
 def log_step(step: str, status: str = "info", details: str = None):
     """Consistent logging"""
     symbols = {
+<<<<<<< HEAD
         "start": "[START]",
         "success": "[SUCCESS]",
         "error": "[ERROR]",
@@ -56,6 +60,15 @@ def log_step(step: str, status: str = "info", details: str = None):
         "info": "[INFO]"
     }
     symbol = symbols.get(status, "[•]")
+=======
+        "start": "🔄",
+        "success": "✅",
+        "error": "❌",
+        "warning": "⚠️",
+        "info": "ℹ️"
+    }
+    symbol = symbols.get(status, "•")
+>>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
     
     message = f"{symbol} {step}"
     if details:
@@ -431,10 +444,17 @@ def process_files():
         log_step("COMPLETE", "success")
         print(f"{'='*80}", flush=True)
         print(f"  Total: {len(files)}", flush=True)
+<<<<<<< HEAD
         print(f"  [SUCCESS] Processed: {successful}", flush=True)
         print(f"  [SKIP] Skipped: {skipped}", flush=True)
         print(f"  [DELETE] Deleted: {deleted_count}", flush=True)
         print(f"  [FAIL] Failed: {failed}", flush=True)
+=======
+        print(f"  ✅ Processed: {successful}", flush=True)
+        print(f"  ⏭️  Skipped: {skipped}", flush=True)
+        print(f"  🗑️  Deleted: {deleted_count}", flush=True)
+        print(f"  ❌ Failed: {failed}", flush=True)
+>>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
         print(f"{'='*80}\n", flush=True)
         
         return jsonify({
@@ -783,6 +803,7 @@ def clear_user_data(user_id):
 
 
 # ============================================
+<<<<<<< HEAD
 # CHAT ENDPOINT FOR FAQ ASSISTANT
 # ============================================
 
@@ -829,6 +850,8 @@ def chat_endpoint():
 
 
 # ============================================
+=======
+>>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
 # ERROR HANDLERS
 # ============================================
 
@@ -854,20 +877,34 @@ def internal_error(error):
 
 if __name__ == "__main__":
     print("\n" + "="*80, flush=True)
+<<<<<<< HEAD
     print("MEDICAL RAG API SERVER - IN-MEMORY PROCESSING", flush=True)
     print("="*80, flush=True)
     print("\nEndpoints:", flush=True)
+=======
+    print("🚀 MEDICAL RAG API SERVER - IN-MEMORY PROCESSING", flush=True)
+    print("="*80, flush=True)
+    print("\n📡 Endpoints:", flush=True)
+>>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
     print("  GET    /api/health", flush=True)
     print("  POST   /api/process-files", flush=True)
     print("  POST   /api/generate-summary", flush=True)
     print("  GET    /api/reports/<user_id>", flush=True)
     print("  DELETE /api/clear-cache/<user_id>", flush=True)
     print("  DELETE /api/clear/<user_id>", flush=True)
+<<<<<<< HEAD
     print("\nFeatures:", flush=True)
     print("  [OK] Zero local file storage", flush=True)
     print("  [OK] Complete in-memory processing", flush=True)
     print("  [OK] Stateless temp directories", flush=True)
     print("  [OK] Fixed embedding dimensions", flush=True)
+=======
+    print("\n💡 Features:", flush=True)
+    print("  ✓ Zero local file storage", flush=True)
+    print("  ✓ Complete in-memory processing", flush=True)
+    print("  ✓ Stateless temp directories", flush=True)
+    print("  ✓ Fixed embedding dimensions", flush=True)
+>>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
     print("\n" + "="*80 + "\n", flush=True)
     
     port = int(os.environ.get("PORT", 5000))
