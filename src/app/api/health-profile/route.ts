@@ -2,11 +2,6 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "@/lib/server";
-<<<<<<< HEAD
-
-=======
-
->>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
 type ProfilePayload = {
   displayName?: string;
   dateOfBirth: string; // YYYY-MM-DD
@@ -34,7 +29,6 @@ type ProfilePayload = {
 };
 
 function computeAge(dobISO: string): number | null {
-<<<<<<< HEAD
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dobISO)) return null;
   const dob = new Date(dobISO + "T00:00:00");
   if (Number.isNaN(dob.getTime())) return null;
@@ -47,20 +41,6 @@ function computeAge(dobISO: string): number | null {
   return age;
 }
 
-=======
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dobISO)) return null;
-  const dob = new Date(dobISO + "T00:00:00");
-  if (Number.isNaN(dob.getTime())) return null;
-
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-  const m = today.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
-  if (age < 0 || age > 130) return null;
-  return age;
-}
-
->>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
 function computeBMI(heightCm: number | null, weightKg: number | null): number | null {
   if (!heightCm || !weightKg) return null;
   if (heightCm < 50 || heightCm > 260) return null;
@@ -93,7 +73,6 @@ export async function POST(req: Request) {
     const { data, error } = bearerToken
       ? await supabase.auth.getUser(bearerToken)
       : await supabase.auth.getUser();
-<<<<<<< HEAD
 
     if (error || !data?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -109,23 +88,6 @@ export async function POST(req: Request) {
     if (!body?.heightCm || !Number.isFinite(body.heightCm)) {
       return NextResponse.json({ error: "Height is required" }, { status: 400 });
     }
-=======
-
-    if (error || !data?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Required fields (first 4 questions)
-    if (!body?.dateOfBirth || !/^\d{4}-\d{2}-\d{2}$/.test(body.dateOfBirth)) {
-      return NextResponse.json({ error: "DOB is required (YYYY-MM-DD)" }, { status: 400 });
-    }
-    if (!body?.bloodGroup || body.bloodGroup.trim().length === 0) {
-      return NextResponse.json({ error: "Blood group is required" }, { status: 400 });
-    }
-    if (!body?.heightCm || !Number.isFinite(body.heightCm)) {
-      return NextResponse.json({ error: "Height is required" }, { status: 400 });
-    }
->>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
     if (!body?.weightKg || !Number.isFinite(body.weightKg)) {
       return NextResponse.json({ error: "Weight is required" }, { status: 400 });
     }
@@ -229,14 +191,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ ok: true });
-<<<<<<< HEAD
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
   }
 }
-=======
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
-  }
-}
->>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
