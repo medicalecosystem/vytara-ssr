@@ -28,12 +28,13 @@ function normalizeBaseUrl(url: string): string {
 }
 
 function getCandidateBackendUrls(): string[] {
+  const isProd = process.env.NODE_ENV === 'production';
   const candidates = [
     process.env.BACKEND_URL,
     process.env.NEXT_PUBLIC_BACKEND_URL,
     DEFAULT_FLASK_API_URL,
     RENDER_FLASK_API_URL,
-    LOCAL_FLASK_API_URL,
+    ...(isProd ? [] : [LOCAL_FLASK_API_URL]),
   ]
     .filter((value): value is string => Boolean(value && value.trim()))
     .map(normalizeBaseUrl);

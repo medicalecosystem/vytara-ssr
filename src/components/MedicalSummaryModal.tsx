@@ -30,14 +30,6 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown error';
 }
 
-function shouldRunProcessingFallback(errorMessage: string): boolean {
-  const message = errorMessage.toLowerCase();
-  return (
-    message.includes('no processed reports found') ||
-    message.includes('process files first')
-  );
-}
-
 export function MedicalSummaryModal({ 
   isOpen, 
   onClose, 
@@ -151,13 +143,17 @@ export function MedicalSummaryModal({
     }
   };
 
-  const generateSummary = async (): Promise<{ ok: boolean; errorMessage?: string }> => {
+  const generateSummary = async (
+    options?: { forceRegenerate?: boolean }
+  ): Promise<{ ok: boolean; errorMessage?: string }> => {
     if (!userId) {
       console.error('❌ [Frontend] No userId for summary generation');
       const authError = 'Please log in to use this feature';
       setError(authError);
       return { ok: false, errorMessage: authError };
     }
+
+    const forceRegenerate = options?.forceRegenerate === true;
 
     setIsGenerating(true);
     setError('');
@@ -172,7 +168,8 @@ export function MedicalSummaryModal({
         body: JSON.stringify({
           action: 'generate-summary',
           folder_type: folderType,
-          use_cache: true,
+          use_cache: !forceRegenerate,
+          force_regenerate: forceRegenerate,
           user_id: userId
         }),
       });
@@ -209,25 +206,14 @@ export function MedicalSummaryModal({
 
   const handleGenerateSummary = async () => {
     console.log('🎬 [Modal] Starting generation process...');
-
-    // Fast path: summary from already processed reports without reprocessing files.
-    const firstAttempt = await generateSummary();
-    if (firstAttempt.ok) {
-      return;
-    }
-
-    if (!shouldRunProcessingFallback(firstAttempt.errorMessage || '')) {
-      console.error('❌ [Modal] Summary failed; skipping process fallback');
-      return;
-    }
-
+    // Always process first so newly uploaded reports are included in summary.
     const processed = await processFiles();
     if (!processed) {
-      console.error('❌ [Modal] Processing failed, not generating summary');
-      return;
+      console.error('❌ [Modal] Processing failed, trying summary from existing processed reports');
+      await generateSummary();
+    } else {
+      await generateSummary({ forceRegenerate: true });
     }
-
-    await generateSummary();
   };
 
   if (!isOpen) {

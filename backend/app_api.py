@@ -174,12 +174,13 @@ def extract_text_from_bytes(file_bytes: bytes, file_extension: str) -> str:
     try:
         # PDF files
         if file_extension.lower() == '.pdf':
+            text = ""
+
             # Try pdfplumber first (for text-based PDFs)
             try:
                 bytes_io = io.BytesIO(file_bytes)
                 
                 with pdfplumber.open(bytes_io) as pdf:
-                    text = ""
                     for page in pdf.pages:
                         page_text = page.extract_text()
                         if page_text:
@@ -198,8 +199,46 @@ def extract_text_from_bytes(file_bytes: bytes, file_extension: str) -> str:
             try:
                 from pdf2image import convert_from_bytes
                 import pytesseract
-                
-                images = convert_from_bytes(file_bytes, dpi=300)
+
+                enable_scanned_pdf_ocr = (
+                    os.getenv("ENABLE_SCANNED_PDF_OCR", "true").strip().lower()
+                    in ("1", "true", "yes", "on")
+                )
+                if not enable_scanned_pdf_ocr:
+                    log_step("PDF OCR", "warning", "Scanned PDF OCR disabled by env")
+                    return text.strip()
+
+                try:
+                    ocr_dpi = max(100, int(os.getenv("OCR_DPI", "180")))
+                except (TypeError, ValueError):
+                    ocr_dpi = 180
+
+                try:
+                    ocr_max_pages = max(1, int(os.getenv("OCR_MAX_PAGES", "4")))
+                except (TypeError, ValueError):
+                    ocr_max_pages = 4
+
+                try:
+                    ocr_max_file_mb = max(1, int(os.getenv("OCR_MAX_FILE_MB", "12")))
+                except (TypeError, ValueError):
+                    ocr_max_file_mb = 12
+
+                max_file_bytes = ocr_max_file_mb * 1024 * 1024
+                if len(file_bytes) > max_file_bytes:
+                    log_step(
+                        "PDF OCR",
+                        "warning",
+                        f"Skipped OCR for large file ({len(file_bytes)} bytes > {max_file_bytes})"
+                    )
+                    return text.strip()
+
+                images = convert_from_bytes(
+                    file_bytes,
+                    dpi=ocr_dpi,
+                    first_page=1,
+                    last_page=ocr_max_pages,
+                    thread_count=1
+                )
                 log_step("PDF images", "success", f"{len(images)} pages")
                 
                 all_text = []

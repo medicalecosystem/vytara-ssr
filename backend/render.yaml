@@ -7,3 +7,9 @@ services:
     envVars:
       - key: FLASK_ENV
         value: production
+      - key: OCR_DPI
+        value: "180"
+      - key: OCR_MAX_PAGES
+        value: "20"
+      - key: OCR_MAX_FILE_MB
+        value: "12"
