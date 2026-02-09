@@ -12,8 +12,8 @@ from rag_pipeline.embed_store import load_index_and_chunks, EMBEDDING_DIM
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 
-# Using GPT-4o-mini (OpenAI's efficient model)
-MODEL_NAME = "gpt-4.1-nano"  
+# Using GPT-4.1-nano
+MODEL_NAME = "gpt-4.1-nano"
 
 
 def extract_patient_info(text: str) -> dict:
@@ -321,19 +321,19 @@ Focus on trends and important findings. Don't list every single value."""
 
 def call_openai_api(system_prompt: str, user_prompt: str, num_reports: int = 1) -> str:
     """
-    Call OpenAI API with GPT-4o-mini
+    Call OpenAI API with gpt-4.1-nano
     
     KEY OPTIMIZATIONS:
     1. Adaptive max_tokens based on report count
     2. Lower temperature for consistency
-    3. GPT-4o-mini: Fast, cheap, and high quality
+    3. gpt-4.1-nano: Fast, cheap, and high quality
     """
     
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY not set in environment")
     
     # ADAPTIVE: More output tokens for more reports
-    # GPT-4o-mini supports up to 16k output tokens
+    # gpt-4.1-nano supports up to 16k output tokens
     if num_reports == 1:
         max_tokens = 2000  # Single report: Very detailed
     elif num_reports <= 3:
@@ -382,9 +382,9 @@ def call_openai_api(system_prompt: str, user_prompt: str, num_reports: int = 1) 
                   f"{usage.get('completion_tokens', 0)} completion = " +
                   f"{usage.get('total_tokens', 0)} total")
             
-            # Show cost estimate (GPT-4o-mini pricing as of Feb 2025)
-            prompt_cost = usage.get('prompt_tokens', 0) * 0.00015 / 1000  # $0.15 per 1M tokens
-            completion_cost = usage.get('completion_tokens', 0) * 0.0006 / 1000  # $0.60 per 1M tokens
+            # Show cost estimate (gpt-4.1-nano pricing)
+            prompt_cost = usage.get('prompt_tokens', 0) * 0.00015 / 1000  # Estimated pricing
+            completion_cost = usage.get('completion_tokens', 0) * 0.0006 / 1000
             total_cost = prompt_cost + completion_cost
             print(f"   💰 Estimated cost: ${total_cost:.6f}")
         
@@ -402,9 +402,9 @@ def call_openai_api(system_prompt: str, user_prompt: str, num_reports: int = 1) 
 
 
 def ask_rag_improved(question: str, temp_dir: str, folder_type: str = None,
-                    num_reports: int = 1) -> str:
+                    num_reports: int = 1, patient_metadata: dict = None) -> str:
     """
-    Improved RAG query optimized for llama-3.1-8b-instant
+    Improved RAG query optimized for gpt-4.1-nano
     ONLY processes medical reports, ignores bills/insurance/prescriptions
     
     Args:
@@ -412,6 +412,7 @@ def ask_rag_improved(question: str, temp_dir: str, folder_type: str = None,
         temp_dir: Temporary directory with index/vectorizer
         folder_type: Type of folder (should be 'reports' for medical reports)
         num_reports: Number of reports
+        patient_metadata: Pre-extracted patient metadata from database (optional)
     
     Returns:
         Generated summary text
@@ -441,10 +442,20 @@ def ask_rag_improved(question: str, temp_dir: str, folder_type: str = None,
         print(error)
         return error
     
-    # Extract patient info from all chunks
-    print("\n🔍 Extracting patient information...")
-    full_text = "\n".join(chunks[:10])  # First 10 chunks usually have patient info
-    patient_info = extract_patient_info(full_text)
+    # Use pre-extracted patient info if provided, otherwise extract from text
+    if patient_metadata:
+        patient_info = {
+            'name': patient_metadata.get('patient_name', 'Patient'),
+            'age': patient_metadata.get('age'),
+            'gender': patient_metadata.get('gender'),
+            'dates': patient_metadata.get('dates', [])
+        }
+        print(f"\n✅ Using pre-extracted metadata from database")
+    else:
+        # Fallback: Extract patient info from chunks
+        print("\n🔍 Extracting patient information from text...")
+        full_text = "\n".join(chunks[:10])  # First 10 chunks usually have patient info
+        patient_info = extract_patient_info(full_text)
     
     print(f"   Patient: {patient_info['name']}")
     print(f"   Age: {patient_info['age'] or 'N/A'}")

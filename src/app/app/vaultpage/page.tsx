@@ -91,10 +91,14 @@ export default function VaultPage() {
     category: Category;
     file: File | null;
     fileName: string;
+    uploading: boolean;
+    error: string | null;
   }>({
     category: 'lab-reports',
     file: null,
     fileName: '',
+    uploading: false,
+    error: null,
   });
 
   /* ---------------- AUTH + FETCH ---------------- */
@@ -269,6 +273,9 @@ export default function VaultPage() {
       return;
     }
 
+    // Set uploading state
+    setUploadData((prev) => ({ ...prev, uploading: true, error: null }));
+
     const folderMap: Record<Category, MedicalFolder> = {
       'lab-reports': 'reports',
       prescriptions: 'prescriptions',
@@ -283,17 +290,37 @@ export default function VaultPage() {
     const finalBase = baseFromInput || fallbackBase;
     const finalName = originalExt ? `${finalBase}.${originalExt}` : finalBase;
 
-    await uploadMedicalFile(
-      userId,
-      folderMap[uploadData.category],
-      uploadData.file,
-      finalName
-    );
+    try {
+      const { error } = await uploadMedicalFile(
+        userId,
+        folderMap[uploadData.category],
+        uploadData.file,
+        finalName
+      );
 
-    setShowUploadModal(false);
-    setUploadData({ category: 'lab-reports', file: null, fileName: '' });
-    fetchFiles(userId, selectedCategory);
-    fetchCounts(userId);
+      if (error) {
+        // Upload failed
+        setUploadData((prev) => ({
+          ...prev,
+          uploading: false,
+          error: error.message || 'Failed to upload file. Please try again.',
+        }));
+        return;
+      }
+
+      // Upload successful
+      setShowUploadModal(false);
+      setUploadData({ category: 'lab-reports', file: null, fileName: '', uploading: false, error: null });
+      fetchFiles(userId, selectedCategory);
+      fetchCounts(userId);
+    } catch (err: any) {
+      // Network or other error
+      setUploadData((prev) => ({
+        ...prev,
+        uploading: false,
+        error: err?.message || 'An error occurred during upload. Please try again.',
+      }));
+    }
   };
 
   const handleDelete = async (file: MedicalFile) => {
@@ -934,14 +961,20 @@ export default function VaultPage() {
 
       {/* UPLOAD MODAL */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowUploadModal(false)}>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => {
+          setShowUploadModal(false);
+          setUploadData({ category: 'lab-reports', file: null, fileName: '', uploading: false, error: null });
+        }}>
           <div
             onClick={(e) => e.stopPropagation()}
             className="relative bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl"
           >
             <button
               type="button"
-              onClick={() => setShowUploadModal(false)}
+              onClick={() => {
+                setShowUploadModal(false);
+                setUploadData({ category: 'lab-reports', file: null, fileName: '', uploading: false, error: null });
+              }}
               className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
               aria-label="Close modal"
             >
@@ -993,6 +1026,7 @@ export default function VaultPage() {
                         fileName: nextFile
                           ? stripExtension(nextFile.name)
                           : prev.fileName,
+                        error: null, // Clear error when file changes
                       }));
                     }}
                     className="hidden"
@@ -1034,11 +1068,18 @@ export default function VaultPage() {
                 )}
               </div>
 
+              {uploadData.error && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+                  <p className="font-medium">{uploadData.error}</p>
+                </div>
+              )}
+
               <button
                 type="submit"
-                className="w-full py-3.5 bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-xl font-semibold shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40 hover:scale-[1.01] transition-all duration-200"
+                disabled={uploadData.uploading || !uploadData.file}
+                className="w-full py-3.5 bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-xl font-semibold shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40 hover:scale-[1.01] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
-                Upload Document
+                {uploadData.uploading ? 'Uploading...' : 'Upload Document'}
               </button>
             </form>
           </div>

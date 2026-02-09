@@ -238,6 +238,129 @@ def compute_signature_from_reports(reports: list) -> str:
         return ''
 
 
+def get_user_profile(user_id: str) -> dict:
+    """
+    Get user profile from database
+    
+    Args:
+        user_id: User ID (TEXT format)
+    
+    Returns:
+        Profile dict or None if not found
+    """
+    print(f"\n👤 Fetching user profile: {user_id}")
+    
+    try:
+        result = supabase.table('user_profiles').select('*').eq(
+            'user_id', str(user_id)
+        ).execute()
+        
+        if result.data and len(result.data) > 0:
+            profile = result.data[0]
+            print(f"✅ Profile found: {profile.get('full_name')}")
+            return profile
+        else:
+            print(f"⚠️  No profile found for user: {user_id}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error fetching profile: {e}")
+        return None
+
+
+def create_user_profile(user_id: str, full_name: str, **kwargs) -> dict:
+    """
+    Create user profile
+    
+    Args:
+        user_id: User ID (TEXT format)
+        full_name: User's full name
+        **kwargs: Optional fields (email, phone, date_of_birth, gender)
+    
+    Returns:
+        Created profile dict
+    """
+    print(f"\n✨ Creating user profile for: {user_id}")
+    
+    try:
+        data = {
+            'user_id': str(user_id),
+            'full_name': full_name,
+            'email': kwargs.get('email'),
+            'phone': kwargs.get('phone'),
+            'date_of_birth': kwargs.get('date_of_birth'),
+            'gender': kwargs.get('gender'),
+            'created_at': 'NOW()'
+        }
+        
+        result = supabase.table('user_profiles').insert(data).execute()
+        
+        if result.data and len(result.data) > 0:
+            profile = result.data[0]
+            print(f"✅ Profile created: {profile.get('full_name')}")
+            return profile
+        else:
+            raise Exception("Profile creation returned no data")
+            
+    except Exception as e:
+        print(f"❌ Error creating profile: {e}")
+        raise
+
+
+def update_user_profile(user_id: str, **updates) -> dict:
+    """
+    Update user profile
+    
+    Args:
+        user_id: User ID (TEXT format)
+        **updates: Fields to update
+    
+    Returns:
+        Updated profile dict
+    """
+    print(f"\n🔄 Updating user profile: {user_id}")
+    
+    try:
+        result = supabase.table('user_profiles').update(updates).eq(
+            'user_id', str(user_id)
+        ).execute()
+        
+        if result.data and len(result.data) > 0:
+            profile = result.data[0]
+            print(f"✅ Profile updated")
+            return profile
+        else:
+            raise Exception("No profile found to update")
+            
+    except Exception as e:
+        print(f"❌ Error updating profile: {e}")
+        raise
+
+
+def ensure_user_profile(user_id: str, default_name: str = None) -> dict:
+    """
+    Get profile or create if doesn't exist
+    
+    Args:
+        user_id: User ID (TEXT format)
+        default_name: Default name if creating new profile
+    
+    Returns:
+        Profile dict
+    """
+    profile = get_user_profile(user_id)
+    
+    if profile:
+        return profile
+    
+    # Create default profile if doesn't exist
+    if default_name:
+        print(f"⚠️  Creating default profile with name: {default_name}")
+        return create_user_profile(user_id, default_name)
+    else:
+        return None
+
+
 def save_summary_cache(user_id: str, folder_type: str, summary: str, 
                       report_count: int, reports_signature: str = None):
     """

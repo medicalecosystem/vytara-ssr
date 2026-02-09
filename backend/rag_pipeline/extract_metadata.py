@@ -9,7 +9,7 @@ from datetime import datetime
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 
-# Using GPT-4o-mini for metadata extraction
+# Using GPT-4.1-nano for metadata extraction
 MODEL_NAME = "gpt-4.1-nano"
 
 
@@ -17,7 +17,7 @@ def extract_metadata_with_llm(text: str, file_name: str = None, retry_count: int
     """
     Extract metadata from medical report text using LLM
     
-    OPTIMIZED for gpt-4o-nano:
+    OPTIMIZED for llama-3.1-8b-instant:
     - Shorter, clearer prompts
     - Explicit JSON schema
     - Better error handling
