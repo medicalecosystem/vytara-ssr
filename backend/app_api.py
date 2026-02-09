@@ -8,11 +8,18 @@ import tempfile
 import shutil
 from datetime import datetime
 import io
+from dotenv import load_dotenv
 
+# Load environment variables from .env file
+load_dotenv()
+
+>>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
+=======
 # Import RAG pipeline
 from rag_pipeline.clean_chunk import clean_text, chunk_text
 from rag_pipeline.embed_store import build_faiss_index
-from rag_pipeline.rag_query import ask_rag
+from rag_pipeline.rag_query import ask_rag_improved  # Optimized for GPT-4o-mini
+from rag_pipeline.extract_metadata import extract_metadata_with_llm  # Optimized metadata extraction
 import supabase_helper as sb
 
 # Import OCR with in-memory support
@@ -20,12 +27,6 @@ import cv2
 import numpy as np
 from PIL import Image
 import pdfplumber
-
-<<<<<<< HEAD
-# Import FAQ assistant
-from faq_engine import find_faq_match
-from language import detect_language
-from llm import get_reply
 
 =======
 >>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
@@ -39,7 +40,7 @@ CORS(app, resources={
             "http://localhost:3000",
             "http://127.0.0.1:3000",
             "https://vytara-official.vercel.app",
-            "https://*.vercel.app"
+            "https://*.vercel.app",
             "https://sauncier-instigative-yolande.ngrok-free.dev"
         ],
         "methods": ["GET", "POST", "DELETE", "OPTIONS"],
@@ -203,7 +204,7 @@ def health_check():
     
     try:
         supabase_ok = True
-        groq_ok = bool(os.getenv("GROQ_API_KEY"))
+        openai_ok = bool(os.getenv("OPENAI_API_KEY"))
         
         try:
             sb.supabase.table('medical_reports_processed').select('id').limit(1).execute()
@@ -212,16 +213,17 @@ def health_check():
             supabase_ok = False
             log_step("Supabase", "error", str(e))
         
-        if not groq_ok:
-            log_step("GROQ API", "warning", "API key not set")
+        if not openai_ok:
+            log_step("OpenAI API", "warning", "API key not set")
         
-        status = "healthy" if (supabase_ok and groq_ok) else "degraded"
+        status = "healthy" if (supabase_ok and openai_ok) else "degraded"
         
         return jsonify({
             "status": status,
-            "message": "Medical RAG API - In-Memory Processing",
+            "message": "Medical RAG API - Powered by GPT-4o-mini",
             "supabase": supabase_ok,
-            "groq": groq_ok,
+            "openai": openai_ok,
+            "model": "gpt-4o-mini",
             "mode": "stateless_in_memory",
             "timestamp": datetime.now().isoformat()
         }), 200
@@ -235,14 +237,14 @@ def health_check():
 
 
 # ============================================
-# PROCESS FILES (IN-MEMORY)
+# PROCESS FILES (IN-MEMORY) - ALL FOLDERS
 # ============================================
 
 @app.route("/api/process-files", methods=["POST"])
 def process_files():
-    """Process user files - completely in memory, NO local storage"""
+    """Process user files - ALL folders but extract metadata"""
     print("\n" + "="*80, flush=True)
-    log_step("PROCESS FILES", "start")
+    log_step("PROCESS FILES (All Folders)", "start")
     print("="*80, flush=True)
     
     try:
@@ -257,9 +259,9 @@ def process_files():
             }), 400
         
         user_id = data["user_id"]
-        folder_type = data.get("folder_type", "reports")
+        folder_type = data.get("folder_type")  # Can be any folder
         
-        log_step("Config", "info", f"User: {user_id}, Folder: {folder_type}")
+        log_step("Config", "info", f"User: {user_id}, Folder: {folder_type or 'ALL'}")
         
         # Get files from storage
         log_step("Fetching files", "start")
@@ -270,9 +272,10 @@ def process_files():
             
             # Clean up orphaned records
             try:
-                result = sb.supabase.table('medical_reports_processed').delete().eq(
-                    'user_id', user_id
-                ).eq('folder_type', folder_type).execute()
+                query = sb.supabase.table('medical_reports_processed').delete().eq('user_id', user_id)
+                if folder_type:
+                    query = query.eq('folder_type', folder_type)
+                result = query.execute()
                 
                 deleted = len(result.data) if result.data else 0
                 log_step("Cleanup", "success", f"Deleted {deleted} orphaned records")
@@ -300,9 +303,7 @@ def process_files():
             if len(text) < 50:
                 try:
                     log_step("Removing weak", "warning", f"{rec['file_name']} ({len(text)} chars)")
-                    sb.supabase.table('medical_reports_processed').delete().eq(
-                        'id', rec['id']
-                    ).execute()
+                    sb.supabase.table('medical_reports_processed').delete().eq('id', rec['id']).execute()
                     reprocess_count += 1
                 except Exception as e:
                     log_step("Delete failed", "error", str(e))
@@ -315,7 +316,7 @@ def process_files():
         existing_records = filtered_records
         
         # Build sets for comparison
-        storage_paths = set(f"{user_id}/{folder_type}/{f.get('name')}" for f in files)
+        storage_paths = set(f"{user_id}/{folder_type or 'reports'}/{f.get('name')}" for f in files)
         existing_paths = set(r['file_path'] for r in existing_records)
         
         # Delete orphaned records
@@ -326,9 +327,7 @@ def process_files():
             log_step("Removing orphaned", "start")
             for record in orphaned:
                 try:
-                    sb.supabase.table('medical_reports_processed').delete().eq(
-                        'id', record['id']
-                    ).execute()
+                    sb.supabase.table('medical_reports_processed').delete().eq('id', record['id']).execute()
                     log_step("Deleted", "success", record['file_name'])
                     deleted_count += 1
                 except Exception as e:
@@ -344,7 +343,8 @@ def process_files():
         
         for idx, file_info in enumerate(files, 1):
             file_name = file_info.get('name')
-            file_path = f"{user_id}/{folder_type}/{file_name}"
+            actual_folder = folder_type if folder_type else 'reports'
+            file_path = f"{user_id}/{actual_folder}/{file_name}"
             
             print(f"\n{'─'*80}", flush=True)
             print(f"FILE {idx}/{len(files)}: {file_name}", flush=True)
@@ -364,12 +364,12 @@ def process_files():
             log_step("Processing", "start", file_name)
             
             try:
-                # Get file bytes (IN MEMORY - NO LOCAL STORAGE)
+                # Get file bytes (IN MEMORY)
                 log_step("Fetch", "start", "Loading from Supabase")
                 file_bytes = sb.get_file_bytes(file_path)
                 log_step("Fetched", "success", f"{len(file_bytes)} bytes (in memory)")
                 
-                # Extract text from bytes (IN MEMORY)
+                # Extract text from bytes
                 file_ext = os.path.splitext(file_name)[1]
                 log_step("OCR", "start")
                 
@@ -381,15 +381,20 @@ def process_files():
                 
                 log_step("Extracted", "success", f"{len(extracted_text)} chars")
                 
-                # Extract metadata
+                # Extract metadata using LLM
                 log_step("Metadata", "start")
-                from rag_pipeline.rag_query import extract_patient_name, extract_report_dates
+                metadata = extract_metadata_with_llm(extracted_text, file_name)
                 
-                patient_name = extract_patient_name(extracted_text)
-                report_dates = extract_report_dates([extracted_text])
-                report_date = report_dates[0] if report_dates else None
+                patient_name = metadata.get('patient_name')
+                age = metadata.get('age')
+                gender = metadata.get('gender')
+                report_date = metadata.get('report_date')
+                report_type = metadata.get('report_type')
+                doctor_name = metadata.get('doctor_name')
+                hospital_name = metadata.get('hospital_name')
                 
-                log_step("Metadata", "success", f"Patient: {patient_name}, Date: {report_date}")
+                log_step("Metadata", "success", 
+                        f"Patient: {patient_name}, Age: {age}, Type: {report_type}")
                 
                 # Save to database
                 log_step("Saving", "start")
@@ -397,10 +402,15 @@ def process_files():
                     user_id=user_id,
                     file_path=file_path,
                     file_name=file_name,
-                    folder_type=folder_type,
+                    folder_type=actual_folder,
                     extracted_text=extracted_text,
                     patient_name=patient_name,
-                    report_date=report_date
+                    report_date=report_date,
+                    age=age,
+                    gender=gender,
+                    report_type=report_type,
+                    doctor_name=doctor_name,
+                    hospital_name=hospital_name
                 )
                 
                 log_step("Saved", "success", f"ID: {record_id}")
@@ -409,8 +419,10 @@ def process_files():
                     "file_name": file_name,
                     "status": "success",
                     "record_id": record_id,
+                    "folder_type": actual_folder,
                     "patient_name": patient_name,
                     "report_date": report_date,
+                    "report_type": report_type,
                     "text_length": len(extracted_text)
                 })
                 successful += 1
@@ -430,10 +442,7 @@ def process_files():
         if deleted_count > 0 or successful > 0:
             log_step("Clearing cache", "start")
             try:
-                result = sb.supabase.table('medical_summaries_cache').delete().eq(
-                    'user_id', user_id
-                ).execute()
-                
+                result = sb.supabase.table('medical_summaries_cache').delete().eq('user_id', user_id).execute()
                 cache_cleared = len(result.data) if result.data else 0
                 log_step("Cache cleared", "success", f"{cache_cleared} entries")
             except Exception as e:
@@ -480,17 +489,17 @@ def process_files():
 
 
 # ============================================
-# GENERATE SUMMARY (IN-MEMORY)
+# GENERATE SUMMARY (MEDICAL REPORTS ONLY)
 # ============================================
 
 @app.route("/api/generate-summary", methods=["POST"])
 def generate_summary():
-    """Generate medical summary - completely in-memory with temp directory"""
+    """Generate medical summary - ONLY for medical reports folder"""
     print("\n" + "="*80, flush=True)
-    log_step("GENERATE SUMMARY", "start")
+    log_step("GENERATE SUMMARY (Medical Reports Only)", "start")
     print("="*80, flush=True)
     
-    # Create temp directory for this request
+    # Create temp directory
     temp_dir = tempfile.mkdtemp(prefix="rag_")
     
     try:
@@ -505,26 +514,35 @@ def generate_summary():
             }), 400
         
         user_id = data["user_id"]
-        folder_type = data.get("folder_type")
         use_cache = data.get("use_cache", True)
         force_regenerate = data.get("force_regenerate", False)
         
-        log_step("Config", "info", f"User: {user_id}, Cache: {use_cache}, Force: {force_regenerate}")
+        # CRITICAL: Only allow 'reports' folder
+        folder_type = 'reports'
+        
+        log_step("Config", "info", 
+                f"User: {user_id}, Folder: {folder_type} (MEDICAL ONLY)")
         log_step("Temp dir", "info", temp_dir)
         
-        # Get processed reports
-        log_step("Fetching reports", "start")
-        reports = sb.get_processed_reports(user_id, folder_type)
+        # Get processed reports - ONLY from 'reports' folder
+        log_step("Fetching medical reports", "start")
+        reports = sb.get_processed_reports(user_id, folder_type='reports')
         
         if not reports:
-            log_step("Reports", "error", "No processed reports found")
+            log_step("Reports", "error", "No medical reports found")
             return jsonify({
                 "success": False,
-                "error": "No processed reports found. Please process files first.",
-                "hint": "Call POST /api/process-files first"
+                "error": "No medical reports found. Please process medical report files first.",
+                "hint": "Only files in the 'reports' folder are summarized"
             }), 404
         
-        log_step("Reports found", "success", f"{len(reports)} reports")
+        log_step("Medical reports found", "success", f"{len(reports)} reports")
+        
+        # Validate that we only have medical reports
+        non_medical = [r for r in reports if r.get('folder_type') != 'reports']
+        if non_medical:
+            log_step("Warning", "warning", f"Filtering out {len(non_medical)} non-medical files")
+            reports = [r for r in reports if r.get('folder_type') == 'reports']
         
         # Compute signature
         log_step("Computing signature", "start")
@@ -534,7 +552,7 @@ def generate_summary():
         # Check cache
         if use_cache and not force_regenerate:
             log_step("Checking cache", "start")
-            cached = sb.get_cached_summary(user_id, folder_type, current_signature)
+            cached = sb.get_cached_summary(user_id, 'reports', current_signature)
             
             if cached and cached.get('summary_text'):
                 summary_text = cached['summary_text']
@@ -545,8 +563,10 @@ def generate_summary():
                         "success": True,
                         "summary": summary_text,
                         "report_count": cached['report_count'],
+                        "folder_type": 'reports',
                         "cached": True,
-                        "generated_at": cached.get('generated_at')
+                        "generated_at": cached.get('generated_at'),
+                        "model": "gpt-4o-mini"
                     }), 200
             
             log_step("Cache", "info", "Cache miss - generating new summary")
@@ -565,8 +585,12 @@ def generate_summary():
             # Clean text
             cleaned = clean_text(extracted)
             
-            # Chunk text
-            chunks = chunk_text(cleaned, max_words=300, overlap_words=50)
+            # OPTIMIZED: Larger chunks for better context
+            chunks = chunk_text(
+                cleaned, 
+                max_words=500,  # Increased for better context
+                overlap_words=100  # Increased for continuity
+            )
             
             print(f"  Report {idx}/{len(reports)}: {report.get('file_name')}", flush=True)
             print(f"    {len(extracted)} chars → {len(cleaned)} cleaned → {len(chunks)} chunks", flush=True)
@@ -596,7 +620,7 @@ def generate_summary():
                     "error": "Could not create chunks from reports. Text may be too short or corrupted."
                 }), 500
         
-        # Build FAISS index in temp directory
+        # Build FAISS index
         log_step("Building index", "start")
         try:
             index, chunks, vectorizer = build_faiss_index(all_chunks, temp_dir)
@@ -610,13 +634,13 @@ def generate_summary():
                 "error": f"Failed to build search index: {str(e)}"
             }), 500
         
-        # Generate summary
+        # Generate summary with improved RAG
         log_step("Generating summary", "start")
         try:
-            summary = ask_rag(
-                question="Analyze all medical reports and provide a comprehensive summary",
+            summary = ask_rag_improved(
+                question="Analyze all medical test reports and provide a comprehensive summary with trends",
                 temp_dir=temp_dir,
-                top_k=20,
+                folder_type='reports',
                 num_reports=len(reports)
             )
             
@@ -643,7 +667,7 @@ def generate_summary():
         try:
             sb.save_summary_cache(
                 user_id,
-                folder_type or 'all',
+                'reports',
                 summary,
                 len(reports),
                 current_signature
@@ -653,36 +677,37 @@ def generate_summary():
             log_step("Cache save", "warning", f"Failed: {str(e)}")
         
         # Extract metadata for response
-        from rag_pipeline.rag_query import extract_patient_name, extract_report_dates
+        from rag_pipeline.rag_query import extract_patient_info
         
-        patient_names = list(set([
-            r.get('patient_name') or extract_patient_name(r.get('extracted_text') or "")
-            for r in reports
-        ]))
+        sample_text = "\n".join([
+            r.get('extracted_text', '')[:500]
+            for r in reports[:3]
+        ])
         
-        dates = list(set([
-            r.get('report_date')
-            for r in reports
-            if r.get('report_date')
-        ]))
+        patient_info = extract_patient_info(sample_text)
         
         # Summary
         print(f"\n{'='*80}", flush=True)
         log_step("COMPLETE", "success")
         print(f"{'='*80}", flush=True)
         print(f"  Reports: {len(reports)}", flush=True)
-        print(f"  Patients: {', '.join(patient_names)}", flush=True)
-        print(f"  Dates: {', '.join(sorted(dates)[:5]) if dates else 'None'}", flush=True)
+        print(f"  Patient: {patient_info['name']}", flush=True)
+        print(f"  Folder: Medical Reports Only", flush=True)
         print(f"  Summary: {len(summary)} chars", flush=True)
+        print(f"  Model: gpt-4o-mini", flush=True)
         print(f"{'='*80}\n", flush=True)
         
         return jsonify({
             "success": True,
             "summary": summary,
             "report_count": len(reports),
-            "patient_names": patient_names,
-            "dates": sorted(dates),
-            "cached": False
+            "folder_type": 'reports',
+            "patient_name": patient_info['name'],
+            "patient_age": patient_info.get('age'),
+            "patient_gender": patient_info.get('gender'),
+            "dates": patient_info.get('dates', []),
+            "cached": False,
+            "model": "gpt-4o-mini"
         }), 200
         
     except Exception as e:
@@ -727,6 +752,7 @@ def get_reports(user_id):
                 "folder_type": r['folder_type'],
                 "patient_name": r.get('patient_name'),
                 "report_date": r.get('report_date'),
+                "report_type": r.get('report_type'),
                 "processing_status": r['processing_status'],
                 "processed_at": r.get('processed_at'),
                 "text_length": len(r.get('extracted_text') or "")
@@ -878,17 +904,23 @@ def internal_error(error):
 if __name__ == "__main__":
     print("\n" + "="*80, flush=True)
 <<<<<<< HEAD
+<<<<<<< HEAD
     print("MEDICAL RAG API SERVER - IN-MEMORY PROCESSING", flush=True)
     print("="*80, flush=True)
     print("\nEndpoints:", flush=True)
 =======
     print("🚀 MEDICAL RAG API SERVER - IN-MEMORY PROCESSING", flush=True)
+=======
+    print("🚀 MEDICAL RAG API SERVER", flush=True)
+    print("   Powered by: OpenAI GPT-4o-mini", flush=True)
+    print("   Medical Reports Only Summarization", flush=True)
+>>>>>>> 9d13d9f2975196b316190040cce6fb78678655c7
     print("="*80, flush=True)
     print("\n📡 Endpoints:", flush=True)
 >>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
     print("  GET    /api/health", flush=True)
     print("  POST   /api/process-files", flush=True)
-    print("  POST   /api/generate-summary", flush=True)
+    print("  POST   /api/generate-summary  (Medical reports only)", flush=True)
     print("  GET    /api/reports/<user_id>", flush=True)
     print("  DELETE /api/clear-cache/<user_id>", flush=True)
     print("  DELETE /api/clear/<user_id>", flush=True)
@@ -900,11 +932,19 @@ if __name__ == "__main__":
     print("  [OK] Fixed embedding dimensions", flush=True)
 =======
     print("\n💡 Features:", flush=True)
+<<<<<<< HEAD
     print("  ✓ Zero local file storage", flush=True)
     print("  ✓ Complete in-memory processing", flush=True)
     print("  ✓ Stateless temp directories", flush=True)
     print("  ✓ Fixed embedding dimensions", flush=True)
 >>>>>>> b96bf647f27bf548f370b28e47bcadc5e6bd465b
+=======
+    print("  ✓ Medical reports only summarization", flush=True)
+    print("  ✓ Adaptive context sizing", flush=True)
+    print("  ✓ GPT-4o-mini: Fast, accurate, cost-effective", flush=True)
+    print("  ✓ Better trend analysis", flush=True)
+    print("  ✓ Scales from 1 to many reports", flush=True)
+>>>>>>> 9d13d9f2975196b316190040cce6fb78678655c7
     print("\n" + "="*80 + "\n", flush=True)
     
     port = int(os.environ.get("PORT", 5000))

@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 import requests
 import hashlib
 import io
-from PIL import Image
 
 load_dotenv()
 
@@ -137,20 +136,36 @@ def get_file_as_bytesio(file_path: str) -> io.BytesIO:
 
 def save_extracted_data(user_id: str, file_path: str, file_name: str, 
                        folder_type: str, extracted_text: str, 
-                       patient_name: str = None, report_date: str = None):
-    """Save extracted text to database"""
+                       patient_name: str = None, report_date: str = None,
+                       age: str = None, gender: str = None, 
+                       report_type: str = None, doctor_name: str = None,
+                       hospital_name: str = None,
+                       name_match_status: str = 'pending',
+                       name_match_confidence: float = None):
+    """
+    Save extracted text and metadata to database
+    
+    NOTE: user_id is TEXT in your schema, not UUID
+    """
     print(f"\n💾 Saving to database: {file_name}")
     
     try:
         # Prepare data
         data = {
-            'user_id': user_id,
+            'user_id': str(user_id),  # Ensure it's TEXT
             'file_path': file_path,
             'file_name': file_name,
             'folder_type': folder_type,
             'extracted_text': extracted_text,
             'patient_name': patient_name,
             'report_date': report_date,
+            'age': age,
+            'gender': gender,
+            'report_type': report_type,
+            'doctor_name': doctor_name,
+            'hospital_name': hospital_name,
+            'name_match_status': name_match_status,
+            'name_match_confidence': name_match_confidence,
             'processing_status': 'completed',
             'processed_at': 'NOW()'
         }
@@ -163,8 +178,12 @@ def save_extracted_data(user_id: str, file_path: str, file_name: str,
         
         record_id = result.data[0]['id'] if result.data else None
         print(f"✅ Saved (ID: {record_id})")
-        print(f"   Patient: {patient_name or 'Unknown'}")
+        print(f"   Patient: {patient_name or 'Unknown'} ({age or 'N/A'}, {gender or 'N/A'})")
         print(f"   Date: {report_date or 'Unknown'}")
+        print(f"   Type: {report_type or 'Unknown'}")
+        print(f"   Doctor: {doctor_name or 'Unknown'}")
+        print(f"   Hospital: {hospital_name or 'Unknown'}")
+        print(f"   Name Match: {name_match_status} ({name_match_confidence or 'N/A'})")
         print(f"   Text length: {len(extracted_text)} characters")
         
         return record_id
@@ -175,12 +194,16 @@ def save_extracted_data(user_id: str, file_path: str, file_name: str,
 
 
 def get_processed_reports(user_id: str, folder_type: str = None):
-    """Get all processed reports for a user from database"""
+    """
+    Get all processed reports for a user from database
+    
+    NOTE: user_id is TEXT in your schema
+    """
     print(f"\n📊 Fetching processed reports for user: {user_id}")
     
     try:
         query = supabase.table('medical_reports_processed').select('*').eq(
-            'user_id', user_id
+            'user_id', str(user_id)  # Ensure it's TEXT
         ).eq('processing_status', 'completed')
         
         if folder_type:
@@ -191,7 +214,7 @@ def get_processed_reports(user_id: str, folder_type: str = None):
         
         print(f"✅ Retrieved {len(result.data)} reports")
         for r in result.data:
-            print(f"   • {r.get('file_name')} ({r.get('report_date') or 'No date'})")
+            print(f"   • {r.get('file_name')} ({r.get('folder_type')}) - {r.get('report_date') or 'No date'}")
         
         return result.data
         
@@ -224,12 +247,16 @@ def compute_signature_from_reports(reports: list) -> str:
 
 def save_summary_cache(user_id: str, folder_type: str, summary: str, 
                       report_count: int, reports_signature: str = None):
-    """Cache generated summary with signature"""
+    """
+    Cache generated summary with signature
+    
+    NOTE: user_id is TEXT in your schema
+    """
     print(f"\n💾 Caching summary for user: {user_id}")
     
     try:
         payload = {
-            'user_id': user_id,
+            'user_id': str(user_id),  # Ensure it's TEXT
             'folder_type': folder_type,
             'summary_text': summary,
             'report_count': report_count,
@@ -244,6 +271,7 @@ def save_summary_cache(user_id: str, folder_type: str, summary: str,
         
         print(f"✅ Summary cached")
         print(f"   Reports: {report_count}")
+        print(f"   Folder: {folder_type}")
         print(f"   Signature: {reports_signature[:16] if reports_signature else 'None'}...")
         
         return True
@@ -254,12 +282,16 @@ def save_summary_cache(user_id: str, folder_type: str, summary: str,
 
 
 def get_cached_summary(user_id: str, folder_type: str = None, expected_signature: str = None):
-    """Get cached summary if exists and is valid"""
+    """
+    Get cached summary if exists and is valid
+    
+    NOTE: user_id is TEXT in your schema
+    """
     print(f"\n🔍 Checking for cached summary...")
     
     try:
         query = supabase.table('medical_summaries_cache').select('*').eq(
-            'user_id', user_id
+            'user_id', str(user_id)  # Ensure it's TEXT
         )
 
         if folder_type:
@@ -282,6 +314,7 @@ def get_cached_summary(user_id: str, folder_type: str = None, expected_signature
             print(f"✅ Found valid cached summary")
             print(f"   Generated: {record.get('generated_at')}")
             print(f"   Reports: {record.get('report_count')}")
+            print(f"   Folder: {record.get('folder_type')}")
             
             return record
 
@@ -294,12 +327,16 @@ def get_cached_summary(user_id: str, folder_type: str = None, expected_signature
 
 
 def clear_user_cache(user_id: str, folder_type: str = None):
-    """Clear cached summaries for a user"""
+    """
+    Clear cached summaries for a user
+    
+    NOTE: user_id is TEXT in your schema
+    """
     print(f"\n🗑️  Clearing cache for user: {user_id}")
     
     try:
         query = supabase.table('medical_summaries_cache').delete().eq(
-            'user_id', user_id
+            'user_id', str(user_id)  # Ensure it's TEXT
         )
         
         if folder_type:
@@ -317,18 +354,22 @@ def clear_user_cache(user_id: str, folder_type: str = None):
 
 
 def clear_user_data(user_id: str):
-    """Clear all processed data for a user"""
+    """
+    Clear all processed data for a user
+    
+    NOTE: user_id is TEXT in your schema
+    """
     print(f"\n🗑️  Clearing ALL data for user: {user_id}")
     
     try:
         # Delete from processed reports
         result1 = supabase.table('medical_reports_processed').delete().eq(
-            'user_id', user_id
+            'user_id', str(user_id)  # Ensure it's TEXT
         ).execute()
         
         # Delete cached summaries
         result2 = supabase.table('medical_summaries_cache').delete().eq(
-            'user_id', user_id
+            'user_id', str(user_id)  # Ensure it's TEXT
         ).execute()
         
         deleted_count = len(result1.data) if result1.data else 0
@@ -361,6 +402,16 @@ def test_connection():
         print(f"   Database access: ✓")
         print(f"   Storage access: ✓")
         print(f"   Buckets found: {len(buckets)}")
+        
+        # Test if new columns exist
+        try:
+            test_query = supabase.table('medical_reports_processed').select(
+                'age,gender,report_type,name_match_status'
+            ).limit(1).execute()
+            print(f"   New columns available: ✓")
+        except Exception as e:
+            print(f"   ⚠️  New columns not yet added: {e}")
+        
         return True
         
     except Exception as e:
