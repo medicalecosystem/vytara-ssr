@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:backend": "node scripts/start-backend.js",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:backend\"",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -30,6 +32,7 @@
     "twilio": "^5.11.2"
   },
   "devDependencies": {
+    "concurrently": "^9.1.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19.2.7",
