@@ -19,7 +19,10 @@ interface MedicalSummaryModalProps {
 }
 
 const PUBLIC_BACKEND_BASE_URL = (
-  process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  (process.env.NODE_ENV === 'production'
+    ? 'https://testing-9obu.onrender.com'
+    : 'http://localhost:5000')
 ).replace(/\/+$/, '');
 const HEALTH_CHECK_URL = `${PUBLIC_BACKEND_BASE_URL}/api/health`;
 
