@@ -2,6 +2,7 @@
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 import os
 import json
 import re
@@ -45,18 +46,22 @@ CORS(app, resources={
 def log_step(step: str, status: str = "info", details: str = None):
     """Consistent logging"""
     symbols = {
-        "start": "🔄",
-        "success": "✅",
-        "error": "❌",
-        "warning": "⚠️",
-        "info": "ℹ️"
+        "start": "[START]",
+        "success": "[OK]",
+        "error": "[ERROR]",
+        "warning": "[WARN]",
+        "info": "[INFO]"
     }
-    symbol = symbols.get(status, "•")
+    symbol = symbols.get(status, "[LOG]")
     
     message = f"{symbol} {step}"
     if details:
         message += f": {details}"
-    print(message, flush=True)
+    try:
+        print(message, flush=True)
+    except UnicodeEncodeError:
+        safe = message.encode("ascii", "replace").decode("ascii")
+        print(safe, flush=True)
 
 
 def parse_structured_payload(value):
@@ -320,7 +325,7 @@ def process_files():
     
     try:
         # Validate request
-        data = request.get_json()
+        data = request.get_json(silent=True)
         
         if not data or "user_id" not in data:
             log_step("Validation", "error", "user_id required")
@@ -670,7 +675,7 @@ def generate_summary():
 
     try:
         # Validate request
-        data = request.get_json()
+        data = request.get_json(silent=True)
         
         if not data or "user_id" not in data:
             log_step("Validation", "error", "user_id required")
@@ -998,6 +1003,23 @@ def not_found(error):
 
 @app.errorhandler(500)
 def internal_error(error):
+    return jsonify({
+        "success": False,
+        "error": "Internal server error"
+    }), 500
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_exception(error):
+    """Ensure all uncaught exceptions return JSON, even in production."""
+    if isinstance(error, HTTPException):
+        return jsonify({
+            "success": False,
+            "error": error.description or str(error)
+        }), (error.code or 500)
+
+    log_step("Unhandled exception", "error", str(error))
+    traceback.print_exc()
     return jsonify({
         "success": False,
         "error": "Internal server error"

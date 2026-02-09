@@ -30,6 +30,14 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown error';
 }
 
+function shouldRunProcessingFallback(errorMessage: string): boolean {
+  const message = errorMessage.toLowerCase();
+  return (
+    message.includes('no processed reports found') ||
+    message.includes('process files first')
+  );
+}
+
 export function MedicalSummaryModal({ 
   isOpen, 
   onClose, 
@@ -143,11 +151,12 @@ export function MedicalSummaryModal({
     }
   };
 
-  const generateSummary = async () => {
+  const generateSummary = async (): Promise<{ ok: boolean; errorMessage?: string }> => {
     if (!userId) {
       console.error('❌ [Frontend] No userId for summary generation');
-      setError('Please log in to use this feature');
-      return;
+      const authError = 'Please log in to use this feature';
+      setError(authError);
+      return { ok: false, errorMessage: authError };
     }
 
     setIsGenerating(true);
@@ -186,10 +195,13 @@ export function MedicalSummaryModal({
       setHasProcessed(true);
       
       console.log('✅ [Frontend] State updated, summary should display');
+      return { ok: true };
       
     } catch (err: unknown) {
       console.error('❌ [Frontend] Summary error:', err);
-      setError(getErrorMessage(err));
+      const errorMessage = getErrorMessage(err);
+      setError(errorMessage);
+      return { ok: false, errorMessage };
     } finally {
       setIsGenerating(false);
     }
@@ -197,12 +209,25 @@ export function MedicalSummaryModal({
 
   const handleGenerateSummary = async () => {
     console.log('🎬 [Modal] Starting generation process...');
-    const processed = await processFiles();
-    if (processed) {
-      await generateSummary();
-    } else {
-      console.error('❌ [Modal] Processing failed, not generating summary');
+
+    // Fast path: summary from already processed reports without reprocessing files.
+    const firstAttempt = await generateSummary();
+    if (firstAttempt.ok) {
+      return;
     }
+
+    if (!shouldRunProcessingFallback(firstAttempt.errorMessage || '')) {
+      console.error('❌ [Modal] Summary failed; skipping process fallback');
+      return;
+    }
+
+    const processed = await processFiles();
+    if (!processed) {
+      console.error('❌ [Modal] Processing failed, not generating summary');
+      return;
+    }
+
+    await generateSummary();
   };
 
   if (!isOpen) {
