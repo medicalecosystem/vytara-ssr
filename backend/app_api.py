@@ -26,6 +26,7 @@ import numpy as np
 from PIL import Image
 import pdfplumber
 
+
 app = Flask(__name__)
 
 # CORS configuration
@@ -69,27 +70,27 @@ def log_step(step: str, status: str = "info", details: str = None):
 def extract_text_from_bytes(file_bytes: bytes, file_extension: str) -> str:
     """Extract text from file bytes (NO file I/O)"""
     log_step("OCR", "start", f"Processing {file_extension}")
-
+    
     try:
         # PDF files
         if file_extension.lower() == '.pdf':
             # Try pdfplumber first
             try:
                 bytes_io = io.BytesIO(file_bytes)
-
+                
                 with pdfplumber.open(bytes_io) as pdf:
                     text = ""
                     for page in pdf.pages:
                         page_text = page.extract_text()
                         if page_text:
                             text += page_text + "\n\n"
-
+                    
                     if text.strip() and len(text.strip()) > 50:
                         log_step("PDF text", "success", f"{len(text)} chars")
                         return text.strip()
                     else:
                         log_step("PDF", "warning", "Insufficient text - might be scanned")
-
+                        
             except Exception as e:
                 log_step("pdfplumber", "warning", f"Failed: {e}")
             
@@ -97,10 +98,10 @@ def extract_text_from_bytes(file_bytes: bytes, file_extension: str) -> str:
             try:
                 from pdf2image import convert_from_bytes
                 import pytesseract
-
+                
                 images = convert_from_bytes(file_bytes, dpi=300)
                 log_step("PDF images", "success", f"{len(images)} pages")
-
+                
                 all_text = []
                 for i, img in enumerate(images, 1):
                     img_array = np.array(img)
@@ -115,19 +116,19 @@ def extract_text_from_bytes(file_bytes: bytes, file_extension: str) -> str:
                         lang='eng',
                         config='--oem 3 --psm 6'
                     )
-
+                    
                     if page_text.strip():
                         all_text.append(page_text.strip())
-
+                
                 combined = "\n\n".join(all_text)
-
+                
                 if combined.strip():
                     log_step("PDF OCR", "success", f"{len(combined)} chars")
                     return combined
-
+                    
             except Exception as e:
                 log_step("PDF OCR", "error", str(e))
-
+        
         # Image files
         elif file_extension.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']:
             try:
@@ -147,17 +148,17 @@ def extract_text_from_bytes(file_bytes: bytes, file_extension: str) -> str:
                     lang='eng',
                     config='--oem 3 --psm 6'
                 )
-
+                
                 if text.strip():
                     log_step("Image OCR", "success", f"{len(text)} chars")
                     return text.strip()
-
+                    
             except Exception as e:
                 log_step("Image OCR", "error", str(e))
-
+        
         log_step("OCR", "error", "No text extracted")
         return ""
-
+        
     except Exception as e:
         log_step("OCR", "error", str(e))
         traceback.print_exc()
@@ -240,16 +241,16 @@ def process_files():
     print("\n" + "="*80, flush=True)
     log_step("PROCESS FILES", "start")
     print("="*80, flush=True)
-
+    
     try:
         data = request.get_json()
-
+        
         if not data or "user_id" not in data:
             return jsonify({
                 "success": False,
                 "error": "user_id is required"
             }), 400
-
+        
         user_id = data["user_id"]
         folder_type = data.get("folder_type", "reports")
         
@@ -273,29 +274,29 @@ def process_files():
         # Get files from storage
         log_step("Fetching files", "start")
         files = sb.list_user_files(user_id, folder_type)
-
+        
         if not files:
             log_step("Files", "warning", "No files in storage")
-
+            
             # Clean up orphaned records
             try:
                 query = sb.supabase.table('medical_reports_processed').delete().eq('user_id', user_id)
                 if folder_type:
                     query = query.eq('folder_type', folder_type)
                 result = query.execute()
-
+                
                 deleted = len(result.data) if result.data else 0
                 log_step("Cleanup", "success", f"Deleted {deleted} orphaned records")
             except Exception as e:
                 log_step("Cleanup", "error", str(e))
-
+            
             return jsonify({
                 "success": False,
                 "error": "No files found for this user"
             }), 404
-
+        
         log_step("Files found", "success", f"{len(files)} files")
-
+        
         # Get existing processed reports
         log_step("Checking processed", "start")
         existing_records = sb.get_processed_reports(user_id, folder_type)
@@ -303,11 +304,11 @@ def process_files():
         # Build sets for comparison
         storage_paths = set(f"{user_id}/{folder_type}/{f.get('name')}" for f in files)
         existing_paths = set(r['file_path'] for r in existing_records)
-
+        
         # Delete orphaned records
         orphaned = [r for r in existing_records if r['file_path'] not in storage_paths]
         deleted_count = 0
-
+        
         if orphaned:
             log_step("Removing orphaned", "start")
             for record in orphaned:
@@ -317,10 +318,10 @@ def process_files():
                     deleted_count += 1
                 except Exception as e:
                     log_step("Delete failed", "error", str(e))
-
+        
         # Process new files
         log_step("Processing new files", "start")
-
+        
         results = []
         successful = 0
         failed = 0
@@ -335,7 +336,7 @@ def process_files():
             print(f"\n{'─'*80}", flush=True)
             print(f"FILE {idx}/{len(files)}: {file_name}", flush=True)
             print(f"{'─'*80}", flush=True)
-
+            
             # Skip if already processed
             if file_path in existing_paths:
                 log_step("Status", "info", "Already processed (skipping)")
@@ -346,9 +347,9 @@ def process_files():
                 })
                 skipped += 1
                 continue
-
+            
             log_step("Processing", "start", file_name)
-
+            
             try:
                 # Get file bytes
                 log_step("Fetch", "start", "Loading from Supabase")
@@ -358,12 +359,12 @@ def process_files():
                 # Extract text
                 file_ext = os.path.splitext(file_name)[1]
                 log_step("OCR", "start")
-
+                
                 extracted_text = extract_text_from_bytes(file_bytes, file_ext)
                 
                 if not extracted_text or len(extracted_text.strip()) < 50:
                     raise Exception(f"Insufficient text extracted: {len(extracted_text.strip())} chars")
-
+                
                 log_step("Extracted", "success", f"{len(extracted_text)} chars")
                 
                 # Extract metadata
@@ -460,9 +461,9 @@ def process_files():
                     name_match_status=name_match_status,
                     name_match_confidence=name_match_confidence
                 )
-
+                
                 log_step("Saved", "success", f"ID: {record_id}")
-
+                
                 results.append({
                     "file_name": file_name,
                     "status": "success",
@@ -476,11 +477,11 @@ def process_files():
                     "name_match_confidence": name_match_confidence
                 })
                 successful += 1
-
+                
             except Exception as e:
                 log_step("Failed", "error", f"{file_name}: {str(e)}")
                 traceback.print_exc()
-
+                
                 results.append({
                     "file_name": file_name,
                     "status": "failed",
@@ -497,7 +498,7 @@ def process_files():
                 log_step("Cache cleared", "success", f"{cache_cleared} entries")
             except Exception as e:
                 log_step("Cache clear failed", "error", str(e))
-
+        
         # Summary
         print(f"\n{'='*80}", flush=True)
         log_step("COMPLETE", "success")
@@ -511,7 +512,7 @@ def process_files():
         print(f"  ✅ Matched: {matched_reports}", flush=True)
         print(f"  ⚠️  Mismatched: {mismatched_reports}", flush=True)
         print(f"{'='*80}\n", flush=True)
-
+        
         return jsonify({
             "success": True,
             "message": f"Processed {successful} files, skipped {skipped}",
@@ -525,11 +526,11 @@ def process_files():
             "results": results,
             "user_display_name": user_display_name
         }), 200
-
+        
     except Exception as e:
         log_step("FATAL ERROR", "error", str(e))
         traceback.print_exc()
-
+        
         return jsonify({
             "success": False,
             "error": str(e),
@@ -549,16 +550,16 @@ def generate_summary():
     print("="*80, flush=True)
     
     temp_dir = tempfile.mkdtemp(prefix="rag_")
-
+    
     try:
         data = request.get_json()
-
+        
         if not data or "user_id" not in data:
             return jsonify({
                 "success": False,
                 "error": "user_id is required"
             }), 400
-
+        
         user_id = data["user_id"]
         use_cache = data.get("use_cache", True)
         force_regenerate = data.get("force_regenerate", False)
@@ -672,12 +673,12 @@ def generate_summary():
         log_step("Computing signature", "start")
         current_signature = sb.compute_signature_from_reports(reports)
         log_step("Signature", "success", current_signature[:16] + "...")
-
+        
         # Check cache
         if use_cache and not force_regenerate:
             log_step("Checking cache", "start")
             cached = sb.get_cached_summary(user_id, 'reports', current_signature)
-
+            
             if cached and cached.get('summary_text'):
                 summary_text = cached['summary_text']
                 
@@ -699,16 +700,16 @@ def generate_summary():
                         "model": "gpt-4.1-nano",
                         "user_display_name": user_display_name
                     }), 200
-
+            
             log_step("Cache", "info", "Cache miss - generating new summary")
-
+        
         # Create chunks
         log_step("Creating chunks", "start")
         all_chunks = []
-
+        
         for idx, report in enumerate(reports, 1):
             extracted = report.get('extracted_text') or ""
-
+            
             if not extracted.strip():
                 log_step(f"Report {idx}", "warning", f"Empty text in {report.get('file_name')}")
                 continue
@@ -719,9 +720,9 @@ def generate_summary():
             print(f"  Report {idx}/{len(reports)}: {report.get('file_name')}", flush=True)
             print(f"    Patient: {report.get('patient_name')} ✅", flush=True)
             print(f"    {len(extracted)} chars → {len(cleaned)} cleaned → {len(chunks)} chunks", flush=True)
-
+            
             all_chunks.extend(chunks)
-
+        
         log_step("Chunking", "success", f"{len(all_chunks)} total chunks")
         
         if not all_chunks:
@@ -770,7 +771,7 @@ def generate_summary():
                     "success": False,
                     "error": summary
                 }), 500
-
+            
             log_step("Summary", "success", f"{len(summary)} chars")
             
             # Add mismatched warnings to the TOP of summary
@@ -811,7 +812,7 @@ def generate_summary():
         print(f"  Summary: {len(summary)} chars", flush=True)
         print(f"  Model: gpt-4.1-nano", flush=True)
         print(f"{'='*80}\n", flush=True)
-
+        
         return jsonify({
             "success": True,
             "summary": summary,
@@ -822,17 +823,17 @@ def generate_summary():
             "cached": False,
             "model": "gpt-4.1-nano"
         }), 200
-
+        
     except Exception as e:
         log_step("FATAL ERROR", "error", str(e))
         traceback.print_exc()
-
+        
         return jsonify({
             "success": False,
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
-
+    
     finally:
         try:
             if os.path.exists(temp_dir):
@@ -931,7 +932,7 @@ def health_check():
 def get_reports(user_id):
     """Get list of processed reports with name match status"""
     log_step("GET REPORTS", "start", user_id)
-
+    
     try:
         folder_type = request.args.get('folder_type')
         reports = sb.get_processed_reports(user_id, folder_type)
@@ -978,7 +979,7 @@ def get_reports(user_id):
             "mismatched_count": mismatched_count,
             "user_display_name": user_display_name
         }), 200
-
+        
     except Exception as e:
         log_step("Error", "error", str(e))
         return jsonify({
@@ -995,17 +996,17 @@ def get_reports(user_id):
 def clear_cache(user_id):
     """Clear cached summaries"""
     log_step("CLEAR CACHE", "start", user_id)
-
+    
     try:
         deleted = sb.clear_user_cache(user_id)
         log_step("Cache cleared", "success", f"{deleted} entries")
-
+        
         return jsonify({
             "success": True,
             "message": f"Cache cleared for user {user_id}",
             "entries_deleted": deleted
         }), 200
-
+        
     except Exception as e:
         log_step("Error", "error", str(e))
         return jsonify({
@@ -1022,17 +1023,17 @@ def clear_cache(user_id):
 def clear_user_data(user_id):
     """Clear all processed data"""
     log_step("CLEAR DATA", "start", user_id)
-
+    
     try:
         deleted = sb.clear_user_data(user_id)
         log_step("Data cleared", "success", f"{deleted} records")
-
+        
         return jsonify({
             "success": True,
             "message": f"Cleared data for user {user_id}",
             "records_deleted": deleted
         }), 200
-
+        
     except Exception as e:
         log_step("Error", "error", str(e))
         return jsonify({
@@ -1137,6 +1138,6 @@ if __name__ == "__main__":
     print("  • Clear action items (delete or separate accounts)", flush=True)
     print("  • No errors, always informative", flush=True)
     print("\n" + "="*80 + "\n", flush=True)
-
+    
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=False, host="0.0.0.0", port=port)

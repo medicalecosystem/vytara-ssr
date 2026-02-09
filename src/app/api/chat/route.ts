@@ -1,6 +1,6 @@
 /**
  * Proxies chat (FAQ assistant) requests to the Flask backend.
- * Requires Flask backend running (e.g. python app_api.py in backend/).
+ * Requires Flask backend running (e.g. python app.py in backend/).
  */
 import { NextRequest, NextResponse } from 'next/server';
 

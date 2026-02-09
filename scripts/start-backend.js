@@ -6,7 +6,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const backendDir = path.join(__dirname, '..', 'backend');
-const script = path.join(backendDir, 'app_api.py');
+const script = path.join(backendDir, 'app.py');
 
 // Windows: "python"; Unix: "python3"
 const cmd = process.platform === 'win32' ? 'python' : 'python3';

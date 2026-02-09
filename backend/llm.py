@@ -1,6 +1,7 @@
 from groq import Groq
 from dotenv import load_dotenv
 import os
+import re
 
 load_dotenv()
 
@@ -15,28 +16,28 @@ def get_reply(text):
     greeting_words_en = ["hey", "hi", "hello", "hi there", "hey there", "hello there", "greetings", "good morning", "good afternoon", "good evening"]
     greeting_words_hi = ["नमस्ते", "नमस्कार", "हैलो", "हाय", "सुप्रभात", "सुबह", "शुभ दोपहर", "शुभ शाम", "सुसंध्या"]
 
-    if detected_lang == "hi":
-        if text.lower().strip() in greeting_words_hi:
-            return "स्वास्थ्य सहायता में आपका स्वागत है। आज मैं आपकी कैसे मदद कर सकता हूँ?"
-    else:
-        if text.lower().strip() in greeting_words_en:
-            return "Welcome to healthcare support. How can I help you today?"
+    # Clean text by removing punctuation for greeting check
+    cleaned_text = re.sub(r'[^\w\s]', '', text).lower().strip()
+
+    if cleaned_text in greeting_words_en or cleaned_text in greeting_words_hi:
+        return "Welcome to healthcare support. How can I help you today?"
 
     try:
-        # Determine response language based on user input
+        # Always respond in English as primary language
         response_lang = "English"
-        if detected_lang == "hi":
-            response_lang = "Hindi"
 
         system_prompt = f"""You are a calm and polite healthcare website support assistant.
 
 ━━━━━━━━━━━━━━━━ CRITICAL LANGUAGE RULE ━━━━━━━━━━━━━━━━
 
-IMPORTANT: You MUST respond in {response_lang} ONLY.
-• If the user speaks in Hindi, respond in Hindi.
-• If the user speaks in English, respond in English.
-• Do not mix languages in a single response.
-• Do not offer language options.
+IMPORTANT: You MUST respond ONLY in {response_lang}.
+• If {response_lang} is Hindi, use ONLY Hindi words and script, no English words, phrases, or parentheses.
+• If {response_lang} is English, use ONLY English words, no Hindi words, phrases, or parentheses.
+• Do not mix languages under any circumstances.
+• Never include translations, explanations, or words from other languages in parentheses like (Of course!).
+• Never use English in Hindi responses or Hindi in English responses.
+• Do not offer language options or mention other languages.
+• Respond in pure {response_lang} only.
 
 ━━━━━━━━━━━━━━━━ FIRST MESSAGE RULE ━━━━━━━━━━━━━━━━
 
@@ -71,8 +72,7 @@ You help users with:
 
 If user asks medical or unrelated questions:
 
-English: "I'm sorry, I can only help with website usage. Would you like to connect to customer care?"
-Hindi: "क्षमा करें, मैं केवल वेबसाइट उपयोग में मदद कर सकता हूँ। क्या आप ग्राहक सेवा से जुड़ना चाहेंगे?"
+"I'm sorry, I can only help with website usage. Would you like to connect to customer care?"
 
 ━━━━━━━━━━━━━━━━ RESPONSE STYLE ━━━━━━━━━━━━━━━━
 
@@ -80,7 +80,7 @@ Hindi: "क्षमा करें, मैं केवल वेबसाइ�
 • Use friendly spoken tone
 • Provide step-by-step help
 • Ask clarification if needed
-• Respond in {response_lang} only"""
+• Respond ONLY in {response_lang}, no mixing of languages"""
 
         completion = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
