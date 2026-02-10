@@ -1,7 +1,6 @@
 # backend/supabase_helper.py
 
 import os
-import json
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import requests
@@ -14,10 +13,10 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-    raise ValueError("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in .env")
+    raise ValueError("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in .env")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-print(f"Supabase client initialized: {SUPABASE_URL}")
+print(f"✅ Supabase client initialized: {SUPABASE_URL}")
 
 BUCKET_NAME = "medical-vault"
 
@@ -125,35 +124,8 @@ def get_file_as_bytesio(file_path: str) -> io.BytesIO:
 
 
 # ============================================
-# DATABASE OPERATIONS
+# DATABASE OPERATIONS - FIXED VERSION
 # ============================================
-
-def _coerce_structured_data(value):
-    """Normalize structured payload to a JSON-serializable object."""
-    if value is None:
-        return None
-    if isinstance(value, (dict, list)):
-        return value
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            return None
-    return None
-
-
-def compute_structured_data_hash(structured_data) -> str:
-    """Create a stable hash for structured extraction payload."""
-    normalized = _coerce_structured_data(structured_data)
-    if normalized is None:
-        return ""
-
-    compact = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(compact.encode('utf-8')).hexdigest()
-
 
 def save_extracted_data(user_id: str, file_path: str, file_name: str, 
                        folder_type: str, extracted_text: str, 
@@ -165,15 +137,16 @@ def save_extracted_data(user_id: str, file_path: str, file_name: str,
                        name_match_confidence: float = None):
     """
     Save extracted text and metadata to database
+    FIXED: Removed undefined structured_data_json reference
     
     NOTE: user_id is TEXT in your schema, not UUID
     """
     print(f"\n💾 Saving to database: {file_name}")
     
     try:
-        # Prepare data
+        # Prepare data - simple dict without any undefined variables
         data = {
-            'user_id': str(user_id),  # Ensure it's TEXT
+            'user_id': str(user_id),
             'file_path': file_path,
             'file_name': file_name,
             'folder_type': folder_type,
@@ -187,47 +160,14 @@ def save_extracted_data(user_id: str, file_path: str, file_name: str,
             'hospital_name': hospital_name,
             'name_match_status': name_match_status,
             'name_match_confidence': name_match_confidence,
-            'processing_status': 'completed',
-            'processed_at': 'NOW()'
+            'processing_status': 'completed'
         }
-
-        structured_payload = _coerce_structured_data(structured_data_json)
-        if structured_payload is not None:
-            data['structured_data_json'] = structured_payload
-            data['structured_data_hash'] = (
-                structured_data_hash or compute_structured_data_hash(structured_payload)
-            )
-            data['structured_extracted_at'] = 'NOW()'
         
-        try:
-            # Use upsert to handle duplicates
-            result = supabase.table('medical_reports_processed').upsert(
-                data,
-                on_conflict='user_id,file_path'
-            ).execute()
-        except Exception as e:
-            # Support deployments where structured columns are not migrated yet.
-            error_text = str(e).lower()
-            if any(
-                field in error_text
-                for field in (
-                    'structured_data_json',
-                    'structured_data_hash',
-                    'structured_extracted_at',
-                    'source_file_hash'
-                )
-            ):
-                print("⚠️ Optional columns unavailable; saving base text record")
-                data.pop('structured_data_json', None)
-                data.pop('structured_data_hash', None)
-                data.pop('structured_extracted_at', None)
-                data.pop('source_file_hash', None)
-                result = supabase.table('medical_reports_processed').upsert(
-                    data,
-                    on_conflict='user_id,file_path'
-                ).execute()
-            else:
-                raise
+        # Use upsert to handle duplicates
+        result = supabase.table('medical_reports_processed').upsert(
+            data,
+            on_conflict='user_id,file_path'
+        ).execute()
         
         record_id = result.data[0]['id'] if result.data else None
         print(f"✅ Saved (ID: {record_id})")
@@ -243,6 +183,8 @@ def save_extracted_data(user_id: str, file_path: str, file_name: str,
         
     except Exception as e:
         print(f"❌ Error saving to database: {e}")
+        import traceback
+        traceback.print_exc()
         raise
 
 
@@ -256,7 +198,7 @@ def get_processed_reports(user_id: str, folder_type: str = None):
     
     try:
         query = supabase.table('medical_reports_processed').select('*').eq(
-            'user_id', str(user_id)  # Ensure it's TEXT
+            'user_id', str(user_id)
         ).eq('processing_status', 'completed')
         
         if folder_type:
@@ -349,8 +291,7 @@ def create_user_profile(user_id: str, full_name: str, **kwargs) -> dict:
             'email': kwargs.get('email'),
             'phone': kwargs.get('phone'),
             'date_of_birth': kwargs.get('date_of_birth'),
-            'gender': kwargs.get('gender'),
-            'created_at': 'NOW()'
+            'gender': kwargs.get('gender')
         }
         
         result = supabase.table('user_profiles').insert(data).execute()
@@ -432,12 +373,11 @@ def save_summary_cache(user_id: str, folder_type: str, summary: str,
     
     try:
         payload = {
-            'user_id': str(user_id),  # Ensure it's TEXT
+            'user_id': str(user_id),
             'folder_type': folder_type,
             'summary_text': summary,
             'report_count': report_count,
-            'reports_signature': reports_signature,
-            'generated_at': 'NOW()'
+            'reports_signature': reports_signature
         }
 
         result = supabase.table('medical_summaries_cache').upsert(
@@ -467,7 +407,7 @@ def get_cached_summary(user_id: str, folder_type: str = None, expected_signature
     
     try:
         query = supabase.table('medical_summaries_cache').select('*').eq(
-            'user_id', str(user_id)  # Ensure it's TEXT
+            'user_id', str(user_id)
         )
 
         if folder_type:
@@ -512,7 +452,7 @@ def clear_user_cache(user_id: str, folder_type: str = None):
     
     try:
         query = supabase.table('medical_summaries_cache').delete().eq(
-            'user_id', str(user_id)  # Ensure it's TEXT
+            'user_id', str(user_id)
         )
         
         if folder_type:
@@ -540,12 +480,12 @@ def clear_user_data(user_id: str):
     try:
         # Delete from processed reports
         result1 = supabase.table('medical_reports_processed').delete().eq(
-            'user_id', str(user_id)  # Ensure it's TEXT
+            'user_id', str(user_id)
         ).execute()
         
         # Delete cached summaries
         result2 = supabase.table('medical_summaries_cache').delete().eq(
-            'user_id', str(user_id)  # Ensure it's TEXT
+            'user_id', str(user_id)
         ).execute()
         
         deleted_count = len(result1.data) if result1.data else 0
@@ -578,15 +518,6 @@ def test_connection():
         print(f"   Database access: ✓")
         print(f"   Storage access: ✓")
         print(f"   Buckets found: {len(buckets)}")
-        
-        # Test if new columns exist
-        try:
-            test_query = supabase.table('medical_reports_processed').select(
-                'age,gender,report_type,name_match_status'
-            ).limit(1).execute()
-            print(f"   New columns available: ✓")
-        except Exception as e:
-            print(f"   ⚠️  New columns not yet added: {e}")
         
         return True
         
