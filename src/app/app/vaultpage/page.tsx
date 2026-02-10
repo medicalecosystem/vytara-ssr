@@ -770,25 +770,31 @@ export default function VaultPage() {
 
             <div className="flex flex-col md:flex-row gap-6">
               {/* CATEGORY SIDEBAR */}
-              <div className="w-full md:w-56 flex-shrink-0 flex md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0">
-                {categories.map(cat => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setSelectedCategory(cat.id as Category)}
-                    className={`w-48 md:w-full flex-shrink-0 flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200 ${
-                      selectedCategory === cat.id
-                        ? 'bg-teal-50 text-teal-700 border-2 border-teal-200 shadow-sm'
-                        : 'bg-white text-slate-600 border border-slate-100 hover:border-slate-200 hover:bg-slate-50'
-                    }`}
-                    data-testid={`category-${cat.id}`}
-                  >
-                    <cat.icon size={18} className={selectedCategory === cat.id ? 'text-teal-600' : 'text-slate-400'} />
-                    <span className="flex-1 font-medium text-sm">{cat.label}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${selectedCategory === cat.id ? 'bg-teal-200 text-teal-800' : 'bg-slate-100 text-slate-500'}`}>
-                      {cat.count}
-                    </span>
-                  </button>
-                ))}
+              <div className="w-full md:w-56 flex-shrink-0">
+                <div className="mb-2 flex items-center justify-between px-1 md:hidden">
+                  <p className="text-xs font-medium text-slate-500">Swipe to see all categories</p>
+                  <span className="text-xs text-teal-600">↔</span>
+                </div>
+                <div className="flex md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0 snap-x snap-mandatory">
+                  {categories.map(cat => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setSelectedCategory(cat.id as Category)}
+                      className={`w-48 md:w-full flex-shrink-0 flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200 snap-start ${
+                        selectedCategory === cat.id
+                          ? 'bg-teal-50 text-teal-700 border-2 border-teal-200 shadow-sm'
+                          : 'bg-white text-slate-600 border border-slate-100 hover:border-slate-200 hover:bg-slate-50'
+                      }`}
+                      data-testid={`category-${cat.id}`}
+                    >
+                      <cat.icon size={18} className={selectedCategory === cat.id ? 'text-teal-600' : 'text-slate-400'} />
+                      <span className="flex-1 font-medium text-sm">{cat.label}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${selectedCategory === cat.id ? 'bg-teal-200 text-teal-800' : 'bg-slate-100 text-slate-500'}`}>
+                        {cat.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* FILES GRID/LIST */}
@@ -828,7 +834,7 @@ export default function VaultPage() {
                               data-menu={openMenuName === file.name ? file.name : undefined}
                             >
                               <button
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition"
                                 onClick={() =>
                                   setOpenMenuName((prev) =>
                                     prev === file.name ? null : file.name
@@ -861,7 +867,7 @@ export default function VaultPage() {
                           <p className="font-medium text-slate-800 text-sm truncate mb-1">{file.name}</p>
                           <p className="text-xs text-slate-400 mb-4">{new Date(file.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                           
-                          <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition">
+                          <div className="flex gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition">
                             <button
                               className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 text-xs font-medium transition"
                               onClick={() => handlePreview(file)}
@@ -880,8 +886,68 @@ export default function VaultPage() {
                     })}
                   </div>
                 ) : (
-                  <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto">
-                    <table className="w-full min-w-[720px]">
+                  <>
+                    <div className="space-y-3 md:hidden">
+                      {sortedFiles.map((file, i) => {
+                        const Icon = getCategoryIcon(file.folder);
+                        return (
+                          <div key={i} className="bg-white rounded-2xl border border-slate-100 p-4" data-testid={`file-list-card-${i}`}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${getCategoryColor(file.folder)} flex items-center justify-center`}>
+                                  <Icon size={16} className="text-white" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-medium text-slate-800 text-sm truncate">{file.name}</p>
+                                  <p className="text-xs text-slate-500 mt-0.5">
+                                    {new Date(file.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getCategoryBg(file.folder)} text-slate-700`}>
+                                {file.folder.charAt(0).toUpperCase() + file.folder.slice(1)}
+                              </span>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-4 gap-2">
+                              <button
+                                className="p-2 rounded-lg text-slate-500 bg-slate-100 hover:bg-slate-200 transition disabled:opacity-50"
+                                onClick={() => handleRename(file)}
+                                disabled={renamingName === file.name}
+                                aria-label={`Rename ${file.name}`}
+                              >
+                                <Edit2 size={16} className="mx-auto" />
+                              </button>
+                              <button
+                                className="p-2 rounded-lg text-teal-700 bg-teal-50 hover:bg-teal-100 transition"
+                                onClick={() => handlePreview(file)}
+                                aria-label={`Preview ${file.name}`}
+                              >
+                                <Eye size={16} className="mx-auto" />
+                              </button>
+                              <button
+                                className="p-2 rounded-lg text-teal-700 bg-teal-50 hover:bg-teal-100 transition"
+                                onClick={() => handleDownload(file)}
+                                aria-label={`Download ${file.name}`}
+                              >
+                                <Download size={16} className="mx-auto" />
+                              </button>
+                              <button
+                                className="p-2 rounded-lg text-red-600 bg-red-50 hover:bg-red-100 transition disabled:opacity-50"
+                                onClick={() => handleDelete(file)}
+                                disabled={deletingName === file.name}
+                                aria-label={`Delete ${file.name}`}
+                              >
+                                <Trash2 size={16} className="mx-auto" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="hidden md:block bg-white rounded-2xl border border-slate-100 overflow-x-auto">
+                      <table className="w-full min-w-[720px]">
                       <thead className="bg-slate-50 border-b border-slate-100">
                         <tr>
                           <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Name</th>
@@ -949,8 +1015,9 @@ export default function VaultPage() {
                           );
                         })}
                       </tbody>
-                    </table>
-                  </div>
+                      </table>
+                    </div>
+                  </>
                 )}
               </div>
 
