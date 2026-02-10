@@ -194,21 +194,35 @@ export default function LoginPage() {
       return;
     }
 
-    const { error } = await supabase.auth.signInWithOtp({
-      phone: formattedPhone,
-      options: { shouldCreateUser: false },
-    });
+    try {
+      const response = await fetch("/api/auth/request-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: formattedPhone,
+          shouldCreateUser: false,
+        }),
+      });
 
-    setLoading(false);
-
-    if (error) {
-      const lowerMessage = error.message.toLowerCase();
-      if (lowerMessage.includes("signups not allowed")) {
-        setError("User not found. Please create an account first.");
-      } else {
-        setError(error.message || "Failed to send OTP. Please check the number and try again.");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message =
+          typeof payload?.message === "string"
+            ? payload.message
+            : "Failed to send OTP. Please check the number and try again.";
+        const lowerMessage = message.toLowerCase();
+        if (lowerMessage.includes("signups not allowed")) {
+          setError("User not found. Please create an account first.");
+        } else {
+          setError(message);
+        }
+        return;
       }
+    } catch {
+      setError("Could not reach the server. Please check your internet connection and try again.");
       return;
+    } finally {
+      setLoading(false);
     }
 
     setStep("otp");
