@@ -37,7 +37,8 @@ CORS(app, resources={
             "http://127.0.0.1:3000",
             "https://vytara-official.vercel.app",
             "https://*.vercel.app",
-            "https://sauncier-instigative-yolande.ngrok-free.dev"
+            "https://sauncier-instigative-yolande.ngrok-free.dev",
+            "https://medical-rag-backend-phaq.onrender.com"
         ],
         "methods": ["GET", "POST", "DELETE", "PUT", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
@@ -246,7 +247,6 @@ def process_files():
         data = request.get_json()
         
         if not data or "user_id" not in data:
-            log_step("Validation", "error", "user_id required")
             return jsonify({
                 "success": False,
                 "error": "user_id is required"
@@ -556,7 +556,6 @@ def generate_summary():
         data = request.get_json()
         
         if not data or "user_id" not in data:
-            log_step("Validation", "error", "user_id required")
             return jsonify({
                 "success": False,
                 "error": "user_id is required"
