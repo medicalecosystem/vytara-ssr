@@ -20,9 +20,8 @@ type RememberedAccount = {
   userId: string;
   name: string;
   phone: string;
-  deviceToken: string;
-  accessToken?: string;
-  expiresAt?: number;
+  email?: string | null;
+  avatarUrl?: string | null;
 };
 
 const REMEMBERED_ACCOUNT_KEY = "vytara_remembered_account";
@@ -55,9 +54,9 @@ export default function LoginPage() {
     if (!stored) return;
     try {
       const parsed = JSON.parse(stored) as RememberedAccount;
-    if (parsed?.accessToken && parsed?.deviceToken) {
-      setRememberedAccount(parsed);
-    }
+      if (parsed?.userId && parsed?.name && parsed?.phone) {
+        window.setTimeout(() => setRememberedAccount(parsed), 0);
+      }
     } catch {
       window.localStorage.removeItem(REMEMBERED_ACCOUNT_KEY);
     }
@@ -91,15 +90,16 @@ export default function LoginPage() {
   };
 
   const removeRememberedAccount = async () => {
-    if (rememberedAccount?.deviceToken) {
+    try {
       await fetch("/api/auth/remember-device", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "remove",
-          deviceToken: rememberedAccount.deviceToken,
         }),
       });
+    } catch {
+      // Keep local cleanup even if network requests fail.
     }
     window.localStorage.removeItem(REMEMBERED_ACCOUNT_KEY);
     setRememberedAccount(null);
@@ -111,48 +111,29 @@ export default function LoginPage() {
     setError("");
     setContinueLoading(true);
 
-    if (!rememberedAccount.accessToken) {
-      setContinueLoading(false);
-      setError("Saved login expired. Please sign in again.");
-      await removeRememberedAccount();
-      return;
-    }
-
-    const verifyResponse = await fetch("/api/auth/remember-device", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "verify",
-        deviceToken: rememberedAccount.deviceToken,
-        userId: rememberedAccount.userId,
-      }),
-    });
-
-    if (!verifyResponse.ok) {
-      setContinueLoading(false);
-      setError("Saved login expired. Please sign in again.");
-      await removeRememberedAccount();
-      return;
-    }
-
-    const { data: sessionData, error: sessionError } =
-      await supabase.auth.setSession({
-        access_token: rememberedAccount.accessToken,
-        refresh_token: "no-refresh",
+    let consumeResponse: Response;
+    try {
+      consumeResponse = await fetch("/api/auth/remember-device/consume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: rememberedAccount.userId,
+        }),
       });
+    } catch {
+      setContinueLoading(false);
+      setError("Couldn't verify saved login. Please sign in again.");
+      return;
+    }
+
+    if (!consumeResponse.ok) {
+      setContinueLoading(false);
+      setError("Saved login expired. Please sign in again.");
+      await removeRememberedAccount();
+      return;
+    }
 
     setContinueLoading(false);
-
-    if (sessionError || !sessionData?.session) {
-      setError("Saved login expired. Please sign in again.");
-      await removeRememberedAccount();
-      return;
-    }
-
-    saveRememberedAccount({
-      ...rememberedAccount,
-      accessToken: rememberedAccount.accessToken,
-    });
     router.push("/app/homepage");
   };
 
@@ -246,10 +227,6 @@ export default function LoginPage() {
     }
 
     if (rememberDevice) {
-      const deviceToken =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const fallbackName = data.user.phone ?? formattedPhone;
       const displayName = await resolveDisplayName(data.user.id, fallbackName);
       const registerResponse = await fetch("/api/auth/remember-device", {
@@ -257,9 +234,7 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "register",
-          deviceToken,
           label: navigator.userAgent,
-          accessToken: responseData.access_token ?? null,
         }),
       });
 
@@ -270,9 +245,8 @@ export default function LoginPage() {
           userId: data.user.id,
           name: displayName,
           phone,
-          deviceToken,
-          accessToken: responseData.access_token,
-          expiresAt: responseData.expires_at,
+          email: data.user.email ?? null,
+          avatarUrl: null,
         });
       }
     }
@@ -312,16 +286,32 @@ export default function LoginPage() {
             {rememberedAccount && (
               <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Saved account
-                    </p>
-                    <p className="text-lg font-semibold text-slate-900">
-                      {rememberedAccount.name}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      +91 {rememberedAccount.phone}
-                    </p>
+                  <div className="flex items-start gap-3">
+                    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-slate-200 flex items-center justify-center text-xs font-semibold text-slate-700">
+                      {rememberedAccount.avatarUrl ? (
+                        <div
+                          className="h-full w-full bg-cover bg-center"
+                          role="img"
+                          aria-label={`${rememberedAccount.name} avatar`}
+                          style={{
+                            backgroundImage: `url(${rememberedAccount.avatarUrl})`,
+                          }}
+                        />
+                      ) : (
+                        (rememberedAccount.name.trim().charAt(0) || "U").toUpperCase()
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Saved account
+                      </p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {rememberedAccount.name}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {rememberedAccount.email?.trim() || `+91 ${rememberedAccount.phone}`}
+                      </p>
+                    </div>
                   </div>
                   <div className="relative" ref={rememberMenuRef}>
                     <button

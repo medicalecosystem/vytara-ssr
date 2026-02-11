@@ -12,9 +12,8 @@ type RememberedAccount = {
   userId: string;
   name: string;
   phone: string;
-  deviceToken: string;
-  accessToken?: string;
-  expiresAt?: number;
+  email?: string | null;
+  avatarUrl?: string | null;
 };
 
 const REMEMBERED_ACCOUNT_KEY = "vytara_remembered_account";
@@ -144,10 +143,6 @@ export default function SignupPage() {
     }
 
     if (rememberDevice) {
-      const deviceToken =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const fallbackName = data.user.phone ?? fullPhone;
       const displayName = await resolveDisplayName(data.user.id, fallbackName);
       const registerResponse = await fetch("/api/auth/remember-device", {
@@ -155,9 +150,7 @@ export default function SignupPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "register",
-          deviceToken,
           label: navigator.userAgent,
-          accessToken: responseData.access_token ?? null,
         }),
       });
 
@@ -168,9 +161,8 @@ export default function SignupPage() {
           userId: data.user.id,
           name: displayName,
           phone,
-          deviceToken,
-          accessToken: responseData.access_token,
-          expiresAt: responseData.expires_at,
+          email: data.user.email ?? null,
+          avatarUrl: null,
         });
       }
     }

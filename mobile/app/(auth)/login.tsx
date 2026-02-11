@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Link, router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import LogoImage from '../../assets/images/Sample_Logo.png';
 
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Themed';
 import { apiRequest } from '@/api/client';
 import { isApiError } from '@/api/types/errors';
+import {
+  clearRememberedDevice,
+  loadRememberedAccount,
+  loadRememberedDeviceToken,
+  saveRememberedDevice,
+  type RememberedAccount,
+} from '@/lib/rememberDevice';
 import { supabase } from '@/lib/supabase';
 
 type OtpSendResponse = {
@@ -17,6 +25,20 @@ type OtpSendResponse = {
 type OtpVerifyResponse = {
   access_token?: string;
   refresh_token?: string;
+};
+
+type RememberRegisterResponse = {
+  ok?: boolean;
+  deviceToken?: string;
+};
+
+type RememberConsumeResponse = {
+  ok?: boolean;
+  userId?: string;
+  access_token?: string;
+  refresh_token?: string;
+  expires_at?: number;
+  deviceToken?: string;
 };
 
 const getRequestErrorMessage = (error: unknown, fallback: string) => {
@@ -36,8 +58,10 @@ export default function LoginScreen() {
   const [timer, setTimer] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [continueLoading, setContinueLoading] = useState(false);
   const [otpSessionId, setOtpSessionId] = useState('');
   const [rememberDevice, setRememberDevice] = useState(false);
+  const [rememberedAccount, setRememberedAccount] = useState<RememberedAccount | null>(null);
   const otpRefs = useRef<Array<TextInput | null>>([]);
 
   const fullPhone = useMemo(() => `+91${phone}`, [phone]);
@@ -47,6 +71,22 @@ export default function LoginScreen() {
     const id = setInterval(() => setTimer((t) => t - 1), 1000);
     return () => clearInterval(id);
   }, [timer]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const hydrateRememberedAccount = async () => {
+      const account = await loadRememberedAccount();
+      if (!isMounted) return;
+      setRememberedAccount(account);
+    };
+
+    hydrateRememberedAccount();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const focusOtp = (index: number) => {
     otpRefs.current[index]?.focus();
@@ -61,6 +101,87 @@ export default function LoginScreen() {
     });
     if (digit && index < 5) {
       focusOtp(index + 1);
+    }
+  };
+
+  const resolveDisplayName = async (userId: string, fallback: string) => {
+    const { data } = await supabase
+      .from('personal')
+      .select('display_name')
+      .eq('id', userId)
+      .maybeSingle();
+    return data?.display_name?.trim() || fallback;
+  };
+
+  const removeRememberedAccount = async () => {
+    const deviceToken = await loadRememberedDeviceToken();
+    if (deviceToken) {
+      try {
+        await apiRequest<{ ok?: boolean }>('/api/auth/remember-device', {
+          method: 'POST',
+          body: {
+            action: 'remove',
+            client: 'mobile',
+            deviceToken,
+          },
+        });
+      } catch {
+        // Preserve local cleanup regardless of network/server failures.
+      }
+    }
+
+    await clearRememberedDevice();
+    setRememberedAccount(null);
+  };
+
+  const handleContinueAs = async () => {
+    if (!rememberedAccount) return;
+    setError(null);
+    setContinueLoading(true);
+
+    try {
+      const deviceToken = await loadRememberedDeviceToken();
+      if (!deviceToken) {
+        await removeRememberedAccount();
+        setError('Saved login expired. Please sign in again.');
+        return;
+      }
+
+      const response = await apiRequest<RememberConsumeResponse>('/api/auth/remember-device/consume', {
+        method: 'POST',
+        body: {
+          client: 'mobile',
+          userId: rememberedAccount.userId,
+          deviceToken,
+        },
+      });
+
+      if (!response?.access_token || !response?.refresh_token || !response?.deviceToken) {
+        await removeRememberedAccount();
+        setError('Saved login expired. Please sign in again.');
+        return;
+      }
+
+      const { data, error: sessionError } = await supabase.auth.setSession({
+        access_token: response.access_token,
+        refresh_token: response.refresh_token,
+      });
+
+      if (sessionError || !data?.session) {
+        await removeRememberedAccount();
+        setError('Saved login expired. Please sign in again.');
+        return;
+      }
+
+      await saveRememberedDevice(rememberedAccount, response.deviceToken);
+      router.replace('/');
+    } catch (requestError) {
+      if (isApiError(requestError) && (requestError.status === 401 || requestError.status === 404)) {
+        await removeRememberedAccount();
+      }
+      setError(getRequestErrorMessage(requestError, 'Could not continue with the saved account.'));
+    } finally {
+      setContinueLoading(false);
     }
   };
 
@@ -143,6 +264,48 @@ export default function LoginScreen() {
         return;
       }
 
+      if (rememberDevice) {
+        try {
+          const fallbackName = data.user.phone ?? fullPhone;
+          const displayName = await resolveDisplayName(data.user.id, fallbackName);
+          const registerResponse = await apiRequest<RememberRegisterResponse>('/api/auth/remember-device', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${response.access_token}`,
+            },
+            body: {
+              action: 'register',
+              client: 'mobile',
+              label: `mobile:${Platform.OS}`,
+            },
+          });
+
+          if (registerResponse?.deviceToken) {
+            await saveRememberedDevice(
+              {
+                userId: data.user.id,
+                name: displayName,
+                phone,
+                email: data.user.email ?? null,
+                avatarUrl: null,
+              },
+              registerResponse.deviceToken
+            );
+            setRememberedAccount({
+              userId: data.user.id,
+              name: displayName,
+              phone,
+              email: data.user.email ?? null,
+              avatarUrl: null,
+            });
+          } else {
+            setError('Could not save this device. You can still continue.');
+          }
+        } catch {
+          setError('Could not save this device. You can still continue.');
+        }
+      }
+
       router.replace('/');
     } catch (requestError) {
       setError(getRequestErrorMessage(requestError, 'Invalid OTP. Please try again.'));
@@ -176,12 +339,52 @@ export default function LoginScreen() {
           style={styles.cardAccent}
         />
         <View style={styles.logoWrap}>
-          <Image source={require('../../assets/images/Sample_Logo.png')} style={styles.logo} />
+          <Image source={LogoImage} style={styles.logo} accessibilityLabel="Vytara logo" />
         </View>
         <Text style={styles.title}>Login with Phone</Text>
         <Text style={styles.subtitle}>
           {step === 'phone' ? 'We’ll send a one-time password' : `Enter the OTP sent to +91 ${phone}`}
         </Text>
+
+        {step === 'phone' && rememberedAccount ? (
+          <View style={styles.rememberedCard}>
+            <View style={styles.rememberedHeader}>
+              <View style={styles.avatarCircle}>
+                <Text style={styles.avatarInitial}>
+                  {(rememberedAccount.name.trim().charAt(0) || 'U').toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.rememberedIdentity}>
+                <Text style={styles.rememberedLabel}>Saved account</Text>
+                <Text style={styles.rememberedName}>{rememberedAccount.name}</Text>
+                <Text style={styles.rememberedMeta}>
+                  {rememberedAccount.email?.trim() || `+91 ${rememberedAccount.phone}`}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.rememberedActions}>
+              <Pressable
+                onPress={removeRememberedAccount}
+                disabled={continueLoading || isSubmitting}
+                style={styles.rememberedRemoveButton}
+              >
+                <Text style={styles.rememberedRemoveText}>Remove</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleContinueAs}
+                disabled={continueLoading || isSubmitting}
+                style={styles.rememberedContinueButton}
+              >
+                {continueLoading ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={styles.rememberedContinueText}>Continue as {rememberedAccount.name}</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
 
         {step === 'phone' ? (
           <View style={styles.phoneRow}>
@@ -260,7 +463,7 @@ export default function LoginScreen() {
 
         <View style={styles.footerDivider} />
         <View style={styles.footerRow}>
-          <Text style={styles.footerText}>Don't have an account?</Text>
+          <Text style={styles.footerText}>Don&apos;t have an account?</Text>
           <Link href="/(auth)/signup" asChild>
             <Pressable>
               <Text style={styles.footerLink}>Create Account</Text>
@@ -341,6 +544,85 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
     marginBottom: 6,
+    textAlign: 'center',
+  },
+  rememberedCard: {
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    padding: 12,
+    gap: 12,
+  },
+  rememberedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  avatarCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#d1d5db',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    color: '#334155',
+    fontWeight: '800',
+  },
+  rememberedIdentity: {
+    flex: 1,
+    gap: 2,
+  },
+  rememberedLabel: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  rememberedName: {
+    color: '#0f172a',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  rememberedMeta: {
+    color: '#64748b',
+    fontSize: 12,
+  },
+  rememberedActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  rememberedRemoveButton: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    minHeight: 42,
+  },
+  rememberedRemoveText: {
+    color: '#334155',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  rememberedContinueButton: {
+    flex: 1,
+    borderRadius: 10,
+    backgroundColor: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 42,
+    paddingHorizontal: 12,
+  },
+  rememberedContinueText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 12,
     textAlign: 'center',
   },
   phoneRow: {

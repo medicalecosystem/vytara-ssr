@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Link, router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import LogoImage from '../../assets/images/Sample_Logo.png';
 
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Themed';
 import { apiRequest } from '@/api/client';
 import { isApiError } from '@/api/types/errors';
+import { saveRememberedDevice } from '@/lib/rememberDevice';
 import { supabase } from '@/lib/supabase';
 
 type OtpSendResponse = {
@@ -17,6 +19,11 @@ type OtpSendResponse = {
 type OtpVerifyResponse = {
   access_token?: string;
   refresh_token?: string;
+};
+
+type RememberRegisterResponse = {
+  ok?: boolean;
+  deviceToken?: string;
 };
 
 const getRequestErrorMessage = (error: unknown, fallback: string) => {
@@ -62,6 +69,15 @@ export default function SignupScreen() {
     if (digit && index < 5) {
       focusOtp(index + 1);
     }
+  };
+
+  const resolveDisplayName = async (userId: string, fallback: string) => {
+    const { data } = await supabase
+      .from('personal')
+      .select('display_name')
+      .eq('id', userId)
+      .maybeSingle();
+    return data?.display_name?.trim() || fallback;
   };
 
   const sendOtp = async () => {
@@ -154,6 +170,41 @@ export default function SignupScreen() {
         return;
       }
 
+      if (rememberDevice) {
+        try {
+          const fallbackName = data.user.phone ?? fullPhone;
+          const displayName = await resolveDisplayName(data.user.id, fallbackName);
+          const registerResponse = await apiRequest<RememberRegisterResponse>('/api/auth/remember-device', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${response.access_token}`,
+            },
+            body: {
+              action: 'register',
+              client: 'mobile',
+              label: `mobile:${Platform.OS}`,
+            },
+          });
+
+          if (registerResponse?.deviceToken) {
+            await saveRememberedDevice(
+              {
+                userId: data.user.id,
+                name: displayName,
+                phone,
+                email: data.user.email ?? null,
+                avatarUrl: null,
+              },
+              registerResponse.deviceToken
+            );
+          } else {
+            setError('Could not save this device. You can still continue.');
+          }
+        } catch {
+          setError('Could not save this device. You can still continue.');
+        }
+      }
+
       router.replace('/health-onboarding');
     } catch (requestError) {
       setError(getRequestErrorMessage(requestError, 'Invalid OTP. Please try again.'));
@@ -187,7 +238,7 @@ export default function SignupScreen() {
           style={styles.cardAccent}
         />
         <View style={styles.logoWrap}>
-          <Image source={require('../../assets/images/Sample_Logo.png')} style={styles.logo} />
+          <Image source={LogoImage} style={styles.logo} accessibilityLabel="Vytara logo" />
         </View>
         <Text style={styles.title}>Sign up with Phone</Text>
         <Text style={styles.subtitle}>

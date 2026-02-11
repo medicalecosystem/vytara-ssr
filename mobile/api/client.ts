@@ -23,7 +23,11 @@ const getAuthHeader = async () => {
     data: { session },
   } = await supabase.auth.getSession();
   const token = session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const header: Record<string, string> = {};
+  if (token) {
+    header.Authorization = `Bearer ${token}`;
+  }
+  return header;
 };
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -33,6 +37,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
   const response = await fetch(url, {
     method,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...authHeader,

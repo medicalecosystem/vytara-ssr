@@ -22,7 +22,9 @@ export default function Navbar() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem('g1_nav_collapsed');
-    if (stored) setCollapsed(stored === '1');
+    if (stored) {
+      window.setTimeout(() => setCollapsed(stored === '1'), 0);
+    }
   }, []);
 
   useEffect(() => {
@@ -58,37 +60,6 @@ export default function Navbar() {
       });
   };
 
-  useEffect(() => {
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (!session?.refresh_token) return;
-        try {
-          const stored = window.localStorage.getItem("g1_remembered_account");
-          if (!stored) return;
-          const parsed = JSON.parse(stored) as {
-            userId?: string;
-            refreshToken?: string;
-            accessToken?: string;
-          };
-          if (parsed?.userId && parsed.userId === session.user.id) {
-            window.localStorage.setItem(
-              "g1_remembered_account",
-              JSON.stringify({
-                ...parsed,
-                refreshToken: session.refresh_token,
-                accessToken: session.access_token,
-              })
-            );
-          }
-        } catch {
-          // ignore local storage errors
-        }
-      }
-    );
-
-    return () => listener.subscription.unsubscribe();
-  }, []);
-
   return (
     <>
       <header
@@ -111,26 +82,6 @@ export default function Navbar() {
           </button>
           <button
             onClick={async () => {
-              try {
-                const stored = window.localStorage.getItem("g1_remembered_account");
-                if (stored) {
-                  const parsed = JSON.parse(stored) as {
-                    refreshToken?: string;
-                  };
-                  const { data } = await supabase.auth.getSession();
-                  if (data.session?.refresh_token && parsed) {
-                    window.localStorage.setItem(
-                      "g1_remembered_account",
-                      JSON.stringify({
-                        ...parsed,
-                        refreshToken: data.session.refresh_token,
-                      })
-                    );
-                  }
-                }
-              } catch {
-                // ignore local storage errors
-              }
               clearSupabaseAuthCookies();
               await supabase.auth.signOut({ scope: "local" });
               router.push('/auth/login');
@@ -233,26 +184,6 @@ export default function Navbar() {
 
           <button
             onClick={async () => {
-              try {
-                const stored = window.localStorage.getItem("g1_remembered_account");
-                if (stored) {
-                  const parsed = JSON.parse(stored) as {
-                    refreshToken?: string;
-                  };
-                  const { data } = await supabase.auth.getSession();
-                  if (data.session?.refresh_token && parsed) {
-                    window.localStorage.setItem(
-                      "g1_remembered_account",
-                      JSON.stringify({
-                        ...parsed,
-                        refreshToken: data.session.refresh_token,
-                      })
-                    );
-                  }
-                }
-              } catch {
-                // ignore local storage errors
-              }
               clearSupabaseAuthCookies();
               await supabase.auth.signOut({ scope: "local" });
               router.push('/auth/login');
