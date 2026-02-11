@@ -153,7 +153,7 @@
   --theme-primary: #828282;
   --theme-secondary: #828282;
   --theme-accent: #a5a5a5;
-  --theme-background: #e0e0e3;
+  --theme-background: #f0f0f2;
   --theme-surface: #a5a5a5;
   --theme-text: #ffffff;
   --theme-text-secondary: #ffffff;
@@ -187,7 +187,7 @@
   --theme-primary: #87986a;
   --theme-secondary: #87986a;
   --theme-accent: #b5c99a;
-  --theme-background: #cfe1b9;
+  --theme-background: #edf3e5;
   --theme-surface: #b5c99a;
   --theme-text: #ffffff;
   --theme-text-secondary: #ffffff;
@@ -221,7 +221,7 @@
   --theme-primary: #629bb5;
   --theme-secondary: #629bb5;
   --theme-accent: #b9d8e1;
-  --theme-background: #d6ebf3;
+  --theme-background: #f3f7f9;
   --theme-surface: #b9d8e1;
   --theme-text: #ffffff;
   --theme-text-secondary: #ffffff;
@@ -238,7 +238,7 @@
   --theme-primary: #eb5204;
   --theme-secondary: #d55123;
   --theme-accent: #e47a24;
-  --theme-background: #f49302;
+  --theme-background: #f4ebdd;
   --theme-surface: #e47a24;
   --theme-text: #ffffff;
   --theme-text-secondary: #ffffff;
@@ -255,12 +255,12 @@
   --theme-primary: #f49f04;
   --theme-secondary: #fec428;
   --theme-accent: #ffe745;
-  --theme-background: #fff59d;
+  --theme-background: #f5f1c8;
   --theme-surface: #ffdd00;
   --theme-text: #1e293b;
   --theme-text-secondary: #64748b;
   --theme-border: #fec428;
-  --theme-card: #fae455;
+  --theme-card: #f1d941;
   --theme-navbar: #f49f04;
   --theme-sidebar-active: #f49f04;
   --theme-button-primary: #f49f04;
@@ -270,14 +270,14 @@
 /* Lavender Theme */
 .theme-lavender {
   --theme-primary: #7f4ca5;
-  --theme-secondary: #b57edc;
+  --theme-secondary: #6e339b;
   --theme-accent: #dbb6ee;
-  --theme-background: #eacffc;
+  --theme-background: #f0e0fb;
   --theme-surface: #dbb6ee;
   --theme-text: #1e293b;
   --theme-text-secondary: #64748b;
   --theme-border: #b57edc;
-  --theme-card: #dbb6ee;
+  --theme-card: #bf8fd7;
   --theme-navbar: #7f4ca5;
   --theme-sidebar-active: #7f4ca5;
   --theme-button-primary: #7f4ca5;
@@ -294,10 +294,10 @@
   --theme-text: #1e293b;
   --theme-text-secondary: #64748b;
   --theme-border: #e2e8f0;
-  --theme-card: #a9273f;
-  --theme-navbar: #a9273f;
-  --theme-sidebar-active: #a9273f;
-  --theme-button-primary: #a9273f;
+  --theme-card: #c7425b;  
+  --theme-navbar: #c7425b;
+  --theme-sidebar-active: #c7425b;
+  --theme-button-primary: #c7425b;
   --theme-button-secondary: #bfd9dc;
 }
 
@@ -307,6 +307,10 @@
 
 .theme-cherryblue .invites-card {
   background-color: #a3bccf !important;
+}
+
+.theme-lavender .invites-card {
+  background-color: #8b54b5 !important;
 }
 
 @layer base {
