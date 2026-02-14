@@ -27,12 +27,12 @@
     "ogl": "^1.0.11",
     "react": "19.2.1",
     "react-dom": "19.2.1",
+    "supabase": "^2.76.8",
     "tailwind-merge": "^3.4.0",
     "three": "^0.167.1",
     "twilio": "^5.11.2"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19.2.7",
@@ -40,6 +40,7 @@
     "@types/three": "^0.182.0",
     "babel-plugin-react-compiler": "1.0.0",
     "baseline-browser-mapping": "^2.9.19",
+    "concurrently": "^9.1.2",
     "eslint": "^9",
     "eslint-config-next": "16.0.10",
     "tailwindcss": "^4",

@@ -26,6 +26,7 @@ import {
 import { supabase } from '@/lib/createClient';
 import { deleteMedicalFile, getSignedUrl, listMedicalFiles, uploadMedicalFile } from '@/lib/medicalStorage';
 import { MedicalFolder } from '@/constants/medicalFolders';
+import { useAppProfile } from '@/components/AppProfileProvider';
 
 type Category = 'lab-reports' | 'prescriptions' | 'insurance' | 'bills' | 'all';
 
@@ -37,11 +38,11 @@ type MedicalFile = {
 
 type CacheEntry<T> = { ts: number; value: T };
 const VAULT_CACHE_TTL_MS = 5 * 60 * 1000;
-const vaultCacheKey = (userId: string, key: string) => `vytara:vault:${userId}:${key}`;
-const readVaultCache = <T,>(userId: string, key: string): T | null => {
-  if (!userId || typeof window === 'undefined') return null;
+const vaultCacheKey = (ownerId: string, key: string) => `vytara:vault:${ownerId}:${key}`;
+const readVaultCache = <T,>(ownerId: string, key: string): T | null => {
+  if (!ownerId || typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(vaultCacheKey(userId, key));
+    const raw = window.localStorage.getItem(vaultCacheKey(ownerId, key));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CacheEntry<T>;
     if (!parsed?.ts) return null;
@@ -51,14 +52,15 @@ const readVaultCache = <T,>(userId: string, key: string): T | null => {
     return null;
   }
 };
-const writeVaultCache = <T,>(userId: string, key: string, value: T) => {
-  if (!userId || typeof window === 'undefined') return;
+const writeVaultCache = <T,>(ownerId: string, key: string, value: T) => {
+  if (!ownerId || typeof window === 'undefined') return;
   const entry: CacheEntry<T> = { ts: Date.now(), value };
-  window.localStorage.setItem(vaultCacheKey(userId, key), JSON.stringify(entry));
+  window.localStorage.setItem(vaultCacheKey(ownerId, key), JSON.stringify(entry));
 };
 
 export default function VaultPage() {
-  const [userId, setUserId] = useState<string | null>(null);
+  const { selectedProfile } = useAppProfile();
+  const storageOwnerId = selectedProfile?.id ?? '';
   const [files, setFiles] = useState<MedicalFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [deletingName, setDeletingName] = useState<string | null>(null);
@@ -104,32 +106,19 @@ export default function VaultPage() {
   /* ---------------- AUTH + FETCH ---------------- */
 
   useEffect(() => {
-    const init = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const nextUserId = session?.user?.id ?? null;
-      if (!nextUserId) return;
-      setUserId((prev) => (prev === nextUserId ? prev : nextUserId));
-      fetchFiles(nextUserId, selectedCategory);
-      fetchCounts(nextUserId);
-    };
-    init();
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      const nextUserId = session?.user?.id ?? null;
-      if (!nextUserId) return;
-      setUserId((prev) => (prev === nextUserId ? prev : nextUserId));
-      fetchFiles(nextUserId, selectedCategory);
-      fetchCounts(nextUserId);
-    });
-
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (userId) fetchFiles(userId, selectedCategory);
-  }, [selectedCategory]);
+    if (!storageOwnerId) {
+      setFiles([]);
+      setCounts({
+        reports: 0,
+        prescriptions: 0,
+        insurance: 0,
+        bills: 0,
+      });
+      return;
+    }
+    fetchFiles(storageOwnerId, selectedCategory);
+    fetchCounts(storageOwnerId);
+  }, [selectedCategory, storageOwnerId]);
 
   useEffect(() => {
     if (!openMenuName) return;
@@ -267,7 +256,7 @@ export default function VaultPage() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userId || !uploadData.file) return;
+    if (!storageOwnerId || !uploadData.file) return;
     if (!isAllowedUploadType(uploadData.file)) {
       window.alert('Only PDF and image files are allowed.');
       return;
@@ -292,7 +281,7 @@ export default function VaultPage() {
 
     try {
       const { error } = await uploadMedicalFile(
-        userId,
+        storageOwnerId,
         folderMap[uploadData.category],
         uploadData.file,
         finalName
@@ -311,8 +300,8 @@ export default function VaultPage() {
       // Upload successful
       setShowUploadModal(false);
       setUploadData({ category: 'lab-reports', file: null, fileName: '', uploading: false, error: null });
-      fetchFiles(userId, selectedCategory);
-      fetchCounts(userId);
+      fetchFiles(storageOwnerId, selectedCategory);
+      fetchCounts(storageOwnerId);
     } catch (err: any) {
       // Network or other error
       setUploadData((prev) => ({
@@ -324,14 +313,14 @@ export default function VaultPage() {
   };
 
   const handleDelete = async (file: MedicalFile) => {
-    if (!userId) return;
+    if (!storageOwnerId) return;
     const confirmed = window.confirm(`Delete "${file.name}"?`);
     if (!confirmed) return;
 
     setOpenMenuName(null);
     setDeletingName(file.name);
     const { error } = await deleteMedicalFile(
-      `${userId}/${file.folder}/${file.name}`
+      `${storageOwnerId}/${file.folder}/${file.name}`
     );
     setDeletingName(null);
 
@@ -341,11 +330,11 @@ export default function VaultPage() {
     }
 
     setFiles((prev) => prev.filter((f) => f.name !== file.name));
-    fetchCounts(userId);
+    fetchCounts(storageOwnerId);
   };
 
   const handleRename = async (file: MedicalFile) => {
-    if (!userId) return;
+    if (!storageOwnerId) return;
     const nextName = window
       .prompt('Rename file', file.name)
       ?.trim();
@@ -360,8 +349,8 @@ export default function VaultPage() {
     const { error } = await supabase.storage
       .from('medical-vault')
       .move(
-        `${userId}/${file.folder}/${file.name}`,
-        `${userId}/${file.folder}/${nextName}`
+        `${storageOwnerId}/${file.folder}/${file.name}`,
+        `${storageOwnerId}/${file.folder}/${nextName}`
       );
     setRenamingName(null);
 
@@ -373,13 +362,13 @@ export default function VaultPage() {
     setFiles((prev) =>
       prev.map((f) => (f.name === file.name ? { ...f, name: nextName } : f))
     );
-    fetchCounts(userId);
+    fetchCounts(storageOwnerId);
   };
 
   const handleDownload = async (file: MedicalFile) => {
-    if (!userId) return;
+    if (!storageOwnerId) return;
     const { data, error } = await getSignedUrl(
-      `${userId}/${file.folder}/${file.name}`
+      `${storageOwnerId}/${file.folder}/${file.name}`
     );
     if (error || !data?.signedUrl) {
       alert(error?.message || "Failed to download file.");
@@ -406,25 +395,18 @@ export default function VaultPage() {
   };
 
   const handlePreview = async (file: MedicalFile) => {
-    if (!userId) return;
+    if (!storageOwnerId) return;
     setPreviewFile(file);
     setPreviewUrl(null);
     setPreviewLoading(true);
     try {
-      const res = await fetch(
-        `/api/vault/signed?folder=${encodeURIComponent(file.folder)}&name=${encodeURIComponent(
-          file.name
-        )}`
+      const { data, error } = await getSignedUrl(
+        `${storageOwnerId}/${file.folder}/${file.name}`
       );
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.message ?? "Failed to load preview.");
-      }
-      const data = (await res.json()) as { url?: string };
-      if (!data.url) {
+      if (error || !data?.signedUrl) {
         throw new Error("Failed to load preview.");
       }
-      setPreviewUrl(data.url);
+      setPreviewUrl(data.signedUrl);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to load preview.");
     } finally {

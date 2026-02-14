@@ -22,6 +22,7 @@ import { Text } from '@/components/Themed';
 import { Screen } from '@/components/Screen';
 import { MedicationsModal, type Medication } from '@/components/MedicationsModal';
 import { useAuth } from '@/hooks/useAuth';
+import { useProfile } from '@/hooks/useProfile';
 import { profileRepository } from '@/repositories/profileRepository';
 import { supabase, type User } from '@/lib/supabase';
 
@@ -92,7 +93,7 @@ function normalizeMedication(item: unknown): Medication {
     name: typeof record.name === 'string' ? record.name : '',
     dosage: typeof record.dosage === 'string' ? record.dosage : '',
     frequency: typeof record.frequency === 'string' ? record.frequency : '',
-    purpose: typeof record.purpose === 'string' ? record.purpose : undefined,
+    purpose: typeof record.purpose === 'string' ? record.purpose : '',
     timesPerDay: typeof record.timesPerDay === 'number' ? record.timesPerDay : undefined,
     startDate: typeof record.startDate === 'string' ? record.startDate : undefined,
     endDate: typeof record.endDate === 'string' ? record.endDate : undefined,
@@ -177,11 +178,13 @@ export default function ProfileScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
   const { user } = useAuth();
+  const { selectedProfile } = useProfile();
   const userId = user?.id ?? '';
+  const profileId = selectedProfile?.id ?? '';
 
   const [loading, setLoading] = useState(true);
 
-  // Personal (same fields as web: from personal table + session phone)
+  // Profile-level personal fields (stored on profiles)
   const [userName, setUserName] = useState('');
   const [gender, setGender] = useState('');
   const [dob, setDob] = useState('');
@@ -219,9 +222,9 @@ export default function ProfileScreen() {
     address: '',
   });
 
-  // Fetch from DB same way as web: personal (display_name, phone, gender, address, family_history), health (all fields)
+  // Fetch from DB: profile-level fields from profiles + health fields from health
   const loadProfile = useCallback(async (showSpinner = true) => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
     if (showSpinner) setLoading(true);
     try {
       const fallbackDisplayName = resolveAuthDisplayName(user);
@@ -232,33 +235,30 @@ export default function ProfileScreen() {
       const sessionPhone = user?.phone ?? '';
       if (sessionPhone) setPhoneNumber((p) => p || sessionPhone);
 
-      // Personal: same select as web (web also fetches family_history in a separate effect from personal)
-      const { data: personalData, error: personalError } = await supabase
-        .from('personal')
-        .select('display_name, phone, gender, address')
-        .eq('id', userId)
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('name, display_name, phone, gender, address')
+        .eq('id', profileId)
         .maybeSingle();
 
-      if (personalError) {
-        console.warn('Profile personal fetch error', personalError);
+      if (profileError) {
+        console.warn('Profile fields fetch error', profileError);
       }
-      if (personalData) {
-        const displayName = personalData.display_name?.trim() ?? '';
-        if (displayName) {
-          setUserName(displayName);
-        }
-        setPhoneNumber((p) => personalData.phone || p || '');
-        setGender((p) => personalData.gender || p || '');
-        setAddress((p) => personalData.address || p || '');
+      if (profileData) {
+        const displayName = profileData.display_name?.trim() || profileData.name?.trim() || '';
+        if (displayName) setUserName(displayName);
+        setPhoneNumber((p) => profileData.phone || p || '');
+        setGender((p) => profileData.gender || p || '');
+        setAddress((p) => profileData.address || p || '');
       }
 
-      // Health: same select as web
+      // Health: same select as web - NOW FILTERED BY PROFILE_ID
       const { data: healthData, error: healthError } = await supabase
         .from('health')
         .select(
           'date_of_birth, blood_group, current_diagnosed_condition, allergies, ongoing_treatments, bmi, age, previous_diagnosed_conditions, past_surgeries, childhood_illness, long_term_treatments, family_history'
         )
-        .eq('user_id', userId)
+        .eq('profile_id', profileId)
         .maybeSingle();
 
       if (healthError) {
@@ -284,7 +284,7 @@ export default function ProfileScreen() {
     } finally {
       setLoading(false);
     }
-  }, [user, userId, user?.phone]);
+  }, [user, userId, profileId, user?.phone]);
 
   useEffect(() => {
     if (!isFocused) return;
@@ -292,7 +292,7 @@ export default function ProfileScreen() {
   }, [isFocused, loadProfile]);
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!user?.id || !profileId) {
       setCurrentMedications([]);
       return;
     }
@@ -304,7 +304,7 @@ export default function ProfileScreen() {
       const { data, error } = await supabase
         .from('user_medications')
         .select('medications')
-        .eq('user_id', user.id)
+        .eq('profile_id', profileId)
         .maybeSingle();
 
       if (!isActive) return;
@@ -328,22 +328,7 @@ export default function ProfileScreen() {
     return () => {
       isActive = false;
     };
-  }, [isFocused, user?.id]);
-
-  useEffect(() => {
-    const loadDisplayName = async () => {
-      if (!userId) return;
-      const { data } = await supabase
-        .from('personal')
-        .select('display_name')
-        .eq('id', userId)
-        .maybeSingle();
-      if (data?.display_name) {
-        setUserName(data.display_name);
-      }
-    };
-    loadDisplayName();
-  }, [userId]);
+  }, [isFocused, user?.id, profileId]);
 
   const initials = useMemo(() => getInitials(userName || 'Profile'), [userName]);
   const genderBadgeStyle = useMemo(() => {
@@ -366,26 +351,31 @@ export default function ProfileScreen() {
   };
 
   const savePersonal = async () => {
+    if (!profileId || !userId) {
+      Alert.alert('Error', 'Please select a profile first.');
+      return;
+    }
     const dobISO = parseDOBToISO(personalDraft.dob);
-    const { error: personalError } = await supabase
-      .from('personal')
+    const { error: profileError } = await supabase
+      .from('profiles')
       .update({
         display_name: personalDraft.userName.trim() || null,
         phone: personalDraft.phoneNumber.trim() || null,
         gender: personalDraft.gender.trim() || null,
         address: personalDraft.address.trim() || null,
+        updated_at: new Date().toISOString(),
       })
-      .eq('id', userId);
+      .eq('id', profileId);
     const { error: healthError } = await supabase
       .from('health')
       .update({
         date_of_birth: dobISO || null,
         blood_group: personalDraft.bloodGroup.trim() || null,
       })
-      .eq('user_id', userId);
+      .eq('profile_id', profileId);
 
-    if (personalError || healthError) {
-      Alert.alert('Error', (personalError ?? healthError)?.message ?? 'Failed to save');
+    if (profileError || healthError) {
+      Alert.alert('Error', (profileError ?? healthError)?.message ?? 'Failed to save');
       return;
     }
     setUserName(personalDraft.userName.trim());
@@ -399,10 +389,15 @@ export default function ProfileScreen() {
   };
 
   const saveCurrentMedical = async () => {
-    const { data: existing } = await profileRepository.getHealthProfile(userId);
+    if (!profileId || !userId) {
+      Alert.alert('Error', 'Please select a profile first.');
+      return;
+    }
+    const existing = await profileRepository.getHealthProfile(profileId);
     const base = (existing as Record<string, unknown>) ?? {};
     const healthData = {
-      user_id: userId,
+      profile_id: profileId, // Use profile_id instead of user_id
+      user_id: userId, // Keep user_id for reference
       current_diagnosed_condition: conditions.map((c) => c.trim()).filter(Boolean),
       allergies: allergy.map((a) => a.trim()).filter(Boolean),
       ongoing_treatments: treatment.map((t) => t.trim()).filter(Boolean),
@@ -415,7 +410,7 @@ export default function ProfileScreen() {
       childhood_illness: base.childhood_illness ?? childhoodIllness,
       long_term_treatments: base.long_term_treatments ?? longTermTreatments,
     };
-    const { error } = await supabase.from('health').upsert(healthData, { onConflict: 'user_id' });
+    const { error } = await supabase.from('health').upsert(healthData, { onConflict: 'profile_id' });
     if (error) {
       Alert.alert('Error', error.message);
       return;
@@ -425,7 +420,7 @@ export default function ProfileScreen() {
   };
 
   const addMedication = async (medication: Medication) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     if (!medication.name.trim() || !medication.dosage.trim() || !medication.frequency.trim()) {
       Alert.alert('Missing info', 'Please fill Name, Dosage, and Frequency.');
@@ -449,12 +444,13 @@ export default function ProfileScreen() {
     try {
       const { error } = await supabase.from('user_medications').upsert(
         {
-          user_id: user.id,
+          profile_id: profileId, // Use profile_id instead of user_id
+          user_id: user.id, // Keep user_id for reference
           medications: updatedMedications,
           updated_at: new Date().toISOString(),
         },
         {
-          onConflict: 'user_id',
+          onConflict: 'profile_id',
         }
       );
 
@@ -468,7 +464,7 @@ export default function ProfileScreen() {
   };
 
   const updateMedication = async (medication: Medication) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     if (!medication.name.trim() || !medication.dosage.trim() || !medication.frequency.trim()) {
       Alert.alert('Missing info', 'Please fill Name, Dosage, and Frequency.');
@@ -480,12 +476,13 @@ export default function ProfileScreen() {
     try {
       const { error } = await supabase.from('user_medications').upsert(
         {
-          user_id: user.id,
+          profile_id: profileId, // Use profile_id instead of user_id
+          user_id: user.id, // Keep user_id for reference
           medications: updatedMedications,
           updated_at: new Date().toISOString(),
         },
         {
-          onConflict: 'user_id',
+          onConflict: 'profile_id',
         }
       );
 
@@ -499,19 +496,20 @@ export default function ProfileScreen() {
   };
 
   const deleteMedication = async (id: string) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     const updatedMedications = currentMedications.filter((m) => m.id !== id);
 
     try {
       const { error } = await supabase.from('user_medications').upsert(
         {
-          user_id: user.id,
+          profile_id: profileId, // Use profile_id instead of user_id
+          user_id: user.id, // Keep user_id for reference
           medications: updatedMedications,
           updated_at: new Date().toISOString(),
         },
         {
-          onConflict: 'user_id',
+          onConflict: 'profile_id',
         }
       );
 
@@ -525,7 +523,7 @@ export default function ProfileScreen() {
   };
 
   const logMedicationDose = async (medicationId: string, taken: boolean) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     const newLog = {
       medicationId,
@@ -546,12 +544,13 @@ export default function ProfileScreen() {
     try {
       const { error } = await supabase.from('user_medications').upsert(
         {
-          user_id: user.id,
+          profile_id: profileId, // Use profile_id instead of user_id
+          user_id: user.id, // Keep user_id for reference
           medications: updatedMedications,
           updated_at: new Date().toISOString(),
         },
         {
-          onConflict: 'user_id',
+          onConflict: 'profile_id',
         }
       );
 
@@ -565,10 +564,15 @@ export default function ProfileScreen() {
   };
 
   const savePastMedical = async () => {
-    const { data: existing } = await profileRepository.getHealthProfile(userId);
+    if (!profileId || !userId) {
+      Alert.alert('Error', 'Please select a profile first.');
+      return;
+    }
+    const existing = await profileRepository.getHealthProfile(profileId);
     const base = (existing as Record<string, unknown>) ?? {};
     const pastData = {
-      user_id: userId,
+      profile_id: profileId, // Use profile_id instead of user_id
+      user_id: userId, // Keep user_id for reference
       previous_diagnosed_conditions: previousDiagnosedCondition.map((c) => c.trim()).filter(Boolean),
       past_surgeries: pastSurgeries
         .map((s) => ({ name: s.name.trim(), month: s.month ?? null, year: s.year ?? null }))
@@ -583,7 +587,7 @@ export default function ProfileScreen() {
       allergies: base.allergies ?? allergy,
       ongoing_treatments: base.ongoing_treatments ?? treatment,
     };
-    const { error } = await supabase.from('health').upsert(pastData, { onConflict: 'user_id' });
+    const { error } = await supabase.from('health').upsert(pastData, { onConflict: 'profile_id' });
     if (error) {
       Alert.alert('Error', error.message);
       return;
@@ -593,11 +597,19 @@ export default function ProfileScreen() {
   };
 
   const saveFamily = async () => {
+    if (!profileId || !userId) {
+      Alert.alert('Error', 'Please select a profile first.');
+      return;
+    }
     const { error } = await supabase
       .from('health')
       .upsert(
-        { user_id: userId, family_history: { familyMedicalHistory } },
-        { onConflict: 'user_id' }
+        {
+          profile_id: profileId, // Use profile_id instead of user_id
+          user_id: userId, // Keep user_id for reference
+          family_history: { familyMedicalHistory },
+        },
+        { onConflict: 'profile_id' }
       );
     if (error) {
       Alert.alert('Error', error.message);
@@ -614,33 +626,33 @@ export default function ProfileScreen() {
       const meds =
         currentMedications.length > 0
           ? `<ul>${currentMedications
-              .map(
-                (m) =>
-                  `<li><strong>${escapeHtml(m.name)}</strong> — ${escapeHtml(
-                    m.dosage || '—'
-                  )} · ${escapeHtml(m.frequency || '—')}${m.purpose ? ` · ${escapeHtml(m.purpose)}` : ''}</li>`
-              )
-              .join('')}</ul>`
+            .map(
+              (m) =>
+                `<li><strong>${escapeHtml(m.name)}</strong> — ${escapeHtml(
+                  m.dosage || '—'
+                )} · ${escapeHtml(m.frequency || '—')}${m.purpose ? ` · ${escapeHtml(m.purpose)}` : ''}</li>`
+            )
+            .join('')}</ul>`
           : '<p>None</p>';
       const surgeries =
         pastSurgeries.length > 0
           ? `<ul>${pastSurgeries
-              .map(
-                (s) =>
-                  `<li><strong>${escapeHtml(s.name)}</strong> — ${escapeHtml(
-                    formatMonthYear(s.month, s.year)
-                  )}</li>`
-              )
-              .join('')}</ul>`
+            .map(
+              (s) =>
+                `<li><strong>${escapeHtml(s.name)}</strong> — ${escapeHtml(
+                  formatMonthYear(s.month, s.year)
+                )}</li>`
+            )
+            .join('')}</ul>`
           : '<p>None</p>';
       const family =
         familyMedicalHistory.length > 0
           ? `<ul>${familyMedicalHistory
-              .map(
-                (f) =>
-                  `<li><strong>${escapeHtml(f.relation)}</strong>: ${escapeHtml(f.disease)}</li>`
-              )
-              .join('')}</ul>`
+            .map(
+              (f) =>
+                `<li><strong>${escapeHtml(f.relation)}</strong>: ${escapeHtml(f.disease)}</li>`
+            )
+            .join('')}</ul>`
           : '<p>None</p>';
 
       const html = `
@@ -1389,7 +1401,7 @@ function InputRow({
       <TextInput
         style={[styles.input, multiline && styles.inputMultiline]}
         value={value}
-        onChangeText={onChange ?? (() => {})}
+        onChangeText={onChange ?? (() => { })}
         placeholder={placeholder}
         placeholderTextColor="#9ca3af"
         multiline={multiline}

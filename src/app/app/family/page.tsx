@@ -329,6 +329,89 @@ export default function FamilyPage() {
     [family]
   );
 
+  const resolveDisplayNames = useCallback(async (accountIds: string[]) => {
+    const ids = Array.from(new Set(accountIds.filter(Boolean)));
+    const nameMap = new Map<string, string>();
+    if (ids.length === 0) return nameMap;
+
+    const parseDate = (value: string | null) => {
+      if (!value) return Number.MAX_SAFE_INTEGER;
+      const ts = Date.parse(value);
+      return Number.isFinite(ts) ? ts : Number.MAX_SAFE_INTEGER;
+    };
+
+    const assignPreferredNames = (
+      rows: Array<{
+        account_id: string;
+        display_name: string | null;
+        name: string | null;
+        is_primary: boolean | null;
+        created_at: string | null;
+      }>
+    ) => {
+      const grouped = new Map<string, typeof rows>();
+      rows.forEach((row) => {
+        if (!row.account_id) return;
+        const current = grouped.get(row.account_id) ?? [];
+        current.push(row);
+        grouped.set(row.account_id, current);
+      });
+
+      grouped.forEach((profiles, accountId) => {
+        const preferred = [...profiles].sort((a, b) => {
+          const primaryDiff = Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary));
+          if (primaryDiff !== 0) return primaryDiff;
+          return parseDate(a.created_at) - parseDate(b.created_at);
+        })[0];
+        const value = preferred?.display_name?.trim() || preferred?.name?.trim() || '';
+        if (value && !nameMap.has(accountId)) {
+          nameMap.set(accountId, value);
+        }
+      });
+    };
+
+    const { data: byUserRows } = await supabase
+      .from('profiles')
+      .select('user_id, display_name, name, is_primary, created_at')
+      .in('user_id', ids);
+
+    assignPreferredNames(
+      (byUserRows ?? []).map((row) => ({
+        account_id: row.user_id,
+        display_name: row.display_name ?? null,
+        name: row.name ?? null,
+        is_primary: row.is_primary ?? null,
+        created_at: row.created_at ?? null,
+      }))
+    );
+
+    const missingIds = ids.filter((id) => !nameMap.has(id));
+    if (missingIds.length > 0) {
+      const { data: byAuthRows, error: byAuthError } = await supabase
+        .from('profiles')
+        .select('auth_id, display_name, name, is_primary, created_at')
+        .in('auth_id', missingIds);
+
+      const missingAuthColumn =
+        byAuthError?.code === 'PGRST204' ||
+        byAuthError?.message?.toLowerCase().includes('auth_id');
+
+      if (!byAuthError || missingAuthColumn) {
+        assignPreferredNames(
+          (byAuthRows ?? []).map((row) => ({
+            account_id: row.auth_id,
+            display_name: row.display_name ?? null,
+            name: row.name ?? null,
+            is_primary: row.is_primary ?? null,
+            created_at: row.created_at ?? null,
+          }))
+        );
+      }
+    }
+
+    return nameMap;
+  }, []);
+
   const loadMembers = useCallback(async (familyId: string) => {
     setMembersLoading(true);
     setMembersError(null);
@@ -352,17 +435,7 @@ export default function FamilyPage() {
     }
 
     const userIds = rows.map((row) => row.user_id);
-    const { data: personalRows } = await supabase
-      .from('personal')
-      .select('id, display_name')
-      .in('id', userIds);
-
-    const nameMap = new Map(
-      (personalRows ?? []).map((row: { id: string; display_name: string | null }) => [
-        row.id,
-        row.display_name?.trim() || '',
-      ])
-    );
+    const nameMap = await resolveDisplayNames(userIds);
 
     const hydrated = rows.map((row) => ({
       user_id: row.user_id,
@@ -377,7 +450,7 @@ export default function FamilyPage() {
 
     setMembers(hydrated);
     setMembersLoading(false);
-  }, []);
+  }, [resolveDisplayNames]);
 
   const loadJoinRequests = useCallback(async (familyId: string) => {
     setJoinRequestsLoading(true);
@@ -406,17 +479,7 @@ export default function FamilyPage() {
     }
 
     const requesterIds = rows.map((row) => row.requester_id);
-    const { data: personalRows } = await supabase
-      .from('personal')
-      .select('id, display_name')
-      .in('id', requesterIds);
-
-    const nameMap = new Map(
-      (personalRows ?? []).map((row: { id: string; display_name: string | null }) => [
-        row.id,
-        row.display_name?.trim() || '',
-      ])
-    );
+    const nameMap = await resolveDisplayNames(requesterIds);
 
     const hydrated = rows.map((row) => ({
       ...row,
@@ -425,7 +488,7 @@ export default function FamilyPage() {
 
     setJoinRequests(hydrated);
     setJoinRequestsLoading(false);
-  }, []);
+  }, [resolveDisplayNames]);
 
   const loadPendingRequest = useCallback(async (currentUserId: string) => {
     if (!currentUserId) {

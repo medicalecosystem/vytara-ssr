@@ -79,14 +79,17 @@ type FamilyMemberDetailsResponse = {
 
 type NotificationsPanelProps = {
   userId: string;
+  profileId?: string;
   appointments: Appointment[];
   variant?: "desktop" | "modal";
 };
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ACCEPTED_NOTIFICATION_TTL_MS = 7 * ONE_DAY_MS;
-const dismissedInvitesKey = (userId: string) => `vytara:dismissed-invites:${userId}`;
-const dismissedAppointmentsKey = (userId: string) => `vytara:dismissed-appointments:${userId}`;
+const dismissedInvitesKey = (userId: string, profileId?: string) =>
+  `vytara:dismissed-invites:${userId}:${profileId ?? "account"}`;
+const dismissedAppointmentsKey = (userId: string, profileId?: string) =>
+  `vytara:dismissed-appointments:${userId}:${profileId ?? "account"}`;
 const dismissedFamilyNotificationsKey = (userId: string) =>
   `vytara:dismissed-family-notifications:${userId}`;
 const vaultFolderLabels: Record<FamilyVaultFile["folder"], string> = {
@@ -104,6 +107,7 @@ const parseAppointmentDateTime = (appointment: Appointment) => {
 
 export function NotificationsPanel({
   userId,
+  profileId,
   appointments,
   variant = "desktop",
 }: NotificationsPanelProps) {
@@ -136,8 +140,12 @@ export function NotificationsPanel({
   useEffect(() => {
     if (!userId || typeof window === "undefined") return;
     try {
-      const storedInvites = window.localStorage.getItem(dismissedInvitesKey(userId));
-      const storedAppointments = window.localStorage.getItem(dismissedAppointmentsKey(userId));
+      const storedInvites = window.localStorage.getItem(
+        dismissedInvitesKey(userId, profileId)
+      );
+      const storedAppointments = window.localStorage.getItem(
+        dismissedAppointmentsKey(userId, profileId)
+      );
       const storedFamilyNotifications = window.localStorage.getItem(
         dismissedFamilyNotificationsKey(userId)
       );
@@ -164,23 +172,23 @@ export function NotificationsPanel({
       setDismissedAppointmentIds(new Set());
       setDismissedFamilyNotificationIds(new Set());
     }
-  }, [userId]);
+  }, [profileId, userId]);
 
   useEffect(() => {
     if (!userId || typeof window === "undefined") return;
     window.localStorage.setItem(
-      dismissedInvitesKey(userId),
+      dismissedInvitesKey(userId, profileId),
       JSON.stringify(Array.from(dismissedInviteIds))
     );
-  }, [dismissedInviteIds, userId]);
+  }, [dismissedInviteIds, profileId, userId]);
 
   useEffect(() => {
     if (!userId || typeof window === "undefined") return;
     window.localStorage.setItem(
-      dismissedAppointmentsKey(userId),
+      dismissedAppointmentsKey(userId, profileId),
       JSON.stringify(Array.from(dismissedAppointmentIds))
     );
-  }, [dismissedAppointmentIds, userId]);
+  }, [dismissedAppointmentIds, profileId, userId]);
 
   useEffect(() => {
     if (!userId || typeof window === "undefined") return;
@@ -198,9 +206,12 @@ export function NotificationsPanel({
       setNotificationsLoading(true);
       setNotificationsError("");
       try {
-        const response = await fetch("/api/care-circle/links", {
+        const response = await fetch(
+          `/api/care-circle/links${profileId ? `?profileId=${encodeURIComponent(profileId)}` : ""}`,
+          {
           cache: "no-store",
-        });
+          }
+        );
         if (!response.ok) {
           throw new Error("Unable to load invites.");
         }
@@ -242,7 +253,7 @@ export function NotificationsPanel({
       isActive = false;
       clearInterval(interval);
     };
-  }, [userId]);
+  }, [profileId, userId]);
 
   useEffect(() => {
     if (!userId) return;
@@ -294,15 +305,84 @@ export function NotificationsPanel({
           .map((row: { user_id: string }) => row.user_id)
           .filter(Boolean);
 
-        const { data: personalRows } = memberIds.length
-          ? await supabase.from("personal").select("id, display_name").in("id", memberIds)
-          : { data: [] as Array<{ id: string; display_name: string | null }> };
+        const parseDate = (value: string | null) => {
+          if (!value) return Number.MAX_SAFE_INTEGER;
+          const ts = Date.parse(value);
+          return Number.isFinite(ts) ? ts : Number.MAX_SAFE_INTEGER;
+        };
 
-        const nameMap = new Map<string, string>();
-        (personalRows ?? []).forEach((row: { id: string; display_name: string | null }) => {
-          const name = row.display_name?.trim() || "Member";
-          nameMap.set(row.id, name);
-        });
+        const resolveNames = async (accountIds: string[]) => {
+          const ids = Array.from(new Set(accountIds.filter(Boolean)));
+          const resolved = new Map<string, string>();
+          if (ids.length === 0) return resolved;
+
+          const addPreferred = (
+            rows: Array<{
+              account_id: string;
+              display_name: string | null;
+              name: string | null;
+              is_primary: boolean | null;
+              created_at: string | null;
+            }>
+          ) => {
+            const grouped = new Map<string, typeof rows>();
+            rows.forEach((row) => {
+              if (!row.account_id) return;
+              const current = grouped.get(row.account_id) ?? [];
+              current.push(row);
+              grouped.set(row.account_id, current);
+            });
+            grouped.forEach((profiles, accountId) => {
+              const preferred = [...profiles].sort((a, b) => {
+                const primaryDiff = Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary));
+                if (primaryDiff !== 0) return primaryDiff;
+                return parseDate(a.created_at) - parseDate(b.created_at);
+              })[0];
+              const value = preferred?.display_name?.trim() || preferred?.name?.trim() || "Member";
+              resolved.set(accountId, value);
+            });
+          };
+
+          const { data: byUserRows } = await supabase
+            .from("profiles")
+            .select("user_id, display_name, name, is_primary, created_at")
+            .in("user_id", ids);
+          addPreferred(
+            (byUserRows ?? []).map((row) => ({
+              account_id: row.user_id,
+              display_name: row.display_name ?? null,
+              name: row.name ?? null,
+              is_primary: row.is_primary ?? null,
+              created_at: row.created_at ?? null,
+            }))
+          );
+
+          const missing = ids.filter((id) => !resolved.has(id));
+          if (missing.length > 0) {
+            const { data: byAuthRows, error: byAuthError } = await supabase
+              .from("profiles")
+              .select("auth_id, display_name, name, is_primary, created_at")
+              .in("auth_id", missing);
+            const missingAuthColumn =
+              byAuthError?.code === "PGRST204" ||
+              byAuthError?.message?.toLowerCase().includes("auth_id");
+            if (!byAuthError || missingAuthColumn) {
+              addPreferred(
+                (byAuthRows ?? []).map((row) => ({
+                  account_id: row.auth_id,
+                  display_name: row.display_name ?? null,
+                  name: row.name ?? null,
+                  is_primary: row.is_primary ?? null,
+                  created_at: row.created_at ?? null,
+                }))
+              );
+            }
+          }
+
+          return resolved;
+        };
+
+        const nameMap = await resolveNames(memberIds);
 
         let joinRequestNotifications: FamilyJoinRequestNotification[] = [];
         if (role === "owner") {
@@ -322,13 +402,9 @@ export function NotificationsPanel({
           );
           const missingRequesterIds = requesterIds.filter((id) => !nameMap.has(id));
           if (missingRequesterIds.length > 0) {
-            const { data: requesterRows } = await supabase
-              .from("personal")
-              .select("id, display_name")
-              .in("id", missingRequesterIds);
-            (requesterRows ?? []).forEach((row: { id: string; display_name: string | null }) => {
-              const name = row.display_name?.trim() || "Member";
-              nameMap.set(row.id, name);
+            const requesterMap = await resolveNames(missingRequesterIds);
+            requesterMap.forEach((name, accountId) => {
+              nameMap.set(accountId, name);
             });
           }
 

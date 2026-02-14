@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,13 +12,14 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInDown, FadeInUp, FadeOutUp, Layout } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/Themed';
 import { apiRequest } from '@/api/client';
 import { supabase } from '@/lib/supabase';
+import { useProfile } from '@/hooks/useProfile';
 
 // --- Types (aligned with web) ---
 interface MedicationEntry {
@@ -202,8 +204,14 @@ const getMaxDayForMonth = (month: number | null, year: number | null) => {
 
 export default function HealthOnboardingScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    newProfileId?: string | string[];
+    previousProfileId?: string | string[];
+    returnTo?: string | string[];
+  }>();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
+  const { selectedProfile, deleteProfile, selectProfile, refreshProfiles } = useProfile();
 
   const [step, setStep] = useState(0);
   const [inputValue, setInputValue] = useState('');
@@ -219,6 +227,15 @@ export default function HealthOnboardingScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [isCancellingProfile, setIsCancellingProfile] = useState(false);
+
+  const readParam = (value: string | string[] | undefined) =>
+    (Array.isArray(value) ? value[0] : value || '').trim();
+  const newProfileId = readParam(params.newProfileId);
+  const previousProfileId = readParam(params.previousProfileId);
+  const returnToRaw = readParam(params.returnTo) || '/profile-selection';
+  const returnTo = returnToRaw.startsWith('/') ? returnToRaw : '/profile-selection';
+  const isNewProfileOnboarding = Boolean(newProfileId);
 
   const [profile, setProfile] = useState<Profile>({
     displayName: '',
@@ -680,10 +697,64 @@ export default function HealthOnboardingScreen() {
     setStep(prevStep);
   };
 
+  const discardNewProfileAndGoBack = async () => {
+    if (!isNewProfileOnboarding || !newProfileId) {
+      router.replace(returnTo as never);
+      return;
+    }
+
+    try {
+      setIsCancellingProfile(true);
+      await deleteProfile(newProfileId);
+      await refreshProfiles();
+
+      if (previousProfileId) {
+        try {
+          await selectProfile(previousProfileId);
+        } catch {
+          // If previous profile is unavailable, provider fallback selection is used.
+        }
+      }
+
+      router.replace(returnTo as never);
+    } catch (error) {
+      console.error('Discard profile error:', error);
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Unable to go back right now. Please try again.';
+      Alert.alert('Unable to go back', message);
+    } finally {
+      setIsCancellingProfile(false);
+    }
+  };
+
+  const confirmDiscardNewProfile = () => {
+    Alert.alert(
+      'Go back?',
+      'If you go back, this new profile will not be created.',
+      [
+        { text: 'Stay', style: 'cancel' },
+        {
+          text: 'Go back',
+          style: 'destructive',
+          onPress: () => {
+            void discardNewProfileAndGoBack();
+          },
+        },
+      ]
+    );
+  };
+
   const saveToDatabase = async () => {
     try {
       setIsSaving(true);
       setSaveError(null);
+
+      if (!selectedProfile) {
+        setSaveError('No profile selected. Please select a profile first.');
+        return;
+      }
 
       const currentDiagnosedCondition = sanitizeTextList(profile.currentDiagnosedCondition);
       const allergies = sanitizeTextList(profile.allergies);
@@ -703,6 +774,7 @@ export default function HealthOnboardingScreen() {
       const longTermTreatments = sanitizeTextList(profile.longTermTreatments);
 
       const healthPayload = {
+        profileId: selectedProfile.id, // Include profile ID
         dateOfBirth: profile.dateOfBirth,
         bloodGroup: profile.bloodGroup,
         heightCm: profile.heightCm,
@@ -722,15 +794,12 @@ export default function HealthOnboardingScreen() {
         body: healthPayload,
       });
 
+      // Update profile display_name in profiles table (not personal table)
       if (profile.displayName.trim()) {
-        const { data: authData } = await supabase.auth.getUser();
-        const userId = authData?.user?.id;
-        if (userId) {
-          await supabase
-            .from('personal')
-            .update({ display_name: profile.displayName.trim() })
-            .eq('id', userId);
-        }
+        await supabase
+          .from('profiles')
+          .update({ display_name: profile.displayName.trim() })
+          .eq('id', selectedProfile.id);
       }
 
       setIsSaved(true);
@@ -760,7 +829,9 @@ export default function HealthOnboardingScreen() {
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <Pressable
             onPress={() => {
-              if (step > 0 || isComplete) {
+              if (isNewProfileOnboarding) {
+                confirmDiscardNewProfile();
+              } else if (step > 0 || isComplete) {
                 goBackStep();
               } else {
                 router.back();
@@ -777,6 +848,21 @@ export default function HealthOnboardingScreen() {
             </Text>
           </View>
           <View style={styles.badgeWrap}>
+            {isNewProfileOnboarding && !isSaved ? (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.cancelProfileBtn,
+                  pressed && styles.cancelProfileBtnPressed,
+                  isCancellingProfile && styles.cancelProfileBtnDisabled,
+                ]}
+                onPress={confirmDiscardNewProfile}
+                disabled={isCancellingProfile}
+              >
+                <Text style={styles.cancelProfileBtnText}>
+                  {isCancellingProfile ? 'Going back…' : 'Go back'}
+                </Text>
+              </Pressable>
+            ) : null}
             <View style={[styles.badge, isSaved && styles.badgeSaved]}>
               <Text style={styles.badgeText} numberOfLines={1} ellipsizeMode="clip">
                 {isSaved ? 'Saved' : isComplete ? 'Review' : `${progressPercent}%`}
@@ -875,677 +961,677 @@ export default function HealthOnboardingScreen() {
                 <View style={styles.chatRowRight}>
                   <View style={styles.userComposer}>
                     <Text style={styles.userLabel}>You</Text>
-                  {/* Text input (displayName, heightCm, weightKg) */}
-                  {currentQ.inputType === 'text' && (
-                    <>
-                      <TextInput
-                        style={styles.input}
-                        value={inputValue}
-                        onChangeText={setInputValue}
-                        placeholder={currentQ.placeholder ?? 'Type here...'}
-                        placeholderTextColor="#94a3b8"
-                        autoCapitalize={currentQ.key === 'displayName' ? 'words' : 'none'}
-                        keyboardType={
-                          currentQ.key === 'heightCm' || currentQ.key === 'weightKg'
-                            ? 'numeric'
-                            : 'default'
-                        }
-                        returnKeyType="next"
-                        onSubmitEditing={handleTextSubmit}
-                      />
-                      <Pressable
-                        style={({ pressed }) => [
-                          styles.primaryBtn,
-                          styles.sendBtn,
-                          pressed && styles.primaryBtnPressed,
-                        ]}
-                        onPress={handleTextSubmit}
-                      >
-                        <Text style={styles.primaryBtnText}>Send</Text>
-                        <MaterialCommunityIcons name="send" size={18} color="#fff" />
-                      </Pressable>
-                    </>
-                  )}
-
-                  {/* Date of birth — dropdown selectors */}
-                  {currentQ.inputType === 'date' && (
-                    <>
-                      <View style={styles.dateRow}>
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.dateSelect,
-                            pressed && styles.primaryBtnPressed,
-                          ]}
-                          onPress={() =>
-                            setActiveDobPicker((prev) => (prev === 'month' ? null : 'month'))
+                    {/* Text input (displayName, heightCm, weightKg) */}
+                    {currentQ.inputType === 'text' && (
+                      <>
+                        <TextInput
+                          style={styles.input}
+                          value={inputValue}
+                          onChangeText={setInputValue}
+                          placeholder={currentQ.placeholder ?? 'Type here...'}
+                          placeholderTextColor="#94a3b8"
+                          autoCapitalize={currentQ.key === 'displayName' ? 'words' : 'none'}
+                          keyboardType={
+                            currentQ.key === 'heightCm' || currentQ.key === 'weightKg'
+                              ? 'numeric'
+                              : 'default'
                           }
-                        >
-                          <Text style={styles.dateSelectLabel}>Month</Text>
-                          <View style={styles.dateSelectValueWrap}>
-                            <Text style={styles.dateSelectValue}>
-                              {dobParts.month
-                                ? MONTH_OPTIONS.find(
-                                    (opt) => String(opt.value).padStart(2, '0') === dobParts.month
-                                  )?.label
-                                : 'Select'}
-                            </Text>
-                            <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
-                          </View>
-                        </Pressable>
-
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.dateSelect,
-                            pressed && styles.primaryBtnPressed,
-                          ]}
-                          onPress={() =>
-                            setActiveDobPicker((prev) => (prev === 'day' ? null : 'day'))
-                          }
-                        >
-                          <Text style={styles.dateSelectLabel}>Day</Text>
-                          <View style={styles.dateSelectValueWrap}>
-                            <Text style={styles.dateSelectValue}>{dobParts.day || 'Select'}</Text>
-                            <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
-                          </View>
-                        </Pressable>
-
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.dateSelect,
-                            pressed && styles.primaryBtnPressed,
-                          ]}
-                          onPress={() =>
-                            setActiveDobPicker((prev) => (prev === 'year' ? null : 'year'))
-                          }
-                        >
-                          <Text style={styles.dateSelectLabel}>Year</Text>
-                          <View style={styles.dateSelectValueWrap}>
-                            <Text style={styles.dateSelectValue}>{dobParts.year || 'Select'}</Text>
-                            <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
-                          </View>
-                        </Pressable>
-                      </View>
-
-                      {activeDobPicker === 'month' && (
-                        <Animated.View
-                          entering={FadeInDown.duration(200)}
-                          exiting={FadeOutUp.duration(180)}
-                          style={styles.dateDropdown}
-                        >
-                          <ScrollView style={styles.dateDropdownList}>
-                            {MONTH_OPTIONS.map((opt) => {
-                              const value = String(opt.value).padStart(2, '0');
-                              const isActive = dobParts.month === value;
-                              return (
-                                <Pressable
-                                  key={opt.value}
-                                  style={({ pressed }) => [
-                                    styles.dateOption,
-                                    isActive && styles.dateOptionActive,
-                                    pressed && styles.chipPressed,
-                                  ]}
-                                  onPress={() => {
-                                    updateDobParts({ month: value });
-                                    setActiveDobPicker(null);
-                                  }}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.dateOptionText,
-                                      isActive && styles.dateOptionTextActive,
-                                    ]}
-                                  >
-                                    {opt.label}
-                                  </Text>
-                                </Pressable>
-                              );
-                            })}
-                          </ScrollView>
-                        </Animated.View>
-                      )}
-
-                      {activeDobPicker === 'day' && (
-                        <Animated.View
-                          entering={FadeInDown.duration(200)}
-                          exiting={FadeOutUp.duration(180)}
-                          style={styles.dateDropdown}
-                        >
-                          <ScrollView style={styles.dateDropdownList}>
-                            {DAY_OPTIONS.filter((day) => day <= maxDobDay).map((day) => {
-                              const value = String(day).padStart(2, '0');
-                              const isActive = dobParts.day === value;
-                              return (
-                                <Pressable
-                                  key={day}
-                                  style={({ pressed }) => [
-                                    styles.dateOption,
-                                    isActive && styles.dateOptionActive,
-                                    pressed && styles.chipPressed,
-                                  ]}
-                                  onPress={() => {
-                                    updateDobParts({ day: value });
-                                    setActiveDobPicker(null);
-                                  }}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.dateOptionText,
-                                      isActive && styles.dateOptionTextActive,
-                                    ]}
-                                  >
-                                    {day}
-                                  </Text>
-                                </Pressable>
-                              );
-                            })}
-                          </ScrollView>
-                        </Animated.View>
-                      )}
-
-                      {activeDobPicker === 'year' && (
-                        <Animated.View
-                          entering={FadeInDown.duration(200)}
-                          exiting={FadeOutUp.duration(180)}
-                          style={styles.dateDropdown}
-                        >
-                          <ScrollView style={styles.dateDropdownList}>
-                            {YEAR_OPTIONS.map((year) => {
-                              const value = String(year);
-                              const isActive = dobParts.year === value;
-                              return (
-                                <Pressable
-                                  key={year}
-                                  style={({ pressed }) => [
-                                    styles.dateOption,
-                                    isActive && styles.dateOptionActive,
-                                    pressed && styles.chipPressed,
-                                  ]}
-                                  onPress={() => {
-                                    updateDobParts({ year: value });
-                                    setActiveDobPicker(null);
-                                  }}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.dateOptionText,
-                                      isActive && styles.dateOptionTextActive,
-                                    ]}
-                                  >
-                                    {year}
-                                  </Text>
-                                </Pressable>
-                              );
-                            })}
-                          </ScrollView>
-                        </Animated.View>
-                      )}
-
-                      <Pressable
-                        style={({ pressed }) => [
-                          styles.primaryBtn,
-                          styles.sendBtn,
-                          pressed && styles.primaryBtnPressed,
-                        ]}
-                        onPress={() => handleSingleNext(profile.dateOfBirth)}
-                        disabled={!profile.dateOfBirth}
-                      >
-                        <Text style={styles.primaryBtnText}>Send</Text>
-                        <MaterialCommunityIcons name="send" size={18} color="#fff" />
-                      </Pressable>
-                    </>
-                  )}
-
-                  {/* Single select (blood group) */}
-                  {currentQ.inputType === 'single-select' && (
-                    <>
-                      <View style={styles.chipRow}>
-                        {currentQ.options?.map((opt) => (
-                          <Pressable
-                            key={opt}
-                            style={({ pressed }) => [
-                              styles.chip,
-                              profile.bloodGroup === opt && styles.chipActive,
-                              pressed && styles.chipPressed,
-                            ]}
-                            onPress={() => setProfile((prev) => ({ ...prev, bloodGroup: opt }))}
-                          >
-                            <Text
-                              style={[
-                                styles.chipText,
-                                profile.bloodGroup === opt && styles.chipTextActive,
-                              ]}
-                            >
-                              {opt}
-                            </Text>
-                          </Pressable>
-                        ))}
-                      </View>
-                      <Pressable
-                        style={({ pressed }) => [
-                          styles.primaryBtn,
-                          styles.sendBtn,
-                          pressed && styles.primaryBtnPressed,
-                        ]}
-                        onPress={() => handleSingleNext(profile.bloodGroup)}
-                        disabled={!profile.bloodGroup}
-                      >
-                        <Text style={styles.primaryBtnText}>Send</Text>
-                        <MaterialCommunityIcons name="send" size={18} color="#fff" />
-                      </Pressable>
-                    </>
-                  )}
-
-                  {/* Multi-text */}
-                  {currentQ.inputType === 'multi-text' && (
-                    <>
-                      {(profile[currentQ.key] as string[]).map((value, index) => (
-                        <View key={`${currentQ.key}-${index}`} style={styles.multiRow}>
-                          <TextInput
-                            style={[styles.input, styles.multiInput]}
-                            value={value}
-                            onChangeText={(text) => {
-                              const next = [...(profile[currentQ.key] as string[])];
-                              next[index] = text;
-                              setProfile((prev) => ({ ...prev, [currentQ.key]: next } as Profile));
-                            }}
-                            placeholder={currentQ.placeholder ?? 'Type here...'}
-                            placeholderTextColor="#94a3b8"
-                          />
-                          {index > 0 && (
-                            <Pressable
-                              style={({ pressed }) => [styles.removeBtn, pressed && styles.removeBtnPressed]}
-                              onPress={() => {
-                                const next = [...(profile[currentQ.key] as string[])];
-                                next.splice(index, 1);
-                                setProfile((prev) => ({ ...prev, [currentQ.key]: next } as Profile));
-                              }}
-                            >
-                              <MaterialCommunityIcons name="close" size={20} color="#0f172a" />
-                            </Pressable>
-                          )}
-                        </View>
-                      ))}
-                      <View style={styles.multiActions}>
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.addBtn,
-                            !canAddMultiText(currentQ.key) && styles.addBtnDisabled,
-                            pressed && styles.addBtnPressed,
-                          ]}
-                          onPress={() => {
-                            const list = profile[currentQ.key] as string[];
-                            setProfile((prev) => ({
-                              ...prev,
-                              [currentQ.key]: [...list, ''],
-                            }) as Profile);
-                          }}
-                          disabled={!canAddMultiText(currentQ.key)}
-                        >
-                          <MaterialCommunityIcons name="plus" size={18} color="#0f766e" />
-                          <Text style={styles.addBtnText}>Add another</Text>
-                        </Pressable>
+                          returnKeyType="next"
+                          onSubmitEditing={handleTextSubmit}
+                        />
                         <Pressable
                           style={({ pressed }) => [
                             styles.primaryBtn,
                             styles.sendBtn,
                             pressed && styles.primaryBtnPressed,
                           ]}
-                          onPress={() => handleMultiTextNext(currentQ.key)}
+                          onPress={handleTextSubmit}
                         >
                           <Text style={styles.primaryBtnText}>Send</Text>
                           <MaterialCommunityIcons name="send" size={18} color="#fff" />
                         </Pressable>
-                      </View>
-                    </>
-                  )}
+                      </>
+                    )}
 
-                  {/* Multi-medication */}
-                  {currentQ.inputType === 'multi-medication' && (
-                    <>
-                      {profile.currentMedication.map((item, index) => (
-                        <View key={`med-${index}`} style={styles.medGroup}>
-                          <Text style={styles.medLabel}>Medication {index + 1}</Text>
-                          <View style={styles.medFieldGroup}>
-                            <Text style={styles.medFieldLabel}>Name</Text>
-                        <TextInput
-                          style={styles.medInput}
-                          value={item.name}
-                          onChangeText={(text) => {
-                            const next = [...profile.currentMedication];
-                            next[index] = { ...next[index], name: text };
-                            setMedSubmitAttempted(false);
-                            setProfile((prev) => ({ ...prev, currentMedication: next }));
-                          }}
-                          placeholder="e.g., Paracetamol"
-                          placeholderTextColor="#9bb0b5"
-                            />
-                          </View>
-                          <View style={styles.medFieldGroup}>
-                            <Text style={styles.medFieldLabel}>Dosage</Text>
-                        <TextInput
-                          style={styles.medInput}
-                          value={item.dosage}
-                          onChangeText={(text) => {
-                            const next = [...profile.currentMedication];
-                            next[index] = { ...next[index], dosage: text };
-                            setMedSubmitAttempted(false);
-                            setProfile((prev) => ({ ...prev, currentMedication: next }));
-                          }}
-                          placeholder="e.g., 500mg"
-                          placeholderTextColor="#9bb0b5"
-                            />
-                          </View>
-                          <View style={styles.medFieldGroup}>
-                            <Text style={styles.medFieldLabel}>Frequency</Text>
+                    {/* Date of birth — dropdown selectors */}
+                    {currentQ.inputType === 'date' && (
+                      <>
+                        <View style={styles.dateRow}>
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.dateSelect,
+                              pressed && styles.primaryBtnPressed,
+                            ]}
+                            onPress={() =>
+                              setActiveDobPicker((prev) => (prev === 'month' ? null : 'month'))
+                            }
+                          >
+                            <Text style={styles.dateSelectLabel}>Month</Text>
+                            <View style={styles.dateSelectValueWrap}>
+                              <Text style={styles.dateSelectValue}>
+                                {dobParts.month
+                                  ? MONTH_OPTIONS.find(
+                                    (opt) => String(opt.value).padStart(2, '0') === dobParts.month
+                                  )?.label
+                                  : 'Select'}
+                              </Text>
+                              <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
+                            </View>
+                          </Pressable>
+
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.dateSelect,
+                              pressed && styles.primaryBtnPressed,
+                            ]}
+                            onPress={() =>
+                              setActiveDobPicker((prev) => (prev === 'day' ? null : 'day'))
+                            }
+                          >
+                            <Text style={styles.dateSelectLabel}>Day</Text>
+                            <View style={styles.dateSelectValueWrap}>
+                              <Text style={styles.dateSelectValue}>{dobParts.day || 'Select'}</Text>
+                              <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
+                            </View>
+                          </Pressable>
+
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.dateSelect,
+                              pressed && styles.primaryBtnPressed,
+                            ]}
+                            onPress={() =>
+                              setActiveDobPicker((prev) => (prev === 'year' ? null : 'year'))
+                            }
+                          >
+                            <Text style={styles.dateSelectLabel}>Year</Text>
+                            <View style={styles.dateSelectValueWrap}>
+                              <Text style={styles.dateSelectValue}>{dobParts.year || 'Select'}</Text>
+                              <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
+                            </View>
+                          </Pressable>
+                        </View>
+
+                        {activeDobPicker === 'month' && (
+                          <Animated.View
+                            entering={FadeInDown.duration(200)}
+                            exiting={FadeOutUp.duration(180)}
+                            style={styles.dateDropdown}
+                          >
+                            <ScrollView style={styles.dateDropdownList}>
+                              {MONTH_OPTIONS.map((opt) => {
+                                const value = String(opt.value).padStart(2, '0');
+                                const isActive = dobParts.month === value;
+                                return (
+                                  <Pressable
+                                    key={opt.value}
+                                    style={({ pressed }) => [
+                                      styles.dateOption,
+                                      isActive && styles.dateOptionActive,
+                                      pressed && styles.chipPressed,
+                                    ]}
+                                    onPress={() => {
+                                      updateDobParts({ month: value });
+                                      setActiveDobPicker(null);
+                                    }}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.dateOptionText,
+                                        isActive && styles.dateOptionTextActive,
+                                      ]}
+                                    >
+                                      {opt.label}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </ScrollView>
+                          </Animated.View>
+                        )}
+
+                        {activeDobPicker === 'day' && (
+                          <Animated.View
+                            entering={FadeInDown.duration(200)}
+                            exiting={FadeOutUp.duration(180)}
+                            style={styles.dateDropdown}
+                          >
+                            <ScrollView style={styles.dateDropdownList}>
+                              {DAY_OPTIONS.filter((day) => day <= maxDobDay).map((day) => {
+                                const value = String(day).padStart(2, '0');
+                                const isActive = dobParts.day === value;
+                                return (
+                                  <Pressable
+                                    key={day}
+                                    style={({ pressed }) => [
+                                      styles.dateOption,
+                                      isActive && styles.dateOptionActive,
+                                      pressed && styles.chipPressed,
+                                    ]}
+                                    onPress={() => {
+                                      updateDobParts({ day: value });
+                                      setActiveDobPicker(null);
+                                    }}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.dateOptionText,
+                                        isActive && styles.dateOptionTextActive,
+                                      ]}
+                                    >
+                                      {day}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </ScrollView>
+                          </Animated.View>
+                        )}
+
+                        {activeDobPicker === 'year' && (
+                          <Animated.View
+                            entering={FadeInDown.duration(200)}
+                            exiting={FadeOutUp.duration(180)}
+                            style={styles.dateDropdown}
+                          >
+                            <ScrollView style={styles.dateDropdownList}>
+                              {YEAR_OPTIONS.map((year) => {
+                                const value = String(year);
+                                const isActive = dobParts.year === value;
+                                return (
+                                  <Pressable
+                                    key={year}
+                                    style={({ pressed }) => [
+                                      styles.dateOption,
+                                      isActive && styles.dateOptionActive,
+                                      pressed && styles.chipPressed,
+                                    ]}
+                                    onPress={() => {
+                                      updateDobParts({ year: value });
+                                      setActiveDobPicker(null);
+                                    }}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.dateOptionText,
+                                        isActive && styles.dateOptionTextActive,
+                                      ]}
+                                    >
+                                      {year}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </ScrollView>
+                          </Animated.View>
+                        )}
+
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.primaryBtn,
+                            styles.sendBtn,
+                            pressed && styles.primaryBtnPressed,
+                          ]}
+                          onPress={() => handleSingleNext(profile.dateOfBirth)}
+                          disabled={!profile.dateOfBirth}
+                        >
+                          <Text style={styles.primaryBtnText}>Send</Text>
+                          <MaterialCommunityIcons name="send" size={18} color="#fff" />
+                        </Pressable>
+                      </>
+                    )}
+
+                    {/* Single select (blood group) */}
+                    {currentQ.inputType === 'single-select' && (
+                      <>
+                        <View style={styles.chipRow}>
+                          {currentQ.options?.map((opt) => (
                             <Pressable
+                              key={opt}
                               style={({ pressed }) => [
-                                styles.medSelect,
-                                pressed && styles.primaryBtnPressed,
+                                styles.chip,
+                                profile.bloodGroup === opt && styles.chipActive,
+                                pressed && styles.chipPressed,
                               ]}
-                              onPress={() =>
-                                setActiveMedicationFrequencyPicker((prev) =>
-                                  prev === index ? null : index
-                                )
-                              }
+                              onPress={() => setProfile((prev) => ({ ...prev, bloodGroup: opt }))}
                             >
                               <Text
                                 style={[
-                                  styles.medSelectValue,
-                                  !item.frequency && styles.medSelectPlaceholder,
+                                  styles.chipText,
+                                  profile.bloodGroup === opt && styles.chipTextActive,
                                 ]}
                               >
-                                {item.frequency || 'Select frequency'}
+                                {opt}
                               </Text>
-                              <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
                             </Pressable>
-                            {activeMedicationFrequencyPicker === index && (
-                              <Animated.View
-                                entering={FadeInDown.duration(200)}
-                                exiting={FadeOutUp.duration(180)}
-                                style={styles.medDropdown}
-                              >
-                                <ScrollView style={styles.medDropdownList}>
-                                  {FREQUENCY_OPTIONS.map((label) => {
-                                    const isActive = item.frequency === label;
-                                    return (
-                                      <Pressable
-                                        key={label}
-                                        style={({ pressed }) => [
-                                          styles.medOption,
-                                          isActive && styles.medOptionActive,
-                                          pressed && styles.chipPressed,
-                                        ]}
-                                onPress={() => {
-                                  const next = [...profile.currentMedication];
-                                  next[index] = {
-                                    ...next[index],
-                                    frequency: isActive ? '' : label,
-                                  };
-                                  setMedSubmitAttempted(false);
-                                  setProfile((prev) => ({
-                                    ...prev,
-                                    currentMedication: next,
-                                  }));
-                                  setActiveMedicationFrequencyPicker(null);
-                                }}
-                                      >
-                                        <Text
-                                          style={[
-                                            styles.medOptionText,
-                                            isActive && styles.medOptionTextActive,
-                                          ]}
-                                        >
-                                          {label}
-                                        </Text>
-                                      </Pressable>
-                                    );
-                                  })}
-                                </ScrollView>
-                              </Animated.View>
-                            )}
-                          </View>
-                          {index > 0 && (
-                            <Pressable
-                              style={({ pressed }) => [styles.removeBtn, pressed && styles.removeBtnPressed]}
-                              onPress={() => {
-                                const next = profile.currentMedication.filter((_, i) => i !== index);
-                                setProfile((prev) => ({ ...prev, currentMedication: next }));
-                              }}
-                            >
-                              <Text style={styles.removeBtnText}>Remove</Text>
-                            </Pressable>
-                          )}
+                          ))}
                         </View>
-                      ))}
-                      {medSubmitAttempted && !isMedicationComplete && (
-                        <Text style={styles.inlineHint}>Please complete all medication fields.</Text>
-                      )}
-                      <View style={styles.multiActions}>
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.addBtn,
-                            !canAddMedication() && styles.addBtnDisabled,
-                            pressed && styles.addBtnPressed,
-                          ]}
-                      onPress={() =>
-                        setProfile((prev) => ({
-                          ...prev,
-                          currentMedication: [
-                            ...prev.currentMedication,
-                            { name: '', dosage: '', frequency: '' },
-                          ],
-                        }))
-                      }
-                      disabled={!canAddMedication()}
-                    >
-                          <MaterialCommunityIcons name="plus" size={18} color="#0f766e" />
-                          <Text style={styles.addBtnText}>Add medication</Text>
-                        </Pressable>
                         <Pressable
                           style={({ pressed }) => [
                             styles.primaryBtn,
                             styles.sendBtn,
                             pressed && styles.primaryBtnPressed,
                           ]}
-                          onPress={handleMedicationNext}
+                          onPress={() => handleSingleNext(profile.bloodGroup)}
+                          disabled={!profile.bloodGroup}
                         >
                           <Text style={styles.primaryBtnText}>Send</Text>
                           <MaterialCommunityIcons name="send" size={18} color="#fff" />
                         </Pressable>
-                      </View>
-                    </>
-                  )}
+                      </>
+                    )}
 
-                  {/* Multi-surgery */}
-                  {currentQ.inputType === 'multi-surgery' && (
-                    <>
-                      {profile.pastSurgeries.map((item, index) => (
-                        <View key={`surg-${index}`} style={styles.medGroup}>
-                          <Text style={styles.medLabel}>Surgery {index + 1}</Text>
-                          <TextInput
-                            style={styles.input}
-                            value={item.name}
-                            onChangeText={(text) => {
-                              const next = [...profile.pastSurgeries];
-                              next[index] = { ...next[index], name: text };
-                              setProfile((prev) => ({ ...prev, pastSurgeries: next }));
-                            }}
-                            placeholder="Surgery name"
-                            placeholderTextColor="#94a3b8"
-                          />
-                          <View style={styles.surgeryDateRow}>
-                            <Pressable
-                              style={({ pressed }) => [
-                                styles.dateSelect,
-                                pressed && styles.primaryBtnPressed,
-                              ]}
-                              onPress={() =>
-                                setActiveSurgeryPicker((prev) =>
-                                  prev?.index === index && prev.field === 'month'
-                                    ? null
-                                    : { index, field: 'month' }
-                                )
-                              }
-                            >
-                              <Text style={styles.dateSelectLabel}>Month</Text>
-                              <View style={styles.dateSelectValueWrap}>
-                                <Text style={styles.dateSelectValue}>
-                                  {item.month
-                                    ? MONTH_OPTIONS.find((opt) => opt.value === item.month)?.label
-                                    : 'Select'}
-                                </Text>
-                                <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
-                              </View>
-                            </Pressable>
-                            <Pressable
-                              style={({ pressed }) => [
-                                styles.dateSelect,
-                                pressed && styles.primaryBtnPressed,
-                              ]}
-                              onPress={() =>
-                                setActiveSurgeryPicker((prev) =>
-                                  prev?.index === index && prev.field === 'year'
-                                    ? null
-                                    : { index, field: 'year' }
-                                )
-                              }
-                            >
-                              <Text style={styles.dateSelectLabel}>Year</Text>
-                              <View style={styles.dateSelectValueWrap}>
-                                <Text style={styles.dateSelectValue}>
-                                  {item.year ? String(item.year) : 'Select'}
-                                </Text>
-                                <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
-                              </View>
-                            </Pressable>
+                    {/* Multi-text */}
+                    {currentQ.inputType === 'multi-text' && (
+                      <>
+                        {(profile[currentQ.key] as string[]).map((value, index) => (
+                          <View key={`${currentQ.key}-${index}`} style={styles.multiRow}>
+                            <TextInput
+                              style={[styles.input, styles.multiInput]}
+                              value={value}
+                              onChangeText={(text) => {
+                                const next = [...(profile[currentQ.key] as string[])];
+                                next[index] = text;
+                                setProfile((prev) => ({ ...prev, [currentQ.key]: next } as Profile));
+                              }}
+                              placeholder={currentQ.placeholder ?? 'Type here...'}
+                              placeholderTextColor="#94a3b8"
+                            />
+                            {index > 0 && (
+                              <Pressable
+                                style={({ pressed }) => [styles.removeBtn, pressed && styles.removeBtnPressed]}
+                                onPress={() => {
+                                  const next = [...(profile[currentQ.key] as string[])];
+                                  next.splice(index, 1);
+                                  setProfile((prev) => ({ ...prev, [currentQ.key]: next } as Profile));
+                                }}
+                              >
+                                <MaterialCommunityIcons name="close" size={20} color="#0f172a" />
+                              </Pressable>
+                            )}
                           </View>
-                          {activeSurgeryPicker?.index === index &&
-                            activeSurgeryPicker.field === 'month' && (
-                              <Animated.View
-                                entering={FadeInDown.duration(200)}
-                                exiting={FadeOutUp.duration(180)}
-                                style={styles.dateDropdown}
+                        ))}
+                        <View style={styles.multiActions}>
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.addBtn,
+                              !canAddMultiText(currentQ.key) && styles.addBtnDisabled,
+                              pressed && styles.addBtnPressed,
+                            ]}
+                            onPress={() => {
+                              const list = profile[currentQ.key] as string[];
+                              setProfile((prev) => ({
+                                ...prev,
+                                [currentQ.key]: [...list, ''],
+                              }) as Profile);
+                            }}
+                            disabled={!canAddMultiText(currentQ.key)}
+                          >
+                            <MaterialCommunityIcons name="plus" size={18} color="#0f766e" />
+                            <Text style={styles.addBtnText}>Add another</Text>
+                          </Pressable>
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.primaryBtn,
+                              styles.sendBtn,
+                              pressed && styles.primaryBtnPressed,
+                            ]}
+                            onPress={() => handleMultiTextNext(currentQ.key)}
+                          >
+                            <Text style={styles.primaryBtnText}>Send</Text>
+                            <MaterialCommunityIcons name="send" size={18} color="#fff" />
+                          </Pressable>
+                        </View>
+                      </>
+                    )}
+
+                    {/* Multi-medication */}
+                    {currentQ.inputType === 'multi-medication' && (
+                      <>
+                        {profile.currentMedication.map((item, index) => (
+                          <View key={`med-${index}`} style={styles.medGroup}>
+                            <Text style={styles.medLabel}>Medication {index + 1}</Text>
+                            <View style={styles.medFieldGroup}>
+                              <Text style={styles.medFieldLabel}>Name</Text>
+                              <TextInput
+                                style={styles.medInput}
+                                value={item.name}
+                                onChangeText={(text) => {
+                                  const next = [...profile.currentMedication];
+                                  next[index] = { ...next[index], name: text };
+                                  setMedSubmitAttempted(false);
+                                  setProfile((prev) => ({ ...prev, currentMedication: next }));
+                                }}
+                                placeholder="e.g., Paracetamol"
+                                placeholderTextColor="#9bb0b5"
+                              />
+                            </View>
+                            <View style={styles.medFieldGroup}>
+                              <Text style={styles.medFieldLabel}>Dosage</Text>
+                              <TextInput
+                                style={styles.medInput}
+                                value={item.dosage}
+                                onChangeText={(text) => {
+                                  const next = [...profile.currentMedication];
+                                  next[index] = { ...next[index], dosage: text };
+                                  setMedSubmitAttempted(false);
+                                  setProfile((prev) => ({ ...prev, currentMedication: next }));
+                                }}
+                                placeholder="e.g., 500mg"
+                                placeholderTextColor="#9bb0b5"
+                              />
+                            </View>
+                            <View style={styles.medFieldGroup}>
+                              <Text style={styles.medFieldLabel}>Frequency</Text>
+                              <Pressable
+                                style={({ pressed }) => [
+                                  styles.medSelect,
+                                  pressed && styles.primaryBtnPressed,
+                                ]}
+                                onPress={() =>
+                                  setActiveMedicationFrequencyPicker((prev) =>
+                                    prev === index ? null : index
+                                  )
+                                }
                               >
-                                <ScrollView style={styles.dateDropdownList}>
-                                  {MONTH_OPTIONS.map((opt) => {
-                                    const isActive = item.month === opt.value;
-                                    return (
-                                      <Pressable
-                                        key={opt.value}
-                                        style={({ pressed }) => [
-                                          styles.dateOption,
-                                          isActive && styles.dateOptionActive,
-                                          pressed && styles.chipPressed,
-                                        ]}
-                                        onPress={() => {
-                                          const next = [...profile.pastSurgeries];
-                                          next[index] = { ...next[index], month: opt.value };
-                                          setProfile((prev) => ({ ...prev, pastSurgeries: next }));
-                                          setActiveSurgeryPicker(null);
-                                        }}
-                                      >
-                                        <Text
-                                          style={[
-                                            styles.dateOptionText,
-                                            isActive && styles.dateOptionTextActive,
+                                <Text
+                                  style={[
+                                    styles.medSelectValue,
+                                    !item.frequency && styles.medSelectPlaceholder,
+                                  ]}
+                                >
+                                  {item.frequency || 'Select frequency'}
+                                </Text>
+                                <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
+                              </Pressable>
+                              {activeMedicationFrequencyPicker === index && (
+                                <Animated.View
+                                  entering={FadeInDown.duration(200)}
+                                  exiting={FadeOutUp.duration(180)}
+                                  style={styles.medDropdown}
+                                >
+                                  <ScrollView style={styles.medDropdownList}>
+                                    {FREQUENCY_OPTIONS.map((label) => {
+                                      const isActive = item.frequency === label;
+                                      return (
+                                        <Pressable
+                                          key={label}
+                                          style={({ pressed }) => [
+                                            styles.medOption,
+                                            isActive && styles.medOptionActive,
+                                            pressed && styles.chipPressed,
                                           ]}
+                                          onPress={() => {
+                                            const next = [...profile.currentMedication];
+                                            next[index] = {
+                                              ...next[index],
+                                              frequency: isActive ? '' : label,
+                                            };
+                                            setMedSubmitAttempted(false);
+                                            setProfile((prev) => ({
+                                              ...prev,
+                                              currentMedication: next,
+                                            }));
+                                            setActiveMedicationFrequencyPicker(null);
+                                          }}
                                         >
-                                          {opt.label}
-                                        </Text>
-                                      </Pressable>
-                                    );
-                                  })}
-                                </ScrollView>
-                              </Animated.View>
-                            )}
-                          {activeSurgeryPicker?.index === index &&
-                            activeSurgeryPicker.field === 'year' && (
-                              <Animated.View
-                                entering={FadeInDown.duration(200)}
-                                exiting={FadeOutUp.duration(180)}
-                                style={styles.dateDropdown}
+                                          <Text
+                                            style={[
+                                              styles.medOptionText,
+                                              isActive && styles.medOptionTextActive,
+                                            ]}
+                                          >
+                                            {label}
+                                          </Text>
+                                        </Pressable>
+                                      );
+                                    })}
+                                  </ScrollView>
+                                </Animated.View>
+                              )}
+                            </View>
+                            {index > 0 && (
+                              <Pressable
+                                style={({ pressed }) => [styles.removeBtn, pressed && styles.removeBtnPressed]}
+                                onPress={() => {
+                                  const next = profile.currentMedication.filter((_, i) => i !== index);
+                                  setProfile((prev) => ({ ...prev, currentMedication: next }));
+                                }}
                               >
-                                <ScrollView style={styles.dateDropdownList}>
-                                  {YEAR_OPTIONS.map((year) => {
-                                    const isActive = item.year === year;
-                                    return (
-                                      <Pressable
-                                        key={year}
-                                        style={({ pressed }) => [
-                                          styles.dateOption,
-                                          isActive && styles.dateOptionActive,
-                                          pressed && styles.chipPressed,
-                                        ]}
-                                        onPress={() => {
-                                          const next = [...profile.pastSurgeries];
-                                          next[index] = { ...next[index], year };
-                                          setProfile((prev) => ({ ...prev, pastSurgeries: next }));
-                                          setActiveSurgeryPicker(null);
-                                        }}
-                                      >
-                                        <Text
-                                          style={[
-                                            styles.dateOptionText,
-                                            isActive && styles.dateOptionTextActive,
-                                          ]}
-                                        >
-                                          {year}
-                                        </Text>
-                                      </Pressable>
-                                    );
-                                  })}
-                                </ScrollView>
-                              </Animated.View>
+                                <Text style={styles.removeBtnText}>Remove</Text>
+                              </Pressable>
                             )}
-                          {index > 0 && (
-                            <Pressable
-                              style={({ pressed }) => [styles.removeBtn, pressed && styles.removeBtnPressed]}
-                              onPress={() => {
-                                const next = profile.pastSurgeries.filter((_, i) => i !== index);
+                          </View>
+                        ))}
+                        {medSubmitAttempted && !isMedicationComplete && (
+                          <Text style={styles.inlineHint}>Please complete all medication fields.</Text>
+                        )}
+                        <View style={styles.multiActions}>
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.addBtn,
+                              !canAddMedication() && styles.addBtnDisabled,
+                              pressed && styles.addBtnPressed,
+                            ]}
+                            onPress={() =>
+                              setProfile((prev) => ({
+                                ...prev,
+                                currentMedication: [
+                                  ...prev.currentMedication,
+                                  { name: '', dosage: '', frequency: '' },
+                                ],
+                              }))
+                            }
+                            disabled={!canAddMedication()}
+                          >
+                            <MaterialCommunityIcons name="plus" size={18} color="#0f766e" />
+                            <Text style={styles.addBtnText}>Add medication</Text>
+                          </Pressable>
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.primaryBtn,
+                              styles.sendBtn,
+                              pressed && styles.primaryBtnPressed,
+                            ]}
+                            onPress={handleMedicationNext}
+                          >
+                            <Text style={styles.primaryBtnText}>Send</Text>
+                            <MaterialCommunityIcons name="send" size={18} color="#fff" />
+                          </Pressable>
+                        </View>
+                      </>
+                    )}
+
+                    {/* Multi-surgery */}
+                    {currentQ.inputType === 'multi-surgery' && (
+                      <>
+                        {profile.pastSurgeries.map((item, index) => (
+                          <View key={`surg-${index}`} style={styles.medGroup}>
+                            <Text style={styles.medLabel}>Surgery {index + 1}</Text>
+                            <TextInput
+                              style={styles.input}
+                              value={item.name}
+                              onChangeText={(text) => {
+                                const next = [...profile.pastSurgeries];
+                                next[index] = { ...next[index], name: text };
                                 setProfile((prev) => ({ ...prev, pastSurgeries: next }));
                               }}
-                            >
-                              <Text style={styles.removeBtnText}>Remove</Text>
-                            </Pressable>
-                          )}
+                              placeholder="Surgery name"
+                              placeholderTextColor="#94a3b8"
+                            />
+                            <View style={styles.surgeryDateRow}>
+                              <Pressable
+                                style={({ pressed }) => [
+                                  styles.dateSelect,
+                                  pressed && styles.primaryBtnPressed,
+                                ]}
+                                onPress={() =>
+                                  setActiveSurgeryPicker((prev) =>
+                                    prev?.index === index && prev.field === 'month'
+                                      ? null
+                                      : { index, field: 'month' }
+                                  )
+                                }
+                              >
+                                <Text style={styles.dateSelectLabel}>Month</Text>
+                                <View style={styles.dateSelectValueWrap}>
+                                  <Text style={styles.dateSelectValue}>
+                                    {item.month
+                                      ? MONTH_OPTIONS.find((opt) => opt.value === item.month)?.label
+                                      : 'Select'}
+                                  </Text>
+                                  <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
+                                </View>
+                              </Pressable>
+                              <Pressable
+                                style={({ pressed }) => [
+                                  styles.dateSelect,
+                                  pressed && styles.primaryBtnPressed,
+                                ]}
+                                onPress={() =>
+                                  setActiveSurgeryPicker((prev) =>
+                                    prev?.index === index && prev.field === 'year'
+                                      ? null
+                                      : { index, field: 'year' }
+                                  )
+                                }
+                              >
+                                <Text style={styles.dateSelectLabel}>Year</Text>
+                                <View style={styles.dateSelectValueWrap}>
+                                  <Text style={styles.dateSelectValue}>
+                                    {item.year ? String(item.year) : 'Select'}
+                                  </Text>
+                                  <MaterialCommunityIcons name="chevron-down" size={18} color="#64748b" />
+                                </View>
+                              </Pressable>
+                            </View>
+                            {activeSurgeryPicker?.index === index &&
+                              activeSurgeryPicker.field === 'month' && (
+                                <Animated.View
+                                  entering={FadeInDown.duration(200)}
+                                  exiting={FadeOutUp.duration(180)}
+                                  style={styles.dateDropdown}
+                                >
+                                  <ScrollView style={styles.dateDropdownList}>
+                                    {MONTH_OPTIONS.map((opt) => {
+                                      const isActive = item.month === opt.value;
+                                      return (
+                                        <Pressable
+                                          key={opt.value}
+                                          style={({ pressed }) => [
+                                            styles.dateOption,
+                                            isActive && styles.dateOptionActive,
+                                            pressed && styles.chipPressed,
+                                          ]}
+                                          onPress={() => {
+                                            const next = [...profile.pastSurgeries];
+                                            next[index] = { ...next[index], month: opt.value };
+                                            setProfile((prev) => ({ ...prev, pastSurgeries: next }));
+                                            setActiveSurgeryPicker(null);
+                                          }}
+                                        >
+                                          <Text
+                                            style={[
+                                              styles.dateOptionText,
+                                              isActive && styles.dateOptionTextActive,
+                                            ]}
+                                          >
+                                            {opt.label}
+                                          </Text>
+                                        </Pressable>
+                                      );
+                                    })}
+                                  </ScrollView>
+                                </Animated.View>
+                              )}
+                            {activeSurgeryPicker?.index === index &&
+                              activeSurgeryPicker.field === 'year' && (
+                                <Animated.View
+                                  entering={FadeInDown.duration(200)}
+                                  exiting={FadeOutUp.duration(180)}
+                                  style={styles.dateDropdown}
+                                >
+                                  <ScrollView style={styles.dateDropdownList}>
+                                    {YEAR_OPTIONS.map((year) => {
+                                      const isActive = item.year === year;
+                                      return (
+                                        <Pressable
+                                          key={year}
+                                          style={({ pressed }) => [
+                                            styles.dateOption,
+                                            isActive && styles.dateOptionActive,
+                                            pressed && styles.chipPressed,
+                                          ]}
+                                          onPress={() => {
+                                            const next = [...profile.pastSurgeries];
+                                            next[index] = { ...next[index], year };
+                                            setProfile((prev) => ({ ...prev, pastSurgeries: next }));
+                                            setActiveSurgeryPicker(null);
+                                          }}
+                                        >
+                                          <Text
+                                            style={[
+                                              styles.dateOptionText,
+                                              isActive && styles.dateOptionTextActive,
+                                            ]}
+                                          >
+                                            {year}
+                                          </Text>
+                                        </Pressable>
+                                      );
+                                    })}
+                                  </ScrollView>
+                                </Animated.View>
+                              )}
+                            {index > 0 && (
+                              <Pressable
+                                style={({ pressed }) => [styles.removeBtn, pressed && styles.removeBtnPressed]}
+                                onPress={() => {
+                                  const next = profile.pastSurgeries.filter((_, i) => i !== index);
+                                  setProfile((prev) => ({ ...prev, pastSurgeries: next }));
+                                }}
+                              >
+                                <Text style={styles.removeBtnText}>Remove</Text>
+                              </Pressable>
+                            )}
+                          </View>
+                        ))}
+                        <View style={styles.multiActions}>
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.addBtn,
+                              !canAddSurgery() && styles.addBtnDisabled,
+                              pressed && styles.addBtnPressed,
+                            ]}
+                            onPress={() =>
+                              setProfile((prev) => ({
+                                ...prev,
+                                pastSurgeries: [
+                                  ...prev.pastSurgeries,
+                                  { name: '', month: null, year: null },
+                                ],
+                              }))
+                            }
+                            disabled={!canAddSurgery()}
+                          >
+                            <MaterialCommunityIcons name="plus" size={18} color="#0f766e" />
+                            <Text style={styles.addBtnText}>Add surgery</Text>
+                          </Pressable>
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.primaryBtn,
+                              styles.sendBtn,
+                              pressed && styles.primaryBtnPressed,
+                            ]}
+                            onPress={handleSurgeryNext}
+                          >
+                            <Text style={styles.primaryBtnText}>Send</Text>
+                            <MaterialCommunityIcons name="send" size={18} color="#fff" />
+                          </Pressable>
                         </View>
-                      ))}
-                      <View style={styles.multiActions}>
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.addBtn,
-                            !canAddSurgery() && styles.addBtnDisabled,
-                            pressed && styles.addBtnPressed,
-                          ]}
-                          onPress={() =>
-                            setProfile((prev) => ({
-                              ...prev,
-                              pastSurgeries: [
-                                ...prev.pastSurgeries,
-                                { name: '', month: null, year: null },
-                              ],
-                            }))
-                          }
-                          disabled={!canAddSurgery()}
-                        >
-                          <MaterialCommunityIcons name="plus" size={18} color="#0f766e" />
-                          <Text style={styles.addBtnText}>Add surgery</Text>
-                        </Pressable>
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.primaryBtn,
-                            styles.sendBtn,
-                            pressed && styles.primaryBtnPressed,
-                          ]}
-                          onPress={handleSurgeryNext}
-                        >
-                          <Text style={styles.primaryBtnText}>Send</Text>
-                          <MaterialCommunityIcons name="send" size={18} color="#fff" />
-                        </Pressable>
-                      </View>
-                    </>
-                  )}
-                </View>
+                      </>
+                    )}
+                  </View>
                 </View>
               </View>
 
@@ -1676,6 +1762,26 @@ const styles = StyleSheet.create({
   badgeWrap: {
     minWidth: 60,
     alignItems: 'flex-end',
+    gap: 8,
+  },
+  cancelProfileBtn: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+  cancelProfileBtnPressed: {
+    opacity: 0.85,
+  },
+  cancelProfileBtnDisabled: {
+    opacity: 0.7,
+  },
+  cancelProfileBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#eef7f7',
   },
   badge: {
     minWidth: 56,

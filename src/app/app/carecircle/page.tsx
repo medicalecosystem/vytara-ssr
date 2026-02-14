@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronRight, UserPlus, Trash2, X } from 'lucide-react';
 import { supabase } from '@/lib/createClient';
+import { useAppProfile } from '@/components/AppProfileProvider';
 import {
   COUNTRIES,
   DEFAULT_COUNTRY,
@@ -18,6 +19,8 @@ type CareCircleMember = {
   id: string;
   name: string;
   status: CareCircleStatus;
+  memberProfileId: string | null;
+  profileId: string | null;
 };
 
 type CareCircleData = {
@@ -95,11 +98,11 @@ const emptyEmergencyCard: EmergencyCardData = {
 
 type CacheEntry<T> = { ts: number; value: T };
 const CARECIRCLE_CACHE_TTL_MS = 5 * 60 * 1000;
-const careCircleCacheKey = (userId: string, key: string) => `vytara:carecircle:${userId}:${key}`;
-const readCareCircleCache = <T,>(userId: string, key: string): T | null => {
-  if (!userId || typeof window === 'undefined') return null;
+const careCircleCacheKey = (cacheOwnerId: string, key: string) => `vytara:carecircle:${cacheOwnerId}:${key}`;
+const readCareCircleCache = <T,>(cacheOwnerId: string, key: string): T | null => {
+  if (!cacheOwnerId || typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(careCircleCacheKey(userId, key));
+    const raw = window.localStorage.getItem(careCircleCacheKey(cacheOwnerId, key));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CacheEntry<T>;
     if (!parsed?.ts) return null;
@@ -109,13 +112,15 @@ const readCareCircleCache = <T,>(userId: string, key: string): T | null => {
     return null;
   }
 };
-const writeCareCircleCache = <T,>(userId: string, key: string, value: T) => {
-  if (!userId || typeof window === 'undefined') return;
+const writeCareCircleCache = <T,>(cacheOwnerId: string, key: string, value: T) => {
+  if (!cacheOwnerId || typeof window === 'undefined') return;
   const entry: CacheEntry<T> = { ts: Date.now(), value };
-  window.localStorage.setItem(careCircleCacheKey(userId, key), JSON.stringify(entry));
+  window.localStorage.setItem(careCircleCacheKey(cacheOwnerId, key), JSON.stringify(entry));
 };
 
 export default function CareCirclePage() {
+  const { selectedProfile } = useAppProfile();
+  const profileId = selectedProfile?.id ?? '';
   const [circleData, setCircleData] = useState<CareCircleData>({
     circleName: 'Loading…',
     ownerName: '',
@@ -138,7 +143,8 @@ export default function CareCirclePage() {
   const [isEmergencyOpen, setIsEmergencyOpen] = useState(false);
   const [isEmergencyEditing, setIsEmergencyEditing] = useState(false);
   const [emergencyCardOwner, setEmergencyCardOwner] = useState<{
-    id: string;
+    userId: string;
+    profileId: string | null;
     name: string;
   } | null>(null);
   const [emergencyCard, setEmergencyCard] =
@@ -157,9 +163,17 @@ export default function CareCirclePage() {
     }
   }, []);
 
-  const loadEmergencyCard = useCallback(async (userId: string) => {
+  const loadEmergencyCard = useCallback(async (targetProfileId: string) => {
     setIsEmergencyLoading(true);
     setEmergencyError(null);
+
+    if (!targetProfileId) {
+      setEmergencyCard(emptyEmergencyCard);
+      setEmergencyError('No profile found for this member.');
+      setIsEmergencyLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('care_emergency_cards')
       .select(
@@ -183,7 +197,7 @@ export default function CareCirclePage() {
           'emergency_instructions',
         ].join(',')
       )
-      .eq('user_id', userId)
+      .eq('profile_id', targetProfileId)
       .maybeSingle();
 
     if (error && error.code !== 'PGRST116') {
@@ -232,46 +246,48 @@ export default function CareCirclePage() {
     }
     const user = session.user;
     setCurrentUserId((prev) => (prev === user.id ? prev : user.id));
+    const cacheOwnerId = profileId || user.id;
 
-    const cachedCircleData = readCareCircleCache<CareCircleData>(user.id, 'circleData');
+    const cachedCircleData = readCareCircleCache<CareCircleData>(cacheOwnerId, 'circleData');
     if (cachedCircleData) {
       setCircleData(cachedCircleData);
-      setEmergencyCardOwner((prev) => prev || { id: user.id, name: cachedCircleData.ownerName });
+      setEmergencyCardOwner((prev) =>
+        prev || { userId: user.id, profileId: profileId || null, name: cachedCircleData.ownerName }
+      );
     }
-    const cachedPendingInvites = readCareCircleCache<PendingInvite[]>(user.id, 'pendingInvites');
+    const cachedPendingInvites = readCareCircleCache<PendingInvite[]>(cacheOwnerId, 'pendingInvites');
     if (cachedPendingInvites) {
       setPendingInvites(cachedPendingInvites);
     }
 
     let displayName =
-      user.user_metadata?.full_name ??
-      user.user_metadata?.name ??
-      user.phone ??
+      selectedProfile?.display_name?.trim() ||
+      selectedProfile?.name?.trim() ||
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      user.phone ||
       'Your';
-
-    const { data: personal } = await supabase
-      .from('personal')
-      .select('display_name')
-      .eq('id', user.id)
-      .maybeSingle();
-
-    if (personal?.display_name) {
-      displayName = personal.display_name;
-    }
 
     const circleName = `${displayName}'s Care Circle`;
 
-    await loadEmergencyCard(user.id);
+    if (profileId) {
+      await loadEmergencyCard(profileId);
+    } else {
+      setEmergencyCard(emptyEmergencyCard);
+    }
     setEmergencyCardOwner((prev) => {
-      if (!prev || prev.id === user.id) {
-        return { id: user.id, name: displayName };
+      if (!prev || prev.userId === user.id) {
+        return { userId: user.id, profileId: profileId || null, name: displayName };
       }
       return prev;
     });
 
-    const response = await fetch('/api/care-circle/links', {
+    const response = await fetch(
+      `/api/care-circle/links${profileId ? `?profileId=${encodeURIComponent(profileId)}` : ''}`,
+      {
       cache: 'no-store',
-    });
+      }
+    );
 
     if (!response.ok) {
       return;
@@ -281,6 +297,8 @@ export default function CareCirclePage() {
       outgoing: Array<{
         id: string;
         memberId: string;
+        memberProfileId: string | null;
+        profileId: string | null;
         status: CareCircleStatus;
         displayName: string;
         createdAt: string;
@@ -288,6 +306,8 @@ export default function CareCirclePage() {
       incoming: Array<{
         id: string;
         memberId: string;
+        memberProfileId: string | null;
+        profileId: string | null;
         status: CareCircleStatus;
         displayName: string;
         createdAt: string;
@@ -298,12 +318,16 @@ export default function CareCirclePage() {
       id: link.memberId,
       name: link.displayName,
       status: link.status,
+      memberProfileId: link.memberProfileId,
+      profileId: link.profileId,
     }));
 
     const circlesImIn = linksData.incoming.map((link) => ({
       id: link.memberId,
       name: link.displayName,
       status: link.status,
+      memberProfileId: link.memberProfileId,
+      profileId: link.profileId,
     }));
 
     const nextPendingInvites = linksData.outgoing
@@ -322,9 +346,9 @@ export default function CareCirclePage() {
       circlesImIn,
     };
     setCircleData(nextCircleData);
-    writeCareCircleCache(user.id, 'pendingInvites', nextPendingInvites);
-    writeCareCircleCache(user.id, 'circleData', nextCircleData);
-  }, [loadEmergencyCard]);
+    writeCareCircleCache(cacheOwnerId, 'pendingInvites', nextPendingInvites);
+    writeCareCircleCache(cacheOwnerId, 'circleData', nextCircleData);
+  }, [loadEmergencyCard, profileId, selectedProfile?.display_name, selectedProfile?.name]);
 
   useEffect(() => {
     loadCareCircle();
@@ -363,6 +387,10 @@ export default function CareCirclePage() {
 
   const handleInviteSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!profileId) {
+      setInviteError('Please select a profile before sending invites.');
+      return;
+    }
     const digitsOnly = inviteContact.replace(/\D/g, '');
     if (!digitsOnly) {
       setInviteError('Please enter a phone number.');
@@ -394,7 +422,7 @@ export default function CareCirclePage() {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ contact: fullContact }),
+      body: JSON.stringify({ contact: fullContact, profileId }),
     });
 
     if (!response.ok) {
@@ -446,7 +474,7 @@ export default function CareCirclePage() {
     event: React.FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault();
-    if (!currentUserId) {
+    if (!currentUserId || !profileId) {
       setEmergencyError('Please sign in again to save this card.');
       return;
     }
@@ -455,6 +483,7 @@ export default function CareCirclePage() {
     setEmergencyError(null);
 
     const payload = {
+      profile_id: profileId,
       user_id: currentUserId,
       name: emergencyCard.name || null,
       age: emergencyCard.age ? Number(emergencyCard.age) : null,
@@ -478,7 +507,7 @@ export default function CareCirclePage() {
 
     const { error } = await supabase
       .from('care_emergency_cards')
-      .upsert(payload, { onConflict: 'user_id' });
+      .upsert(payload, { onConflict: 'profile_id' });
 
     if (error) {
       setEmergencyError('Unable to save the emergency card details.');
@@ -488,15 +517,15 @@ export default function CareCirclePage() {
 
     setIsSavingEmergency(false);
     setIsEmergencyEditing(false);
-    await loadEmergencyCard(currentUserId);
+    await loadEmergencyCard(profileId);
   };
 
   const handleViewOwnEmergencyCard = async () => {
-    if (!currentUserId) {
+    if (!currentUserId || !profileId) {
       return;
     }
     const ownerName = circleData.ownerName || 'Your';
-    const isViewingOwn = emergencyCardOwner?.id === currentUserId;
+    const isViewingOwn = emergencyCardOwner?.userId === currentUserId;
 
     if (isEmergencyOpen && isViewingOwn) {
       setIsEmergencyOpen(false);
@@ -505,15 +534,22 @@ export default function CareCirclePage() {
 
     setIsEmergencyOpen(true);
     setIsEmergencyEditing(false);
-    setEmergencyCardOwner({ id: currentUserId, name: ownerName });
-    await loadEmergencyCard(currentUserId);
+    setEmergencyCardOwner({ userId: currentUserId, profileId, name: ownerName });
+    await loadEmergencyCard(profileId);
   };
 
   const handleViewMemberEmergencyCard = async (member: CareCircleMember) => {
+    if (!member.memberProfileId) {
+      return;
+    }
     setIsEmergencyOpen(true);
     setIsEmergencyEditing(false);
-    setEmergencyCardOwner({ id: member.id, name: member.name });
-    await loadEmergencyCard(member.id);
+    setEmergencyCardOwner({
+      userId: member.id,
+      profileId: member.memberProfileId,
+      name: member.name,
+    });
+    await loadEmergencyCard(member.memberProfileId);
   };
 
   const photoIdLabel = useMemo(() => {
@@ -537,15 +573,15 @@ export default function CareCirclePage() {
   }, [emergencyCard.insurance_last4]);
 
   const isViewingExternalCard =
-    emergencyCardOwner?.id &&
+    emergencyCardOwner?.userId &&
     currentUserId &&
-    emergencyCardOwner.id !== currentUserId;
+    emergencyCardOwner.userId !== currentUserId;
 
   const emergencyCardOwnerLabel = useMemo(() => {
     if (!emergencyCardOwner?.name) {
       return null;
     }
-    if (emergencyCardOwner.id === currentUserId) {
+    if (emergencyCardOwner.userId === currentUserId) {
       return 'your';
     }
     return `${emergencyCardOwner.name}'s`;

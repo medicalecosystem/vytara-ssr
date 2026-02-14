@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 
 type InvitePayload = {
   contact?: string;
+  profileId?: string;
 };
 
 const normalizeContact = (value: string) => value.replace(/[^\d+]/g, '');
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
 
   const payload = (await request.json()) as InvitePayload;
   const contact = payload.contact?.trim();
+  const requestedProfileId = payload.profileId?.trim();
 
   if (!contact) {
     return NextResponse.json({ message: 'Contact is required.' }, { status: 400 });
@@ -98,6 +100,71 @@ export async function POST(request: Request) {
       auth: { persistSession: false },
     }
   );
+
+  // Resolve active profile: requested profile if provided, else current user's primary profile.
+  let profileId = requestedProfileId ?? null;
+  if (profileId) {
+    let ownsProfile = false;
+    const { data: ownedByAuth, error: ownedByAuthError } = await adminClient
+      .from('profiles')
+      .select('id')
+      .eq('id', profileId)
+      .eq('auth_id', user.id)
+      .maybeSingle();
+
+    if (!ownedByAuthError && ownedByAuth?.id) {
+      ownsProfile = true;
+    }
+
+    if (!ownsProfile) {
+      const { data: ownedByUser, error: ownedByUserError } = await adminClient
+        .from('profiles')
+        .select('id')
+        .eq('id', profileId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (ownedByUserError && ownedByUserError.code !== 'PGRST116') {
+        return NextResponse.json({ message: ownedByUserError.message }, { status: 500 });
+      }
+
+      if (ownedByUser?.id) {
+        ownsProfile = true;
+      }
+    }
+
+    if (!ownsProfile) {
+      return NextResponse.json({ message: 'Invalid profile selection.' }, { status: 403 });
+    }
+  } else {
+    const { data: primaryByAuth } = await adminClient
+      .from('profiles')
+      .select('id')
+      .eq('auth_id', user.id)
+      .eq('is_primary', true)
+      .maybeSingle();
+
+    profileId = primaryByAuth?.id ?? null;
+
+    if (!profileId) {
+      const { data: primaryByUser, error: primaryByUserError } = await adminClient
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('is_primary', true)
+        .maybeSingle();
+
+      if (primaryByUserError && primaryByUserError.code !== 'PGRST116') {
+        return NextResponse.json({ message: primaryByUserError.message }, { status: 500 });
+      }
+
+      profileId = primaryByUser?.id ?? null;
+    }
+
+    if (!profileId) {
+      return NextResponse.json({ message: 'No profile available for this account.' }, { status: 400 });
+    }
+  }
 
   let recipientId: string | null = null;
 
@@ -122,19 +189,50 @@ export async function POST(request: Request) {
       variants.add(normalized.replace(/^\+/, ''));
     }
 
-    const { data: people, error: personalError } = await adminClient
-      .from('personal')
-      .select('id')
-      .in('phone', Array.from(variants));
+    const preferredProfilesLookup = await adminClient
+      .from('profiles')
+      .select('auth_id, user_id, is_primary, created_at')
+      .in('phone', Array.from(variants))
+      .order('is_primary', { ascending: false })
+      .order('created_at', { ascending: true });
 
-    if (personalError) {
+    const missingAuthColumn =
+      preferredProfilesLookup.error?.code === 'PGRST204' ||
+      preferredProfilesLookup.error?.message?.toLowerCase().includes('auth_id');
+
+    let profileRows:
+      | Array<{ auth_id?: string | null; user_id?: string | null; is_primary?: boolean | null; created_at?: string | null }>
+      | null = null;
+
+    if (!preferredProfilesLookup.error) {
+      profileRows = preferredProfilesLookup.data;
+    } else if (missingAuthColumn) {
+      const legacyProfilesLookup = await adminClient
+        .from('profiles')
+        .select('user_id, is_primary, created_at')
+        .in('phone', Array.from(variants))
+        .order('is_primary', { ascending: false })
+        .order('created_at', { ascending: true });
+      if (legacyProfilesLookup.error) {
+        return NextResponse.json(
+          { message: legacyProfilesLookup.error.message },
+          { status: 500 }
+        );
+      }
+      profileRows = legacyProfilesLookup.data as Array<{
+        user_id?: string | null;
+        is_primary?: boolean | null;
+        created_at?: string | null;
+      }>;
+    } else {
       return NextResponse.json(
-        { message: personalError.message },
+        { message: preferredProfilesLookup.error.message },
         { status: 500 }
       );
     }
 
-    recipientId = people?.[0]?.id ?? null;
+    const preferredProfile = profileRows?.[0] ?? null;
+    recipientId = preferredProfile?.auth_id ?? preferredProfile?.user_id ?? null;
   }
 
   if (!recipientId) {
@@ -148,9 +246,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'You cannot invite yourself.' }, { status: 400 });
   }
 
+  if (!profileId) {
+    return NextResponse.json({ message: 'No profile available for this account.' }, { status: 400 });
+  }
+
   const { error: inviteError } = await adminClient.from('care_circle_links').insert({
     requester_id: user.id,
     recipient_id: recipientId,
+    profile_id: profileId,
   });
 
   if (inviteError) {

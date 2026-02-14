@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
@@ -38,6 +39,16 @@ export async function GET() {
     if (!session?.user) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
+
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return NextResponse.json({ message: 'Service role key is missing.' }, { status: 500 });
+    }
+
+    const adminClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      { auth: { persistSession: false } }
+    );
 
     const { data: outgoingLinks, error: outgoingError } = await supabase
       .from('family_links')
@@ -89,14 +100,40 @@ export async function GET() {
       if (link.requester_id) displayIds.add(link.requester_id);
     });
 
-    const { data: personalRows } = await supabase
-      .from('personal')
-      .select('id, display_name')
-      .in('id', Array.from(displayIds));
+    const { data: profileRows } = await adminClient
+      .from('profiles')
+      .select('user_id, display_name, name, is_primary, created_at')
+      .in('user_id', Array.from(displayIds));
+
+    const parseDate = (value: string | null) => {
+      if (!value) return Number.MAX_SAFE_INTEGER;
+      const ts = Date.parse(value);
+      return Number.isFinite(ts) ? ts : Number.MAX_SAFE_INTEGER;
+    };
+
+    const profileRowsByUserId = new Map<
+      string,
+      Array<{ display_name: string | null; name: string | null; is_primary: boolean | null; created_at: string | null }>
+    >();
+    (profileRows || []).forEach((row) => {
+      const existing = profileRowsByUserId.get(row.user_id) ?? [];
+      existing.push({
+        display_name: row.display_name ?? null,
+        name: row.name ?? null,
+        is_primary: row.is_primary ?? null,
+        created_at: row.created_at ?? null,
+      });
+      profileRowsByUserId.set(row.user_id, existing);
+    });
 
     const displayNameById = new Map<string, string>();
-    (personalRows || []).forEach((row) => {
-      displayNameById.set(row.id, row.display_name || 'Unknown');
+    profileRowsByUserId.forEach((rows, userId) => {
+      const preferred = [...rows].sort((a, b) => {
+        const primaryDiff = Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary));
+        if (primaryDiff !== 0) return primaryDiff;
+        return parseDate(a.created_at) - parseDate(b.created_at);
+      })[0];
+      displayNameById.set(userId, preferred?.display_name?.trim() || preferred?.name?.trim() || 'Unknown');
     });
 
     const outgoing = (outgoingLinks || []).map((link: LinkRow) => ({

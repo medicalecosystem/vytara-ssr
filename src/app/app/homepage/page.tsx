@@ -8,6 +8,7 @@ import { MedicalTeamModal, type Doctor } from "@/components/MedicalTeamModal";
 import { MedicationsModal, type Medication } from "@/components/MedicationsModal";
 import { MedicalSummaryModal } from "@/components/MedicalSummaryModal";
 import { NotificationsPanel } from "@/components/NotificationsPanel";
+import { useAppProfile } from "@/components/AppProfileProvider";
 import {
   Calendar,
   Users,
@@ -36,12 +37,12 @@ type CacheEntry<T> = {
 };
 
 const HOME_CACHE_TTL_MS = 5 * 60 * 1000;
-const homeCacheKey = (userId: string, key: string) => `vytara:home:${userId}:${key}`;
+const homeCacheKey = (cacheOwnerId: string, key: string) => `vytara:home:${cacheOwnerId}:${key}`;
 
-const readHomeCache = <T,>(userId: string, key: string): T | null => {
-  if (!userId || typeof window === "undefined") return null;
+const readHomeCache = <T,>(cacheOwnerId: string, key: string): T | null => {
+  if (!cacheOwnerId || typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(homeCacheKey(userId, key));
+    const raw = window.localStorage.getItem(homeCacheKey(cacheOwnerId, key));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CacheEntry<T>;
     if (!parsed?.ts) return null;
@@ -52,10 +53,10 @@ const readHomeCache = <T,>(userId: string, key: string): T | null => {
   }
 };
 
-const writeHomeCache = <T,>(userId: string, key: string, value: T) => {
-  if (!userId || typeof window === "undefined") return;
+const writeHomeCache = <T,>(cacheOwnerId: string, key: string, value: T) => {
+  if (!cacheOwnerId || typeof window === "undefined") return;
   const entry: CacheEntry<T> = { ts: Date.now(), value };
-  window.localStorage.setItem(homeCacheKey(userId, key), JSON.stringify(entry));
+  window.localStorage.setItem(homeCacheKey(cacheOwnerId, key), JSON.stringify(entry));
 };
 
 /* =======================
@@ -63,6 +64,7 @@ const writeHomeCache = <T,>(userId: string, key: string, value: T) => {
 ======================= */
 
 export default function HomePage() {
+  const { selectedProfile } = useAppProfile();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [userId, setUserId] = useState<string>("");
@@ -75,6 +77,8 @@ export default function HomePage() {
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [greeting, setGreeting] = useState("Good Morning");
+  const profileId = selectedProfile?.id ?? "";
+  const cacheOwnerId = profileId || userId;
 
   useEffect(() => {
     const updateGreeting = () => {
@@ -116,45 +120,42 @@ export default function HomePage() {
   }, []);
 
   /* =======================
-     FETCH USER NAME FROM PROFILES
+     PROFILE DISPLAY NAME
   ======================= */
 
   useEffect(() => {
-    async function fetchProfileData() {
-      if (userId) {
-        const cachedDisplayName = readHomeCache<string>(userId, "display_name");
-        if (cachedDisplayName) {
-          setName(cachedDisplayName);
-        }
+    if (!cacheOwnerId) return;
 
-        const { data, error } = await supabase
-          .from("personal")
-          .select("display_name")
-          .eq("id", userId)
-          .single();
-
-        if (data?.display_name) {
-          setName(data.display_name || "");
-          writeHomeCache(userId, "display_name", data.display_name || "");
-        }
-
-        if (error) {
-          console.log("Error fetching profile: ", error);
-        }
-      }
+    const cachedDisplayName = readHomeCache<string>(cacheOwnerId, "display_name");
+    if (cachedDisplayName) {
+      setName(cachedDisplayName);
     }
-    fetchProfileData();
-  }, [userId]);
+
+    const resolvedName =
+      selectedProfile?.display_name?.trim() ||
+      selectedProfile?.name?.trim() ||
+      "";
+    if (resolvedName) {
+      setName(resolvedName);
+      writeHomeCache(cacheOwnerId, "display_name", resolvedName);
+      return;
+    }
+
+    setName("");
+  }, [cacheOwnerId, selectedProfile?.display_name, selectedProfile?.name]);
 
   /* =======================
      FETCH EMERGENCY CONTACTS FROM DB (JSONB)
   ======================= */
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !profileId) {
+      setEmergencyContacts([]);
+      return;
+    }
 
     const fetchEmergencyContacts = async () => {
-      const cachedContacts = readHomeCache<EmergencyContact[]>(userId, "emergency_contacts");
+      const cachedContacts = readHomeCache<EmergencyContact[]>(cacheOwnerId, "emergency_contacts");
       if (cachedContacts) {
         setEmergencyContacts(cachedContacts);
       }
@@ -162,8 +163,8 @@ export default function HomePage() {
       const { data, error } = await supabase
         .from("user_emergency_contacts")
         .select("contacts")
-        .eq("user_id", userId)
-        .single();
+        .eq("profile_id", profileId)
+        .maybeSingle();
 
       if (error) {
         if (error.code === "PGRST116") {
@@ -176,21 +177,24 @@ export default function HomePage() {
       }
 
       setEmergencyContacts(data?.contacts || []);
-      writeHomeCache(userId, "emergency_contacts", data?.contacts || []);
+      writeHomeCache(cacheOwnerId, "emergency_contacts", data?.contacts || []);
     };
 
     fetchEmergencyContacts();
-  }, [userId]);
+  }, [cacheOwnerId, profileId, userId]);
 
   /* =======================
      FETCH MEDICAL TEAM FROM DB (JSONB)
   ======================= */
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !profileId) {
+      setMedicalTeam([]);
+      return;
+    }
 
     async function fetchMedicalTeam() {
-      const cachedTeam = readHomeCache<Doctor[]>(userId, "medical_team");
+      const cachedTeam = readHomeCache<Doctor[]>(cacheOwnerId, "medical_team");
       if (cachedTeam) {
         setMedicalTeam(cachedTeam);
       }
@@ -198,8 +202,8 @@ export default function HomePage() {
       const { data, error } = await supabase
         .from("user_medical_team")
         .select("doctors")
-        .eq("user_id", userId)
-        .single();
+        .eq("profile_id", profileId)
+        .maybeSingle();
 
       if (error) {
         if (error.code !== "PGRST116") {
@@ -210,21 +214,24 @@ export default function HomePage() {
       }
 
       setMedicalTeam(data?.doctors || []);
-      writeHomeCache(userId, "medical_team", data?.doctors || []);
+      writeHomeCache(cacheOwnerId, "medical_team", data?.doctors || []);
     }
 
     fetchMedicalTeam();
-  }, [userId]);
+  }, [cacheOwnerId, profileId, userId]);
 
   /* =======================
      FETCH MEDICATIONS FROM DB (JSONB)
   ======================= */
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !profileId) {
+      setMedications([]);
+      return;
+    }
 
     async function fetchMedications() {
-      const cachedMeds = readHomeCache<Medication[]>(userId, "medications");
+      const cachedMeds = readHomeCache<Medication[]>(cacheOwnerId, "medications");
       if (cachedMeds) {
         setMedications(cachedMeds);
       }
@@ -232,8 +239,8 @@ export default function HomePage() {
       const { data, error } = await supabase
         .from("user_medications")
         .select("medications")
-        .eq("user_id", userId)
-        .single();
+        .eq("profile_id", profileId)
+        .maybeSingle();
 
       if (error) {
         if (error.code !== "PGRST116") {
@@ -244,21 +251,24 @@ export default function HomePage() {
       }
 
       setMedications(data?.medications || []);
-      writeHomeCache(userId, "medications", data?.medications || []);
+      writeHomeCache(cacheOwnerId, "medications", data?.medications || []);
     }
 
     fetchMedications();
-  }, [userId]);
+  }, [cacheOwnerId, profileId, userId]);
 
   /* =======================
      FETCH APPOINTMENTS FROM DB (JSONB)
   ======================= */
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !profileId) {
+      setAppointments([]);
+      return;
+    }
 
     async function fetchAppointments() {
-      const cachedAppointments = readHomeCache<Appointment[]>(userId, "appointments");
+      const cachedAppointments = readHomeCache<Appointment[]>(cacheOwnerId, "appointments");
       if (cachedAppointments) {
         setAppointments(cachedAppointments);
       }
@@ -266,8 +276,8 @@ export default function HomePage() {
       const { data, error } = await supabase
         .from("user_appointments")
         .select("appointments")
-        .eq("user_id", userId)
-        .single();
+        .eq("profile_id", profileId)
+        .maybeSingle();
 
       if (error) {
         if (error.code !== "PGRST116") {
@@ -278,18 +288,18 @@ export default function HomePage() {
       }
 
       setAppointments(data?.appointments || []);
-      writeHomeCache(userId, "appointments", data?.appointments || []);
+      writeHomeCache(cacheOwnerId, "appointments", data?.appointments || []);
     }
 
     fetchAppointments();
-  }, [userId]);
+  }, [cacheOwnerId, profileId, userId]);
 
   /* =======================
      APPOINTMENTS: ADD / UPDATE / DELETE
   ======================= */
 
   const handleAddAppointment = async (appointment: Appointment) => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
 
     let updatedAppointments: Appointment[];
 
@@ -305,11 +315,15 @@ export default function HomePage() {
 
     const { error } = await supabase
       .from("user_appointments")
-      .upsert({
-        user_id: userId,
-        appointments: updatedAppointments,
-        updated_at: new Date().toISOString(),
-      });
+      .upsert(
+        {
+          profile_id: profileId,
+          user_id: userId,
+          appointments: updatedAppointments,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "profile_id" }
+      );
 
     if (error) {
       console.error("Save appointment error:", error);
@@ -318,11 +332,11 @@ export default function HomePage() {
     }
 
     setAppointments(updatedAppointments);
-    writeHomeCache(userId, "appointments", updatedAppointments);
+    writeHomeCache(cacheOwnerId, "appointments", updatedAppointments);
   };
 
   const handleDeleteAppointment = async (id: string) => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
 
     const confirmed = confirm("Delete this appointment?");
     if (!confirmed) return;
@@ -331,11 +345,15 @@ export default function HomePage() {
 
     const { error } = await supabase
       .from("user_appointments")
-      .upsert({
-        user_id: userId,
-        appointments: updatedAppointments,
-        updated_at: new Date().toISOString(),
-      });
+      .upsert(
+        {
+          profile_id: profileId,
+          user_id: userId,
+          appointments: updatedAppointments,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "profile_id" }
+      );
 
     if (error) {
       console.error("Delete appointment error:", error);
@@ -344,7 +362,7 @@ export default function HomePage() {
     }
 
     setAppointments(updatedAppointments);
-    writeHomeCache(userId, "appointments", updatedAppointments);
+    writeHomeCache(cacheOwnerId, "appointments", updatedAppointments);
   };
 
   /* =======================
@@ -352,7 +370,7 @@ export default function HomePage() {
   ======================= */
 
   const addEmergencyContact = async (contact: EmergencyContact) => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
 
     if (!contact.name.trim() || !contact.phone.trim() || !contact.relation.trim()) {
       alert("Please fill Name, Phone and Relation.");
@@ -370,11 +388,15 @@ export default function HomePage() {
 
     const { error } = await supabase
       .from("user_emergency_contacts")
-      .upsert({
-        user_id: userId,
-        contacts: updatedContacts,
-        updated_at: new Date().toISOString(),
-      });
+      .upsert(
+        {
+          profile_id: profileId,
+          user_id: userId,
+          contacts: updatedContacts,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "profile_id" }
+      );
 
     if (error) {
       console.error("Add emergency contact error:", error);
@@ -383,10 +405,11 @@ export default function HomePage() {
     }
 
     setEmergencyContacts(updatedContacts);
+    writeHomeCache(cacheOwnerId, "emergency_contacts", updatedContacts);
   };
 
   const deleteEmergencyContact = async (id: string) => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
 
     const confirmed = confirm("Delete this emergency contact?");
     if (!confirmed) return;
@@ -395,11 +418,15 @@ export default function HomePage() {
 
     const { error } = await supabase
       .from("user_emergency_contacts")
-      .upsert({
-        user_id: userId,
-        contacts: updatedContacts,
-        updated_at: new Date().toISOString(),
-      });
+      .upsert(
+        {
+          profile_id: profileId,
+          user_id: userId,
+          contacts: updatedContacts,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "profile_id" }
+      );
 
     if (error) {
       console.error("Delete emergency contact error:", error);
@@ -408,6 +435,7 @@ export default function HomePage() {
     }
 
     setEmergencyContacts(updatedContacts);
+    writeHomeCache(cacheOwnerId, "emergency_contacts", updatedContacts);
   };
 
   /* =======================
@@ -415,7 +443,7 @@ export default function HomePage() {
   ======================= */
 
   const addDoctor = async (doctor: Doctor) => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
 
     if (!doctor.name.trim() || !doctor.number.trim() || !doctor.speciality.trim()) {
       alert("Please fill all fields.");
@@ -433,11 +461,15 @@ export default function HomePage() {
 
     const { error } = await supabase
       .from("user_medical_team")
-      .upsert({
-        user_id: userId,
-        doctors: updatedDoctors,
-        updated_at: new Date().toISOString(),
-      });
+      .upsert(
+        {
+          profile_id: profileId,
+          user_id: userId,
+          doctors: updatedDoctors,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "profile_id" }
+      );
 
     if (error) {
       console.error("Add doctor error:", error);
@@ -446,10 +478,11 @@ export default function HomePage() {
     }
 
     setMedicalTeam(updatedDoctors);
+    writeHomeCache(cacheOwnerId, "medical_team", updatedDoctors);
   };
 
   const updateDoctor = async (doctor: Doctor) => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
 
     if (!doctor.name.trim() || !doctor.number.trim() || !doctor.speciality.trim()) {
       alert("Please fill all fields.");
@@ -462,11 +495,15 @@ export default function HomePage() {
 
     const { error } = await supabase
       .from("user_medical_team")
-      .upsert({
-        user_id: userId,
-        doctors: updatedDoctors,
-        updated_at: new Date().toISOString(),
-      });
+      .upsert(
+        {
+          profile_id: profileId,
+          user_id: userId,
+          doctors: updatedDoctors,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "profile_id" }
+      );
 
     if (error) {
       console.error("Update doctor error:", error);
@@ -475,10 +512,11 @@ export default function HomePage() {
     }
 
     setMedicalTeam(updatedDoctors);
+    writeHomeCache(cacheOwnerId, "medical_team", updatedDoctors);
   };
 
   const deleteDoctor = async (id: string) => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
 
     const confirmed = confirm("Delete this doctor?");
     if (!confirmed) return;
@@ -487,11 +525,15 @@ export default function HomePage() {
 
     const { error } = await supabase
       .from("user_medical_team")
-      .upsert({
-        user_id: userId,
-        doctors: updatedDoctors,
-        updated_at: new Date().toISOString(),
-      });
+      .upsert(
+        {
+          profile_id: profileId,
+          user_id: userId,
+          doctors: updatedDoctors,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "profile_id" }
+      );
 
     if (error) {
       console.error("Delete doctor error:", error);
@@ -500,6 +542,7 @@ export default function HomePage() {
     }
 
     setMedicalTeam(updatedDoctors);
+    writeHomeCache(cacheOwnerId, "medical_team", updatedDoctors);
   };
 
   /* =======================
@@ -507,7 +550,7 @@ export default function HomePage() {
   ======================= */
 
   const addMedication = async (medication: Medication) => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
 
     if (!medication.name.trim() || !medication.dosage.trim() || !medication.frequency.trim()) {
       alert("Please fill Name, Dosage, and Frequency.");
@@ -533,18 +576,20 @@ export default function HomePage() {
         .from("user_medications")
         .upsert(
           {
+            profile_id: profileId,
             user_id: userId,
             medications: updatedMedications,
             updated_at: new Date().toISOString(),
           },
           {
-            onConflict: "user_id",
+            onConflict: "profile_id",
           }
         );
 
       if (error) throw error;
 
       setMedications(updatedMedications);
+      writeHomeCache(cacheOwnerId, "medications", updatedMedications);
     } catch (error: any) {
       console.error("Add medication error:", error);
       alert(`Failed to add medication: ${error.message || "Please try again."}`);
@@ -552,7 +597,7 @@ export default function HomePage() {
   };
 
   const updateMedication = async (medication: Medication) => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
 
     if (!medication.name.trim() || !medication.dosage.trim() || !medication.frequency.trim()) {
       alert("Please fill Name, Dosage, and Frequency.");
@@ -568,18 +613,20 @@ export default function HomePage() {
         .from("user_medications")
         .upsert(
           {
+            profile_id: profileId,
             user_id: userId,
             medications: updatedMedications,
             updated_at: new Date().toISOString(),
           },
           {
-            onConflict: "user_id",
+            onConflict: "profile_id",
           }
         );
 
       if (error) throw error;
 
       setMedications(updatedMedications);
+      writeHomeCache(cacheOwnerId, "medications", updatedMedications);
     } catch (error: any) {
       console.error("Update medication error:", error);
       alert(`Failed to update medication: ${error.message || "Please try again."}`);
@@ -587,7 +634,7 @@ export default function HomePage() {
   };
 
   const deleteMedication = async (id: string) => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
 
     const confirmed = confirm("Delete this medication?");
     if (!confirmed) return;
@@ -599,18 +646,20 @@ export default function HomePage() {
         .from("user_medications")
         .upsert(
           {
+            profile_id: profileId,
             user_id: userId,
             medications: updatedMedications,
             updated_at: new Date().toISOString(),
           },
           {
-            onConflict: "user_id",
+            onConflict: "profile_id",
           }
         );
 
       if (error) throw error;
 
       setMedications(updatedMedications);
+      writeHomeCache(cacheOwnerId, "medications", updatedMedications);
     } catch (error: any) {
       console.error("Delete medication error:", error);
       alert(`Failed to delete medication: ${error.message || "Please try again."}`);
@@ -622,7 +671,7 @@ export default function HomePage() {
   ======================= */
 
   const handleLogDose = async (medicationId: string, taken: boolean) => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
 
     const newLog = {
       medicationId,
@@ -645,18 +694,20 @@ export default function HomePage() {
         .from("user_medications")
         .upsert(
           {
+            profile_id: profileId,
             user_id: userId,
             medications: updatedMedications,
             updated_at: new Date().toISOString(),
           },
           {
-            onConflict: "user_id",
+            onConflict: "profile_id",
           }
         );
 
       if (error) throw error;
 
       setMedications(updatedMedications);
+      writeHomeCache(cacheOwnerId, "medications", updatedMedications);
     } catch (error: any) {
       console.error("Failed to log dose:", error);
       alert(`Failed to log dose: ${error.message || "Please try again."}`);
@@ -752,16 +803,16 @@ export default function HomePage() {
 
             {/* Mobile-only Notification Button (above Get Summary button) */}
             <div className="lg:hidden">
-              <NotificationsPanel userId={userId} appointments={appointments} />
+              <NotificationsPanel userId={userId} profileId={profileId} appointments={appointments} />
             </div>
 
             {/* Action Buttons */}
             <div className="mt-8 flex flex-wrap items-center gap-4">
               <button
                 onClick={() => setIsSummaryModalOpen(true)}
-                disabled={!userId}
+                disabled={!profileId}
                 className={`px-10 py-5 text-lg rounded-2xl font-bold shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl ${
-                  userId
+                  profileId
                     ? "bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer"
                     : "bg-gray-400 cursor-not-allowed text-gray-200"
                 }`}
@@ -799,7 +850,7 @@ export default function HomePage() {
 
           {/* Desktop Notification Panel */}
           <div className="hidden lg:block">
-            <NotificationsPanel userId={userId} appointments={appointments} />
+            <NotificationsPanel userId={userId} profileId={profileId} appointments={appointments} />
           </div>
         </div>
 
@@ -808,6 +859,7 @@ export default function HomePage() {
           <Modal onClose={() => setIsNotificationsOpen(false)}>
             <NotificationsPanel
               userId={userId}
+              profileId={profileId}
               appointments={appointments}
               variant="modal"
             />
@@ -859,7 +911,7 @@ export default function HomePage() {
           isOpen={isSummaryModalOpen}
           onClose={() => setIsSummaryModalOpen(false)}
           folderType="reports"
-          userId={userId}
+          userId={profileId}
         />
 
         {/* CARDS */}

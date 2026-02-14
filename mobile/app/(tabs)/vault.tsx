@@ -33,7 +33,7 @@ import Animated, {
 
 import { Text } from '@/components/Themed';
 import { Screen } from '@/components/Screen';
-import { useAuth } from '@/hooks/useAuth';
+import { useProfile } from '@/hooks/useProfile';
 import { vaultApi, type VaultFile } from '@/api/modules/vault';
 import type { MedicalFolder } from '@/constants/medicalFolders';
 
@@ -248,7 +248,8 @@ const SkeletonItem = ({ index }: { index: number }) => {
 };
 
 export default function VaultScreen() {
-  const { user } = useAuth();
+  const { selectedProfile } = useProfile();
+  const storageOwnerId = selectedProfile?.id ?? '';
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [files, setFiles] = useState<VaultItem[]>([]);
@@ -292,7 +293,7 @@ export default function VaultScreen() {
   const headerHeight = insets.top + 0.8;
 
   const fetchCounts = useCallback(async () => {
-    if (!user?.id) return;
+    if (!storageOwnerId) return;
     const folders: MedicalFolder[] = ['reports', 'prescriptions', 'insurance', 'bills'];
     const nextCounts: Record<MedicalFolder, number> = {
       reports: 0,
@@ -303,17 +304,17 @@ export default function VaultScreen() {
 
     await Promise.all(
       folders.map(async (folder) => {
-        const { data } = await vaultApi.listFiles(user.id, folder);
+        const { data } = await vaultApi.listFiles(storageOwnerId, folder);
         nextCounts[folder] = data?.length ?? 0;
       })
     );
 
     setCounts(nextCounts);
-  }, [user?.id]);
+  }, [storageOwnerId]);
 
   const fetchFiles = useCallback(
     async (category: CategoryKey, showSpinner = true) => {
-      if (!user?.id) return;
+      if (!storageOwnerId) return;
       if (showSpinner) setLoading(true);
 
       const folderMap: Record<CategoryKey, MedicalFolder[]> = {
@@ -327,7 +328,7 @@ export default function VaultScreen() {
       const results: VaultItem[] = [];
       await Promise.all(
         folderMap[category].map(async (folder) => {
-          const { data } = await vaultApi.listFiles(user.id, folder);
+          const { data } = await vaultApi.listFiles(storageOwnerId, folder);
           if (data?.length) {
             results.push(
               ...data.map((item) => ({
@@ -347,21 +348,32 @@ export default function VaultScreen() {
       setFiles(results);
       if (showSpinner) setLoading(false);
     },
-    [user?.id]
+    [storageOwnerId]
   );
 
   const refreshAll = useCallback(async () => {
-    if (!user?.id) return;
+    if (!storageOwnerId) return;
     setRefreshing(true);
     await Promise.all([fetchFiles(activeCategory, false), fetchCounts()]);
     setRefreshing(false);
-  }, [activeCategory, fetchCounts, fetchFiles, user?.id]);
+  }, [activeCategory, fetchCounts, fetchFiles, storageOwnerId]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!storageOwnerId) return;
     fetchFiles(activeCategory);
     fetchCounts();
-  }, [activeCategory, fetchCounts, fetchFiles, user?.id]);
+  }, [activeCategory, fetchCounts, fetchFiles, storageOwnerId]);
+
+  useEffect(() => {
+    if (storageOwnerId) return;
+    setFiles([]);
+    setCounts({
+      reports: 0,
+      prescriptions: 0,
+      insurance: 0,
+      bills: 0,
+    });
+  }, [storageOwnerId]);
 
   const visibleFiles = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -428,33 +440,40 @@ export default function VaultScreen() {
   };
 
   const handleUpload = async () => {
-    if (!user?.id || !uploadDraft.file) return;
+    if (!storageOwnerId || !uploadDraft.file) return;
     const folder = uploadDraft.category === 'all' ? 'reports' : uploadDraft.category;
     const extension = getExtension(uploadDraft.file.name);
     const baseName = uploadDraft.fileName.trim() || stripExtension(uploadDraft.file.name) || 'untitled';
     const finalName = extension ? `${baseName}.${extension}` : baseName;
 
     setUploading(true);
-    const { error } = await vaultApi.uploadFile(user.id, folder, uploadDraft.file, finalName);
-    setUploading(false);
+    try {
+      const { error } = await vaultApi.uploadFile(storageOwnerId, folder, uploadDraft.file, finalName);
+      if (error) {
+        Alert.alert('Upload failed', error.message || 'Unable to upload file.');
+        return;
+      }
 
-    if (error) {
-      Alert.alert('Upload failed', error.message || 'Unable to upload file.');
-      return;
+      setUploadModalOpen(false);
+      setUploadDraft({ file: null, category: 'reports', fileName: '' });
+      await refreshAll();
+    } catch (error) {
+      Alert.alert(
+        'Upload failed',
+        error instanceof Error ? error.message : 'Unable to upload file.'
+      );
+    } finally {
+      setUploading(false);
     }
-
-    setUploadModalOpen(false);
-    setUploadDraft({ file: null, category: 'reports', fileName: '' });
-    await refreshAll();
   };
 
   const handlePreview = async (item: VaultItem) => {
-    if (!user?.id) return;
+    if (!storageOwnerId) return;
     setPreviewItem(item);
     setPreviewUrl(null);
     setPreviewError(null);
     setPreviewLoading(true);
-    const { data, error } = await vaultApi.getSignedUrl(`${user.id}/${item.folder}/${item.name}`);
+    const { data, error } = await vaultApi.getSignedUrl(`${storageOwnerId}/${item.folder}/${item.name}`);
     if (error || !data?.signedUrl) {
       setPreviewError(error?.message || 'Unable to open preview.');
       setPreviewLoading(false);
@@ -465,8 +484,11 @@ export default function VaultScreen() {
   };
 
   const handleDownload = async (item: VaultItem) => {
-    if (!user?.id) return;
-    const { data, error } = await vaultApi.getSignedUrl(`${user.id}/${item.folder}/${item.name}`, 60 * 10);
+    if (!storageOwnerId) return;
+    const { data, error } = await vaultApi.getSignedUrl(
+      `${storageOwnerId}/${item.folder}/${item.name}`,
+      60 * 10
+    );
     if (error || !data?.signedUrl) {
       Alert.alert('Download failed', error?.message || 'Unable to download file.');
       return;
@@ -528,7 +550,7 @@ export default function VaultScreen() {
   };
 
   const handleRename = async () => {
-    if (!user?.id || !renameFile) return;
+    if (!storageOwnerId || !renameFile) return;
     const rawName = renameValue.trim();
     if (!rawName) {
       setRenameFile(null);
@@ -544,8 +566,8 @@ export default function VaultScreen() {
       setRenameFile(null);
       return;
     }
-    const fromPath = `${user.id}/${renameFile.folder}/${renameFile.name}`;
-    const toPath = `${user.id}/${renameFile.folder}/${nextName}`;
+    const fromPath = `${storageOwnerId}/${renameFile.folder}/${renameFile.name}`;
+    const toPath = `${storageOwnerId}/${renameFile.folder}/${nextName}`;
     const { error } = await vaultApi.renameFile(fromPath, toPath);
     if (error) {
       Alert.alert('Rename failed', error.message || 'Unable to rename file.');
@@ -563,14 +585,14 @@ export default function VaultScreen() {
   };
 
   const handleDelete = async (item: VaultItem) => {
-    if (!user?.id) return;
+    if (!storageOwnerId) return;
     Alert.alert('Delete document?', `Delete "${item.name}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          const { error } = await vaultApi.deleteFile(`${user.id}/${item.folder}/${item.name}`);
+          const { error } = await vaultApi.deleteFile(`${storageOwnerId}/${item.folder}/${item.name}`);
           if (error) {
             Alert.alert('Delete failed', error.message || 'Unable to delete file.');
             return;
@@ -897,7 +919,13 @@ export default function VaultScreen() {
                 <Pdf
                   source={{ uri: previewUrl }}
                   style={styles.previewPdf}
-                  onError={(error) => setPreviewError(error?.message || 'Unable to load PDF.')}
+                  onError={(error) => {
+                    const message =
+                      error && typeof error === 'object' && 'message' in error
+                        ? String((error as { message?: unknown }).message ?? '')
+                        : '';
+                    setPreviewError(message || 'Unable to load PDF.');
+                  }}
                 />
               ) : null}
 

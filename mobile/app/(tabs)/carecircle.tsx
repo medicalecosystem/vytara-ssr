@@ -32,6 +32,7 @@ import Animated, {
 import { Text } from '@/components/Themed';
 import { Screen } from '@/components/Screen';
 import { useAuth } from '@/hooks/useAuth';
+import { useProfile } from '@/hooks/useProfile';
 import { careCircleApi } from '@/api/modules/carecircle';
 import {
   COUNTRIES,
@@ -47,6 +48,8 @@ type CareCircleStatus = 'pending' | 'accepted' | 'declined';
 type CareCircleLink = {
   id: string;
   memberId: string;
+  memberProfileId?: string | null;
+  profileId?: string | null;
   status: CareCircleStatus;
   displayName: string;
   createdAt: string;
@@ -179,6 +182,8 @@ const SkeletonMemberCard = ({ index }: { index: number }) => {
 
 export default function CareCircleScreen() {
   const { user } = useAuth();
+  const { selectedProfile } = useProfile();
+  const profileId = selectedProfile?.id ?? '';
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const [displayName, setDisplayName] = useState('');
@@ -194,7 +199,8 @@ export default function CareCircleScreen() {
   const [inviting, setInviting] = useState(false);
   const [isEmergencyOpen, setIsEmergencyOpen] = useState(false);
   const [emergencyCardOwner, setEmergencyCardOwner] = useState<{
-    id: string;
+    userId: string;
+    profileId: string | null;
     name: string;
   } | null>(null);
   const [emergencyCard, setEmergencyCard] = useState<EmergencyCardData>(emptyEmergencyCard);
@@ -211,25 +217,26 @@ export default function CareCircleScreen() {
 
   useEffect(() => {
     const loadDisplayName = async () => {
-      if (!user?.id) return;
+      if (!user?.id || !profileId) return;
+      // Load display name from selected profile instead of personal table
       const { data } = await supabase
-        .from('personal')
+        .from('profiles')
         .select('display_name')
-        .eq('id', user.id)
+        .eq('id', profileId)
         .maybeSingle();
       if (data?.display_name) {
         setDisplayName(data.display_name);
       }
     };
     loadDisplayName();
-  }, [user?.id]);
+  }, [user?.id, profileId]);
 
   const fetchLinks = useCallback(async (showSpinner = true) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
     if (showSpinner) setLoading(true);
 
     try {
-      const data = await careCircleApi.getLinks();
+      const data = await careCircleApi.getLinks(profileId);
       setOutgoingLinks(data.outgoing || []);
       setIncomingLinks(data.incoming || []);
     } catch (err: any) {
@@ -246,14 +253,14 @@ export default function CareCircleScreen() {
     } finally {
       if (showSpinner) setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, profileId]);
 
   const refreshAll = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
     setRefreshing(true);
     await fetchLinks(false);
     setRefreshing(false);
-  }, [fetchLinks, user?.id]);
+  }, [fetchLinks, user?.id, profileId]);
 
   useEffect(() => {
     fetchLinks();
@@ -265,9 +272,16 @@ export default function CareCircleScreen() {
     }, [fetchLinks])
   );
 
-  const loadEmergencyCard = useCallback(async (userId: string) => {
+  const loadEmergencyCard = useCallback(async (targetProfileId: string) => {
     setIsEmergencyLoading(true);
     setEmergencyError(null);
+
+    if (!targetProfileId) {
+      setEmergencyCard(emptyEmergencyCard);
+      setEmergencyError('No profile found for this member.');
+      setIsEmergencyLoading(false);
+      return;
+    }
 
     const { data, error } = await supabase
       .from('care_emergency_cards')
@@ -292,7 +306,7 @@ export default function CareCircleScreen() {
           'emergency_instructions',
         ].join(',')
       )
-      .eq('user_id', userId)
+      .eq('profile_id', targetProfileId)
       .maybeSingle();
 
     if (error && error.code !== 'PGRST116') {
@@ -307,53 +321,63 @@ export default function CareCircleScreen() {
       return;
     }
 
+    const card = data as Partial<EmergencyCardData> & { age?: number | null };
+
     setEmergencyCard({
-      name: data.name ?? '',
-      age: data.age ? String(data.age) : '',
-      date_of_birth: data.date_of_birth ?? '',
-      photo_id_on_file: data.photo_id_on_file ?? false,
-      photo_id_last4: data.photo_id_last4 ?? '',
-      emergency_contact_name: data.emergency_contact_name ?? '',
-      emergency_contact_phone: data.emergency_contact_phone ?? '',
-      preferred_hospital: data.preferred_hospital ?? '',
-      insurer_name: data.insurer_name ?? '',
-      plan_type: data.plan_type ?? '',
-      tpa_helpline: data.tpa_helpline ?? '',
-      insurance_last4: data.insurance_last4 ?? '',
-      blood_group: data.blood_group ?? '',
-      critical_allergies: data.critical_allergies ?? '',
-      chronic_conditions: data.chronic_conditions ?? '',
-      current_meds: data.current_meds ?? '',
-      emergency_instructions: data.emergency_instructions ?? '',
+      name: card.name ?? '',
+      age: card.age ? String(card.age) : '',
+      date_of_birth: card.date_of_birth ?? '',
+      photo_id_on_file: card.photo_id_on_file ?? false,
+      photo_id_last4: card.photo_id_last4 ?? '',
+      emergency_contact_name: card.emergency_contact_name ?? '',
+      emergency_contact_phone: card.emergency_contact_phone ?? '',
+      preferred_hospital: card.preferred_hospital ?? '',
+      insurer_name: card.insurer_name ?? '',
+      plan_type: card.plan_type ?? '',
+      tpa_helpline: card.tpa_helpline ?? '',
+      insurance_last4: card.insurance_last4 ?? '',
+      blood_group: card.blood_group ?? '',
+      critical_allergies: card.critical_allergies ?? '',
+      chronic_conditions: card.chronic_conditions ?? '',
+      current_meds: card.current_meds ?? '',
+      emergency_instructions: card.emergency_instructions ?? '',
     });
 
     setIsEmergencyLoading(false);
   }, []);
 
   const handleViewOwnEmergencyCard = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
     setIsEmergencyOpen(true);
     setIsEmergencyEditing(false);
     const ownerName = displayName || user?.phone || 'Your';
-    setEmergencyCardOwner({ id: user.id, name: ownerName });
-    await loadEmergencyCard(user.id);
-  }, [displayName, loadEmergencyCard, user?.id, user?.phone]);
+    setEmergencyCardOwner({ userId: user.id, profileId, name: ownerName });
+    await loadEmergencyCard(profileId);
+  }, [displayName, loadEmergencyCard, profileId, user?.id, user?.phone]);
 
   const handleViewMemberEmergencyCard = useCallback(
     async (member: CareCircleLink) => {
-      if (!member.memberId) {
+      if (!member.memberId || !member.memberProfileId) {
         Alert.alert('Unavailable', 'Unable to open this emergency card right now.');
         return;
       }
       setIsEmergencyOpen(true);
       setIsEmergencyEditing(false);
-      setEmergencyCardOwner({ id: member.memberId, name: member.displayName });
-      await loadEmergencyCard(member.memberId);
+      setEmergencyCardOwner({
+        userId: member.memberId,
+        profileId: member.memberProfileId,
+        name: member.displayName,
+      });
+      await loadEmergencyCard(member.memberProfileId);
     },
     [loadEmergencyCard]
   );
 
   const handleInvite = async () => {
+    if (!profileId) {
+      Alert.alert('Profile Required', 'Please select a profile before inviting members.');
+      return;
+    }
     const digitsOnly = inviteContact.replace(/\D/g, '');
     if (!digitsOnly) {
       Alert.alert('Invalid Input', 'Please enter a phone number.');
@@ -374,7 +398,7 @@ export default function CareCircleScreen() {
     const fullContact = `${inviteCountry.dialCode}${digitsOnly}`;
     setInviting(true);
     try {
-      await careCircleApi.inviteByContact(fullContact);
+      await careCircleApi.inviteByContact(fullContact, profileId);
       Alert.alert('Success', 'Invitation sent successfully!');
       setInviteModalOpen(false);
       setInviteContact('');
@@ -486,7 +510,7 @@ export default function CareCircleScreen() {
   };
 
   const handleEmergencySave = async () => {
-    if (!user?.id) {
+    if (!user?.id || !profileId) {
       setEmergencyError('Please sign in again to save this card.');
       return;
     }
@@ -497,6 +521,7 @@ export default function CareCircleScreen() {
     const ageValue = emergencyCard.age ? Number(emergencyCard.age) : null;
 
     const payload = {
+      profile_id: profileId,
       user_id: user.id,
       name: emergencyCard.name || null,
       age: Number.isFinite(ageValue) ? ageValue : null,
@@ -520,7 +545,7 @@ export default function CareCircleScreen() {
 
     const { error } = await supabase
       .from('care_emergency_cards')
-      .upsert(payload, { onConflict: 'user_id' });
+      .upsert(payload, { onConflict: 'profile_id' });
 
     if (error) {
       setEmergencyError('Unable to save the emergency card details.');
@@ -530,7 +555,7 @@ export default function CareCircleScreen() {
 
     setIsSavingEmergency(false);
     setIsEmergencyEditing(false);
-    await loadEmergencyCard(user.id);
+    await loadEmergencyCard(profileId);
   };
 
   const myCircleMembers = useMemo(() => {
@@ -577,7 +602,7 @@ export default function CareCircleScreen() {
   }, [emergencyCard.insurance_last4]);
 
   const isViewingExternalCard = Boolean(
-    emergencyCardOwner?.id && user?.id && emergencyCardOwner.id !== user.id
+    emergencyCardOwner?.userId && user?.id && emergencyCardOwner.userId !== user.id
   );
 
   const currentMembers = circleView === 'my-circle' ? myCircleMembers : circlesIn;
@@ -585,10 +610,10 @@ export default function CareCircleScreen() {
 
   // Animated value for segment indicator
   const segmentTranslateX = useSharedValue(circleView === 'my-circle' ? 0 : 1);
-  
+
   useEffect(() => {
     // Animate to 0 for "My Circle", 1 for "Circles I'm In"
-    segmentTranslateX.value = withSpring(circleView === 'my-circle' ? 0 : 1, { 
+    segmentTranslateX.value = withSpring(circleView === 'my-circle' ? 0 : 1, {
       damping: 25,
       stiffness: 300,
       mass: 0.8,
@@ -1318,8 +1343,9 @@ export default function CareCircleScreen() {
                       style={styles.secondaryButton}
                       onPress={async () => {
                         setIsEmergencyEditing(false);
-                        if (user?.id) {
-                          await loadEmergencyCard(user.id);
+                        const ownerProfileId = emergencyCardOwner?.profileId;
+                        if (ownerProfileId) {
+                          await loadEmergencyCard(ownerProfileId);
                         }
                       }}
                     >

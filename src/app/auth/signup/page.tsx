@@ -62,12 +62,27 @@ export default function SignupPage() {
   }, [countryDropdownOpen]);
 
   const resolveDisplayName = async (userId: string, fallback: string) => {
-    const { data } = await supabase
-      .from("personal")
-      .select("display_name")
-      .eq("id", userId)
-      .maybeSingle();
-    return data?.display_name?.trim() || fallback;
+    const { data: authProfiles, error: authProfilesError } = await supabase
+      .from("profiles")
+      .select("display_name, name")
+      .eq("auth_id", userId)
+      .order("is_primary", { ascending: false })
+      .order("created_at", { ascending: true })
+      .limit(1);
+
+    if (!authProfilesError && authProfiles?.[0]) {
+      return authProfiles[0].display_name?.trim() || authProfiles[0].name?.trim() || fallback;
+    }
+
+    const { data: userProfiles } = await supabase
+      .from("profiles")
+      .select("display_name, name")
+      .eq("user_id", userId)
+      .order("is_primary", { ascending: false })
+      .order("created_at", { ascending: true })
+      .limit(1);
+
+    return userProfiles?.[0]?.display_name?.trim() || userProfiles?.[0]?.name?.trim() || fallback;
   };
 
   const saveRememberedAccount = (account: RememberedAccount) => {
@@ -197,14 +212,26 @@ export default function SignupPage() {
     }
 
     try {
-      const { error: upsertError } = await supabase
-        .from("personal")
-        .upsert(
-          { id: data.user.id, phone: fullPhone },
-          { onConflict: "id" }
-        );
-      if (upsertError) {
-        console.error("Personal upsert failed:", upsertError);
+      const phonePayload = { phone: fullPhone, updated_at: new Date().toISOString() };
+      const { error: authUpdateError } = await supabase
+        .from("profiles")
+        .update(phonePayload)
+        .eq("auth_id", data.user.id);
+
+      const missingAuthColumn =
+        authUpdateError?.code === "PGRST204" ||
+        authUpdateError?.message?.toLowerCase().includes("auth_id");
+
+      if (authUpdateError && !missingAuthColumn) {
+        console.error("Profiles phone update failed:", authUpdateError);
+      } else if (missingAuthColumn) {
+        const { error: legacyUpdateError } = await supabase
+          .from("profiles")
+          .update(phonePayload)
+          .eq("user_id", data.user.id);
+        if (legacyUpdateError) {
+          console.error("Profiles phone update failed:", legacyUpdateError);
+        }
       }
     } catch {
       // Non-blocking

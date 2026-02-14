@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServer } from "@/lib/server";
 type ProfilePayload = {
+  profileId: string; // Profile ID to save data for
   displayName?: string;
   dateOfBirth: string; // YYYY-MM-DD
   bloodGroup: string;
@@ -53,13 +54,26 @@ function computeBMI(heightCm: number | null, weightKg: number | null): number | 
 const cleanStringList = (values: string[] | undefined) =>
   Array.isArray(values) ? values.map((item) => item.trim()).filter(Boolean) : [];
 
+const PROFILE_MIGRATION_HINT =
+  "Profile-based DB migration is incomplete. Run supabase/migrations/20260213170000_profile_based_rls_migration.sql and ensure profile_id unique constraints exist.";
+
+const isMissingOnConflictConstraint = (message: string) =>
+  /no unique|no exclusion|on conflict/i.test(message) && /profile_id/i.test(message);
+
+const isLegacyUserUniqueViolation = (message: string) =>
+  /duplicate key value/i.test(message) &&
+  /(health_.*user_id|user_medications_.*user_id|user_id)/i.test(message);
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as ProfilePayload;
 
     const supabase = await supabaseServer();
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      return NextResponse.json({ error: "Service role key is missing." }, { status: 500 });
+      return NextResponse.json(
+        { error: "Service role key is missing.", message: "Service role key is missing." },
+        { status: 500 }
+      );
     }
     const adminClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -75,21 +89,81 @@ export async function POST(req: Request) {
       : await supabase.auth.getUser();
 
     if (error || !data?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized", message: "Unauthorized" }, { status: 401 });
+    }
+
+    // Validate profileId
+    if (!body?.profileId || typeof body.profileId !== 'string') {
+      return NextResponse.json(
+        { error: "Profile ID is required", message: "Profile ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Ensure profile belongs to authenticated account.
+    let verifiedProfileId: string | null = null;
+    const { data: ownedByAuth, error: ownedByAuthError } = await adminClient
+      .from("profiles")
+      .select("id")
+      .eq("id", body.profileId)
+      .eq("auth_id", data.user.id)
+      .maybeSingle();
+
+    if (!ownedByAuthError && ownedByAuth?.id) {
+      verifiedProfileId = ownedByAuth.id;
+    }
+
+    if (!verifiedProfileId) {
+      const { data: ownedByUser, error: ownedByUserError } = await adminClient
+        .from("profiles")
+        .select("id")
+        .eq("id", body.profileId)
+        .eq("user_id", data.user.id)
+        .maybeSingle();
+
+      if (ownedByUserError && ownedByUserError.code !== "PGRST116") {
+        return NextResponse.json(
+          { error: ownedByUserError.message, message: ownedByUserError.message },
+          { status: 500 }
+        );
+      }
+
+      if (ownedByUser?.id) {
+        verifiedProfileId = ownedByUser.id;
+      }
+    }
+
+    if (!verifiedProfileId) {
+      return NextResponse.json(
+        { error: "Invalid profile selection", message: "Invalid profile selection" },
+        { status: 403 }
+      );
     }
 
     // Required fields (first 4 questions)
     if (!body?.dateOfBirth || !/^\d{4}-\d{2}-\d{2}$/.test(body.dateOfBirth)) {
-      return NextResponse.json({ error: "DOB is required (YYYY-MM-DD)" }, { status: 400 });
+      return NextResponse.json(
+        { error: "DOB is required (YYYY-MM-DD)", message: "DOB is required (YYYY-MM-DD)" },
+        { status: 400 }
+      );
     }
     if (!body?.bloodGroup || body.bloodGroup.trim().length === 0) {
-      return NextResponse.json({ error: "Blood group is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Blood group is required", message: "Blood group is required" },
+        { status: 400 }
+      );
     }
     if (!body?.heightCm || !Number.isFinite(body.heightCm)) {
-      return NextResponse.json({ error: "Height is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Height is required", message: "Height is required" },
+        { status: 400 }
+      );
     }
     if (!body?.weightKg || !Number.isFinite(body.weightKg)) {
-      return NextResponse.json({ error: "Weight is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Weight is required", message: "Weight is required" },
+        { status: 400 }
+      );
     }
 
     const currentDiagnosedCondition = cleanStringList(body.currentDiagnosedCondition);
@@ -101,22 +175,22 @@ export async function POST(req: Request) {
 
     const currentMedication = Array.isArray(body.currentMedication)
       ? body.currentMedication
-          .map((item) => ({
-            name: item.name?.trim() || "",
-            dosage: item.dosage?.trim() || "",
-            frequency: item.frequency?.trim() || "",
-          }))
-          .filter((item) => item.name && item.dosage && item.frequency)
+        .map((item) => ({
+          name: item.name?.trim() || "",
+          dosage: item.dosage?.trim() || "",
+          frequency: item.frequency?.trim() || "",
+        }))
+        .filter((item) => item.name && item.dosage && item.frequency)
       : [];
 
     const pastSurgeries = Array.isArray(body.pastSurgeries)
       ? body.pastSurgeries
-          .map((item) => ({
-            name: item.name?.trim(),
-            month: Number(item.month),
-            year: Number(item.year),
-          }))
-          .filter((item) => item.name && item.month && item.year)
+        .map((item) => ({
+          name: item.name?.trim(),
+          month: Number(item.month),
+          year: Number(item.year),
+        }))
+        .filter((item) => item.name && item.month && item.year)
       : [];
 
     // Backend-only computed
@@ -124,7 +198,8 @@ export async function POST(req: Request) {
     const bmi = computeBMI(body.heightCm, body.weightKg);
 
     const payload = {
-      user_id: data.user.id,
+      profile_id: verifiedProfileId,
+      user_id: data.user.id, // Keep user_id for reference
       date_of_birth: body.dateOfBirth,
       age,
       blood_group: body.bloodGroup,
@@ -146,15 +221,23 @@ export async function POST(req: Request) {
 
     const { error: upsertErr } = await adminClient
       .from("health")
-      .upsert(payload, { onConflict: "user_id" });
+      .upsert(payload, { onConflict: "profile_id" }); // Use profile_id for conflict resolution
 
     if (upsertErr) {
-      return NextResponse.json({ error: upsertErr.message }, { status: 400 });
+      if (isLegacyUserUniqueViolation(upsertErr.message)) {
+        return NextResponse.json(
+          { error: upsertErr.message, message: PROFILE_MIGRATION_HINT },
+          { status: 500 }
+        );
+      }
+      if (isMissingOnConflictConstraint(upsertErr.message)) {
+        return NextResponse.json(
+          { error: upsertErr.message, message: PROFILE_MIGRATION_HINT },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json({ error: upsertErr.message, message: upsertErr.message }, { status: 400 });
     }
-
-    const personalPayload = body.displayName?.trim()
-      ? { id: data.user.id, display_name: body.displayName.trim(), updated_at: new Date().toISOString() }
-      : null;
 
     const medicationStartDate = new Date().toISOString().split("T")[0];
     const medicationsForUser = currentMedication.map((item) => ({
@@ -169,29 +252,64 @@ export async function POST(req: Request) {
     }));
 
     const medicationPayload = {
-      user_id: data.user.id,
+      profile_id: verifiedProfileId,
+      user_id: data.user.id, // Keep user_id for reference
       medications: medicationsForUser,
       updated_at: new Date().toISOString(),
     };
 
-    if (personalPayload) {
-      const { error: personalErr } = await adminClient
-        .from("personal")
-        .upsert(personalPayload, { onConflict: "id" });
-      if (personalErr) {
-        return NextResponse.json({ error: personalErr.message }, { status: 400 });
+    if (body.displayName?.trim()) {
+      const { error: profileErr } = await adminClient
+        .from("profiles")
+        .update({
+          display_name: body.displayName.trim(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", verifiedProfileId);
+      if (profileErr) {
+        const missingDisplayName = /display_name/i.test(profileErr.message);
+        if (missingDisplayName) {
+          const { error: fallbackProfileErr } = await adminClient
+            .from("profiles")
+            .update({
+              name: body.displayName.trim(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", verifiedProfileId);
+          if (fallbackProfileErr) {
+            return NextResponse.json(
+              { error: fallbackProfileErr.message, message: fallbackProfileErr.message },
+              { status: 400 }
+            );
+          }
+        } else {
+          return NextResponse.json({ error: profileErr.message, message: profileErr.message }, { status: 400 });
+        }
       }
     }
 
     const { error: medicationErr } = await adminClient
       .from("user_medications")
-      .upsert(medicationPayload, { onConflict: "user_id" });
+      .upsert(medicationPayload, { onConflict: "profile_id" }); // Use profile_id for conflict resolution
     if (medicationErr) {
-      return NextResponse.json({ error: medicationErr.message }, { status: 400 });
+      if (isLegacyUserUniqueViolation(medicationErr.message)) {
+        return NextResponse.json(
+          { error: medicationErr.message, message: PROFILE_MIGRATION_HINT },
+          { status: 500 }
+        );
+      }
+      if (isMissingOnConflictConstraint(medicationErr.message)) {
+        return NextResponse.json(
+          { error: medicationErr.message, message: PROFILE_MIGRATION_HINT },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json({ error: medicationErr.message, message: medicationErr.message }, { status: 400 });
     }
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
+    const message = e?.message || "Server error";
+    return NextResponse.json({ error: message, message }, { status: 500 });
   }
 }

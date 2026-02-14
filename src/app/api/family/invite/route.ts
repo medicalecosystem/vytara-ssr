@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
@@ -35,6 +36,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Contact is required' }, { status: 400 });
     }
 
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return NextResponse.json(
+        { message: 'Service role key is missing.' },
+        { status: 500 }
+      );
+    }
+
+    const adminClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      { auth: { persistSession: false } }
+    );
+
     const { data: existingFamilyLink } = await supabase
       .from('family_links')
       .select('family_id, status')
@@ -46,13 +60,17 @@ export async function POST(request: Request) {
     const familyId = existingFamilyLink?.family_id ?? crypto.randomUUID();
 
     // Find user by phone number
-    const { data: users, error: userError } = await supabase
-      .from('personal')
-      .select('id')
+    const { data: profileRows, error: userError } = await adminClient
+      .from('profiles')
+      .select('auth_id, user_id')
       .eq('phone', contact)
-      .maybeSingle();
+      .order('is_primary', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(1);
 
-    if (userError || !users) {
+    const recipientUserId = profileRows?.[0]?.auth_id ?? profileRows?.[0]?.user_id ?? null;
+
+    if (userError || !recipientUserId) {
       return NextResponse.json(
         { message: 'User not found with this phone number' },
         { status: 404 }
@@ -60,7 +78,7 @@ export async function POST(request: Request) {
     }
 
     // Check if user is trying to invite themselves
-    if (users.id === session.user.id) {
+    if (recipientUserId === session.user.id) {
       return NextResponse.json(
         { message: 'You cannot invite yourself' },
         { status: 400 }
@@ -72,7 +90,7 @@ export async function POST(request: Request) {
       .from('family_links')
       .insert({
         requester_id: session.user.id,
-        recipient_id: users.id,
+        recipient_id: recipientUserId,
         family_id: familyId,
         relation: 'family', // ✅ Add this required field
         status: 'pending',

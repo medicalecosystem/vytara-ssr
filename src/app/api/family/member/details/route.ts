@@ -70,37 +70,83 @@ export async function GET(request: Request) {
       { auth: { persistSession: false } }
     );
 
-    const [personalRes, healthRes, appointmentsRes, medicationsRes] = await Promise.all([
-      adminClient
-        .from('personal')
-        .select('display_name, phone, gender, address')
-        .eq('id', memberId)
-        .maybeSingle(),
+    const profilesByAuth = await adminClient
+      .from('profiles')
+      .select('id, display_name, name, phone, gender, address, is_primary, created_at')
+      .eq('auth_id', memberId)
+      .order('is_primary', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    const missingAuthColumn =
+      profilesByAuth.error?.code === 'PGRST204' ||
+      profilesByAuth.error?.message?.toLowerCase().includes('auth_id');
+
+    let targetProfile:
+      | {
+          id: string;
+          display_name: string | null;
+          name: string | null;
+          phone: string | null;
+          gender: string | null;
+          address: string | null;
+        }
+      | null = null;
+
+    if (!profilesByAuth.error && profilesByAuth.data?.[0]) {
+      targetProfile = profilesByAuth.data[0];
+    } else {
+      if (profilesByAuth.error && !missingAuthColumn && profilesByAuth.error.code !== 'PGRST116') {
+        throw profilesByAuth.error;
+      }
+      const profilesByUser = await adminClient
+        .from('profiles')
+        .select('id, display_name, name, phone, gender, address, is_primary, created_at')
+        .eq('user_id', memberId)
+        .order('is_primary', { ascending: false })
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      if (profilesByUser.error && profilesByUser.error.code !== 'PGRST116') {
+        throw profilesByUser.error;
+      }
+      targetProfile = profilesByUser.data?.[0] ?? null;
+    }
+
+    if (!targetProfile?.id) {
+      return NextResponse.json({ message: 'Member profile not found.' }, { status: 404 });
+    }
+
+    const [healthRes, appointmentsRes, medicationsRes] = await Promise.all([
       adminClient
         .from('health')
         .select(
           'date_of_birth, blood_group, bmi, age, current_diagnosed_condition, allergies, ongoing_treatments, current_medication, previous_diagnosed_conditions, past_surgeries, childhood_illness, long_term_treatments'
         )
-        .eq('user_id', memberId)
+        .eq('profile_id', targetProfile.id)
         .maybeSingle(),
       adminClient
         .from('user_appointments')
         .select('appointments')
-        .eq('user_id', memberId)
+        .eq('profile_id', targetProfile.id)
         .maybeSingle(),
       adminClient
         .from('user_medications')
         .select('medications')
-        .eq('user_id', memberId)
+        .eq('profile_id', targetProfile.id)
         .maybeSingle(),
     ]);
 
-    if (personalRes.error) throw personalRes.error;
     if (healthRes.error) throw healthRes.error;
     if (appointmentsRes.error) throw appointmentsRes.error;
     if (medicationsRes.error) throw medicationsRes.error;
 
-    const personal = personalRes.data ?? null;
+    const personal = {
+      display_name: targetProfile.display_name?.trim() || targetProfile.name?.trim() || null,
+      phone: targetProfile.phone ?? null,
+      gender: targetProfile.gender ?? null,
+      address: targetProfile.address ?? null,
+    };
     const health = healthRes.data ?? null;
     const parseJsonArray = (value: unknown, fallbackKey: string) => {
       if (Array.isArray(value)) return value;

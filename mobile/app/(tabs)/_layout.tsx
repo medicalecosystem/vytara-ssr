@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Modal,
@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/Colors';
 import { NotificationPanel } from '@/components/NotificationPanel';
 import { useAuth } from '@/hooks/useAuth';
+import { useProfile } from '@/hooks/useProfile';
 import { useColorScheme } from '@/components/useColorScheme';
 import {
   useNotifications,
@@ -22,7 +23,7 @@ import {
   type CareCircleInvite,
   type UpcomingAppointment,
 } from '@/hooks/useNotifications';
-import { supabase, type User } from '@/lib/supabase';
+import { type User } from '@/lib/supabase';
 
 // You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
 function TabBarIcon(props: {
@@ -36,7 +37,9 @@ export default function TabLayout() {
   const colorScheme = useColorScheme();
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
-  const notifications = useNotifications(user?.id);
+  const { selectedProfile } = useProfile();
+  const router = useRouter();
+  const notifications = useNotifications(user?.id, selectedProfile?.id);
   const baseTabBarHeight = 56;
   const tabBarHeight = baseTabBarHeight + insets.bottom;
   const theme = colorScheme ?? 'light';
@@ -54,7 +57,15 @@ export default function TabLayout() {
         headerStyle: {
           backgroundColor: 'transparent',
         },
-        header: () => <AppHeader user={user} signOut={signOut} notifications={notifications} />,
+        header: () => (
+          <AppHeader
+            user={user}
+            selectedProfile={selectedProfile}
+            signOut={signOut}
+            notifications={notifications}
+            router={router}
+          />
+        ),
         sceneStyle: {
           backgroundColor,
         },
@@ -114,12 +125,16 @@ type NotificationsState = ReturnType<typeof useNotifications>;
 
 function AppHeader({
   user,
+  selectedProfile,
   signOut,
   notifications,
+  router,
 }: {
   user: User | null;
+  selectedProfile: { id: string; name: string; display_name?: string | null } | null;
   signOut: () => Promise<void>;
   notifications: NotificationsState;
+  router: ReturnType<typeof useRouter>;
 }) {
   const insets = useSafeAreaInsets();
   const [displayName, setDisplayName] = useState('');
@@ -149,23 +164,9 @@ function AppHeader({
   const sessionSnapshotDone = useRef(false);
 
   useEffect(() => {
-    let isMounted = true;
-    const loadDisplayName = async () => {
-      if (!user?.id) return;
-      const { data } = await supabase
-        .from('personal')
-        .select('display_name')
-        .eq('id', user.id)
-        .maybeSingle();
-      if (isMounted && data?.display_name) {
-        setDisplayName(data.display_name);
-      }
-    };
-    loadDisplayName();
-    return () => {
-      isMounted = false;
-    };
-  }, [user?.id]);
+    const nextName = selectedProfile?.display_name?.trim() || selectedProfile?.name?.trim() || '';
+    setDisplayName(nextName);
+  }, [selectedProfile?.id, selectedProfile?.display_name, selectedProfile?.name]);
 
   const initials = useMemo(() => {
     if (displayName) {
@@ -272,7 +273,7 @@ function AppHeader({
 
       <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
         <Pressable style={styles.menuOverlay} onPress={() => setMenuVisible(false)}>
-          <Pressable style={[styles.menuCard, { top: insets.top + 58 }]} onPress={() => {}}>
+          <Pressable style={[styles.menuCard, { top: insets.top + 58 }]} onPress={() => { }}>
             <View style={styles.menuHeader}>
               <View style={styles.menuAvatar}>
                 <Text style={styles.menuAvatarText}>{initials}</Text>
@@ -285,6 +286,16 @@ function AppHeader({
               </View>
             </View>
             <View style={styles.menuDivider} />
+            <Pressable
+              style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+              onPress={() => {
+                setMenuVisible(false);
+                router.push('/profile-selection');
+              }}
+            >
+              <MaterialCommunityIcons name="account-switch" size={18} color="#309898" />
+              <Text style={styles.menuItemText}>Switch Profile</Text>
+            </Pressable>
             <Pressable
               style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
               onPress={async () => {
@@ -437,6 +448,11 @@ const styles = StyleSheet.create({
   },
   menuItemPressed: {
     backgroundColor: '#f0f5f6',
+  },
+  menuItemText: {
+    color: '#309898',
+    fontWeight: '600',
+    fontSize: 14,
   },
   menuItemTextDanger: {
     color: '#b42318',

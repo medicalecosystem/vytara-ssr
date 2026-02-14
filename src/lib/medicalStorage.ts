@@ -2,14 +2,14 @@ import { supabase } from './createClient';
 import { MedicalFolder } from '@/constants/medicalFolders';
 
 export async function uploadMedicalFile(
-  userId: string,
+  profileId: string,
   folder: MedicalFolder,
   file: File,
   fileName?: string
 ) {
   const rawName = fileName?.trim() || file.name;
   const safeName = rawName.replace(/[\\/]/g, '-');
-  const filePath = `${userId}/${folder}/${safeName}`;
+  const filePath = `${profileId}/${folder}/${safeName}`;
 
   return supabase.storage
     .from('medical-vault')
@@ -17,12 +17,12 @@ export async function uploadMedicalFile(
 }
 
 export async function listMedicalFiles(
-  userId: string,
+  profileId: string,
   folder: MedicalFolder
 ) {
   return supabase.storage
     .from('medical-vault')
-    .list(`${userId}/${folder}`, {
+    .list(`${profileId}/${folder}`, {
       sortBy: { column: 'created_at', order: 'desc' },
     });
 }

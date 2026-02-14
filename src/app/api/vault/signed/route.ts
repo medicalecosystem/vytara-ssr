@@ -36,6 +36,7 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url);
+    const profileIdParam = url.searchParams.get('profileId')?.trim() ?? '';
     const folder = url.searchParams.get('folder') as VaultFolder | null;
     const name = url.searchParams.get('name');
 
@@ -45,6 +46,55 @@ export async function GET(request: Request) {
 
     if (!VAULT_FOLDERS.includes(folder)) {
       return NextResponse.json({ message: 'Invalid folder.' }, { status: 400 });
+    }
+
+    const queryOwnedProfileById = async (column: 'auth_id' | 'user_id', profileId: string) =>
+      supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', profileId)
+        .eq(column, session.user.id)
+        .maybeSingle();
+
+    const queryPreferredProfile = async (column: 'auth_id' | 'user_id') =>
+      supabase
+        .from('profiles')
+        .select('id')
+        .eq(column, session.user.id)
+        .order('is_primary', { ascending: false })
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+    let storageOwnerId = profileIdParam;
+    if (storageOwnerId) {
+      const ownedByAuth = await queryOwnedProfileById('auth_id', storageOwnerId);
+      const missingAuthColumn =
+        ownedByAuth.error?.code === 'PGRST204' ||
+        ownedByAuth.error?.message?.toLowerCase().includes('auth_id');
+
+      const ownedProfile =
+        ownedByAuth.data ??
+        (missingAuthColumn ? (await queryOwnedProfileById('user_id', storageOwnerId)).data : null);
+
+      if (!ownedProfile?.id) {
+        return NextResponse.json({ message: 'Profile not found.' }, { status: 404 });
+      }
+    } else {
+      const preferredByAuth = await queryPreferredProfile('auth_id');
+      const missingAuthColumn =
+        preferredByAuth.error?.code === 'PGRST204' ||
+        preferredByAuth.error?.message?.toLowerCase().includes('auth_id');
+
+      const preferredProfile =
+        preferredByAuth.data ??
+        (missingAuthColumn ? (await queryPreferredProfile('user_id')).data : null);
+
+      if (!preferredProfile?.id) {
+        return NextResponse.json({ message: 'Profile not found.' }, { status: 404 });
+      }
+
+      storageOwnerId = preferredProfile.id;
     }
 
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -57,7 +107,7 @@ export async function GET(request: Request) {
       { auth: { persistSession: false } }
     );
 
-    const path = `${session.user.id}/${folder}/${name}`;
+    const path = `${storageOwnerId}/${folder}/${name}`;
     const { data, error } = await adminClient.storage
       .from('medical-vault')
       .createSignedUrl(path, 60);

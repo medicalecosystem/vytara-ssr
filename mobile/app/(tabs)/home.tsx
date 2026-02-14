@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/hooks/useAuth';
+import { useProfile } from '@/hooks/useProfile';
 import { Screen } from '@/components/Screen';
 import { AppointmentsModal, type Appointment } from '@/components/AppointmentsModal';
 import {
@@ -49,6 +50,8 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { selectedProfile } = useProfile();
+  const profileId = selectedProfile?.id ?? '';
   const [displayName, setDisplayName] = useState('');
   const [now, setNow] = useState(() => new Date());
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
@@ -68,21 +71,22 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const loadDisplayName = async () => {
-      if (!user?.id) return;
+      if (!user?.id || !profileId) return;
+      // Load display name from selected profile instead of personal table
       const { data } = await supabase
-        .from('personal')
+        .from('profiles')
         .select('display_name')
-        .eq('id', user.id)
+        .eq('id', profileId)
         .maybeSingle();
       if (data?.display_name) {
         setDisplayName(data.display_name);
       }
     };
     loadDisplayName();
-  }, [user?.id]);
+  }, [user?.id, profileId]);
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!user?.id || !profileId) {
       setEmergencyContacts([]);
       return;
     }
@@ -90,10 +94,11 @@ export default function HomeScreen() {
     let isActive = true;
 
     const loadEmergencyContacts = async () => {
+      // Load emergency contacts by profile_id (each profile has own contacts)
       const { data, error } = await supabase
         .from('user_emergency_contacts')
         .select('contacts')
-        .eq('user_id', user.id)
+        .eq('profile_id', profileId)
         .maybeSingle();
 
       if (!isActive) return;
@@ -114,10 +119,10 @@ export default function HomeScreen() {
     return () => {
       isActive = false;
     };
-  }, [user?.id]);
+  }, [user?.id, profileId]);
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!user?.id || !profileId) {
       setAppointments([]);
       return;
     }
@@ -128,7 +133,7 @@ export default function HomeScreen() {
       const { data, error } = await supabase
         .from('user_appointments')
         .select('appointments')
-        .eq('user_id', user.id)
+        .eq('profile_id', profileId)
         .maybeSingle();
 
       if (!isActive) return;
@@ -149,10 +154,10 @@ export default function HomeScreen() {
     return () => {
       isActive = false;
     };
-  }, [user?.id]);
+  }, [user?.id, profileId]);
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!user?.id || !profileId) {
       setMedications([]);
       return;
     }
@@ -163,7 +168,7 @@ export default function HomeScreen() {
       const { data, error } = await supabase
         .from('user_medications')
         .select('medications')
-        .eq('user_id', user.id)
+        .eq('profile_id', profileId)
         .maybeSingle();
 
       if (!isActive) return;
@@ -184,10 +189,10 @@ export default function HomeScreen() {
     return () => {
       isActive = false;
     };
-  }, [user?.id]);
+  }, [user?.id, profileId]);
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!user?.id || !profileId) {
       setMedicalTeam([]);
       return;
     }
@@ -198,7 +203,7 @@ export default function HomeScreen() {
       const { data, error } = await supabase
         .from('user_medical_team')
         .select('doctors')
-        .eq('user_id', user.id)
+        .eq('profile_id', profileId)
         .maybeSingle();
 
       if (!isActive) return;
@@ -219,7 +224,7 @@ export default function HomeScreen() {
     return () => {
       isActive = false;
     };
-  }, [user?.id]);
+  }, [user?.id, profileId]);
 
   const greeting = useMemo(() => {
     const hour = now.getHours();
@@ -232,7 +237,7 @@ export default function HomeScreen() {
   const horizontalPadding = width < 380 ? 16 : 24;
 
   const handleAddAppointment = async (appointment: Appointment) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     const existingIndex = appointments.findIndex((item) => item.id === appointment.id);
     const updatedAppointments =
@@ -241,7 +246,8 @@ export default function HomeScreen() {
         : [...appointments, appointment];
 
     const { error } = await supabase.from('user_appointments').upsert({
-      user_id: user.id,
+      profile_id: profileId, // Use profile_id instead of user_id
+      user_id: user.id, // Keep user_id for reference
       appointments: updatedAppointments,
       updated_at: new Date().toISOString(),
     });
@@ -256,12 +262,13 @@ export default function HomeScreen() {
   };
 
   const handleDeleteAppointment = async (id: string) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     const updatedAppointments = appointments.filter((item) => item.id !== id);
 
     const { error } = await supabase.from('user_appointments').upsert({
-      user_id: user.id,
+      profile_id: profileId, // Use profile_id instead of user_id
+      user_id: user.id, // Keep user_id for reference
       appointments: updatedAppointments,
       updated_at: new Date().toISOString(),
     });
@@ -276,7 +283,7 @@ export default function HomeScreen() {
   };
 
   const addEmergencyContact = async (contact: EmergencyContact) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     if (!contact.name.trim() || !contact.phone.trim() || !contact.relation.trim()) {
       Alert.alert('Missing info', 'Please enter a valid name, phone, and relation.');
@@ -286,10 +293,11 @@ export default function HomeScreen() {
     const updatedContacts = [...emergencyContacts, contact];
 
     const { error } = await supabase.from('user_emergency_contacts').upsert({
-      user_id: user.id,
+      profile_id: profileId,
+      user_id: user.id, // Keep for reference
       contacts: updatedContacts,
       updated_at: new Date().toISOString(),
-    });
+    }, { onConflict: 'profile_id' });
 
     if (error) {
       console.error('Add emergency contact error:', error);
@@ -301,15 +309,16 @@ export default function HomeScreen() {
   };
 
   const deleteEmergencyContact = async (id: string) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     const updatedContacts = emergencyContacts.filter((contact) => contact.id !== id);
 
     const { error } = await supabase.from('user_emergency_contacts').upsert({
+      profile_id: profileId,
       user_id: user.id,
       contacts: updatedContacts,
       updated_at: new Date().toISOString(),
-    });
+    }, { onConflict: 'profile_id' });
 
     if (error) {
       console.error('Delete emergency contact error:', error);
@@ -321,7 +330,7 @@ export default function HomeScreen() {
   };
 
   const addDoctor = async (doctor: Doctor) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     if (!doctor.name.trim() || !doctor.number.trim() || !doctor.speciality.trim()) {
       Alert.alert('Missing info', 'Please fill all fields.');
@@ -331,6 +340,7 @@ export default function HomeScreen() {
     const updatedDoctors = [...medicalTeam, doctor];
 
     const { error } = await supabase.from('user_medical_team').upsert({
+      profile_id: profileId,
       user_id: user.id,
       doctors: updatedDoctors,
       updated_at: new Date().toISOString(),
@@ -346,11 +356,12 @@ export default function HomeScreen() {
   };
 
   const updateDoctor = async (doctor: Doctor) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     const updatedDoctors = medicalTeam.map((item) => (item.id === doctor.id ? doctor : item));
 
     const { error } = await supabase.from('user_medical_team').upsert({
+      profile_id: profileId,
       user_id: user.id,
       doctors: updatedDoctors,
       updated_at: new Date().toISOString(),
@@ -366,11 +377,12 @@ export default function HomeScreen() {
   };
 
   const deleteDoctor = async (id: string) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     const updatedDoctors = medicalTeam.filter((item) => item.id !== id);
 
     const { error } = await supabase.from('user_medical_team').upsert({
+      profile_id: profileId,
       user_id: user.id,
       doctors: updatedDoctors,
       updated_at: new Date().toISOString(),
@@ -386,7 +398,7 @@ export default function HomeScreen() {
   };
 
   const addMedication = async (medication: Medication) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     if (!medication.name.trim() || !medication.dosage.trim() || !medication.frequency.trim()) {
       Alert.alert('Missing info', 'Please fill Name, Dosage, and Frequency.');
@@ -410,12 +422,13 @@ export default function HomeScreen() {
     try {
       const { error } = await supabase.from('user_medications').upsert(
         {
+          profile_id: profileId,
           user_id: user.id,
           medications: updatedMedications,
           updated_at: new Date().toISOString(),
         },
         {
-          onConflict: 'user_id',
+          onConflict: 'profile_id',
         }
       );
 
@@ -429,7 +442,7 @@ export default function HomeScreen() {
   };
 
   const updateMedication = async (medication: Medication) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     if (!medication.name.trim() || !medication.dosage.trim() || !medication.frequency.trim()) {
       Alert.alert('Missing info', 'Please fill Name, Dosage, and Frequency.');
@@ -441,12 +454,13 @@ export default function HomeScreen() {
     try {
       const { error } = await supabase.from('user_medications').upsert(
         {
+          profile_id: profileId,
           user_id: user.id,
           medications: updatedMedications,
           updated_at: new Date().toISOString(),
         },
         {
-          onConflict: 'user_id',
+          onConflict: 'profile_id',
         }
       );
 
@@ -460,19 +474,20 @@ export default function HomeScreen() {
   };
 
   const deleteMedication = async (id: string) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     const updatedMedications = medications.filter((m) => m.id !== id);
 
     try {
       const { error } = await supabase.from('user_medications').upsert(
         {
+          profile_id: profileId,
           user_id: user.id,
           medications: updatedMedications,
           updated_at: new Date().toISOString(),
         },
         {
-          onConflict: 'user_id',
+          onConflict: 'profile_id',
         }
       );
 
@@ -486,7 +501,7 @@ export default function HomeScreen() {
   };
 
   const logMedicationDose = async (medicationId: string, taken: boolean) => {
-    if (!user?.id) return;
+    if (!user?.id || !profileId) return;
 
     const newLog = {
       medicationId,
@@ -507,12 +522,13 @@ export default function HomeScreen() {
     try {
       const { error } = await supabase.from('user_medications').upsert(
         {
+          profile_id: profileId,
           user_id: user.id,
           medications: updatedMedications,
           updated_at: new Date().toISOString(),
         },
         {
-          onConflict: 'user_id',
+          onConflict: 'profile_id',
         }
       );
 

@@ -5,6 +5,8 @@ type CareCircleStatus = 'pending' | 'accepted' | 'declined';
 type CareCircleLink = {
   id: string;
   memberId: string;
+  memberProfileId?: string | null;
+  profileId?: string | null;
   status: CareCircleStatus;
   displayName: string;
   createdAt: string;
@@ -12,13 +14,14 @@ type CareCircleLink = {
 };
 
 export const careCircleApi = {
-  getLinks: () => apiRequest<{ outgoing: CareCircleLink[]; incoming: CareCircleLink[] }>(
-    '/api/care-circle/links'
-  ),
+  getLinks: (profileId?: string) =>
+    apiRequest<{ outgoing: CareCircleLink[]; incoming: CareCircleLink[] }>(
+      `/api/care-circle/links${profileId ? `?profileId=${encodeURIComponent(profileId)}` : ''}`
+    ),
 
-  inviteByContact: (contact: string) =>
+  inviteByContact: (contact: string, profileId: string) =>
     apiRequest<{ recipientId: string }>('/api/care-circle/invite', {
       method: 'POST',
-      body: { contact },
+      body: { contact, profileId },
     }),
 };

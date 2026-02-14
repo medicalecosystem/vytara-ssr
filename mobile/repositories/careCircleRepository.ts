@@ -1,6 +1,6 @@
 import { careCircleApi } from '@/api';
 
 export const careCircleRepository = {
-  getLinks: () => careCircleApi.getLinks(),
-  inviteByContact: (contact: string) => careCircleApi.inviteByContact(contact),
+  getLinks: (profileId?: string) => careCircleApi.getLinks(profileId),
+  inviteByContact: (contact: string, profileId: string) => careCircleApi.inviteByContact(contact, profileId),
 };

@@ -5,7 +5,6 @@ type PersonalProfile = {
   phone: string | null;
   gender: string | null;
   address: string | null;
-  family_history: unknown;
 };
 
 type HealthProfile = {
@@ -24,19 +23,19 @@ type HealthProfile = {
 };
 
 export const profileApi = {
-  getPersonalProfile: (userId: string) =>
+  getPersonalProfile: (profileId: string) =>
     supabase
-      .from('personal')
-      .select('display_name, phone, gender, address, family_history')
-      .eq('id', userId)
+      .from('profiles')
+      .select('display_name, phone, gender, address')
+      .eq('id', profileId)
       .maybeSingle<PersonalProfile>(),
 
-  getHealthProfile: (userId: string) =>
+  getHealthProfile: (profileId: string) =>
     supabase
       .from('health')
       .select(
         'date_of_birth, blood_group, bmi, age, current_diagnosed_condition, allergies, ongoing_treatments, current_medication, previous_diagnosed_conditions, past_surgeries, childhood_illness, long_term_treatments'
       )
-      .eq('user_id', userId)
+      .eq('profile_id', profileId)
       .maybeSingle<HealthProfile>(),
 };

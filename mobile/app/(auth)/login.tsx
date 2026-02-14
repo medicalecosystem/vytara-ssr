@@ -114,12 +114,27 @@ export default function LoginScreen() {
   };
 
   const resolveDisplayName = async (userId: string, fallback: string) => {
-    const { data } = await supabase
-      .from('personal')
-      .select('display_name')
-      .eq('id', userId)
-      .maybeSingle();
-    return data?.display_name?.trim() || fallback;
+    const { data: authProfiles, error: authProfilesError } = await supabase
+      .from('profiles')
+      .select('display_name, name')
+      .eq('auth_id', userId)
+      .order('is_primary', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    if (!authProfilesError && authProfiles?.[0]) {
+      return authProfiles[0].display_name?.trim() || authProfiles[0].name?.trim() || fallback;
+    }
+
+    const { data: userProfiles } = await supabase
+      .from('profiles')
+      .select('display_name, name')
+      .eq('user_id', userId)
+      .order('is_primary', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    return userProfiles?.[0]?.display_name?.trim() || userProfiles?.[0]?.name?.trim() || fallback;
   };
 
   const removeRememberedAccount = async () => {

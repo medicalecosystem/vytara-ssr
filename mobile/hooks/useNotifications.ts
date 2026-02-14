@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 import { careCircleApi } from '@/api/modules/carecircle';
 import type { Appointment } from '@/components/AppointmentsModal';
@@ -9,9 +9,12 @@ import { supabase } from '@/lib/supabase';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ACCEPTANCE_WINDOW_DAYS = 30;
 const NOTIFICATION_REFRESH_MS = 60_000;
-const seenNotificationsKey = (userId: string) => `vytara:seen-notifications:${userId}`;
-const seenNotificationsFile = (userId: string) =>
-  FileSystem.documentDirectory ? `${FileSystem.documentDirectory}vytara-notifications-${userId}.json` : null;
+const seenNotificationsKey = (userId: string, profileId?: string) =>
+  `vytara:seen-notifications:${userId}:${profileId ?? 'account'}`;
+const seenNotificationsFile = (userId: string, profileId?: string) =>
+  FileSystem.documentDirectory
+    ? `${FileSystem.documentDirectory}vytara-notifications-${userId}-${profileId ?? 'account'}.json`
+    : null;
 
 export type CareCircleInvite = {
   id: string;
@@ -66,8 +69,8 @@ const getWebStorage = (): WebStorage | null => {
   return storage ?? null;
 };
 
-const readSeenFromFile = async (userId: string) => {
-  const path = seenNotificationsFile(userId);
+const readSeenFromFile = async (userId: string, profileId?: string) => {
+  const path = seenNotificationsFile(userId, profileId);
   if (!path) return null;
   try {
     const info = await FileSystem.getInfoAsync(path);
@@ -79,8 +82,8 @@ const readSeenFromFile = async (userId: string) => {
   }
 };
 
-const writeSeenToFile = async (userId: string, payload: string) => {
-  const path = seenNotificationsFile(userId);
+const writeSeenToFile = async (userId: string, payload: string, profileId?: string) => {
+  const path = seenNotificationsFile(userId, profileId);
   if (!path) return;
   try {
     await FileSystem.writeAsStringAsync(path, payload);
@@ -89,7 +92,7 @@ const writeSeenToFile = async (userId: string, payload: string) => {
   }
 };
 
-export function useNotifications(userId?: string) {
+export function useNotifications(userId?: string, profileId?: string) {
   const [now, setNow] = useState(() => new Date());
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [careCircleInvites, setCareCircleInvites] = useState<CareCircleInvite[]>([]);
@@ -107,7 +110,7 @@ export function useNotifications(userId?: string) {
   }, []);
 
   const loadSeenNotifications = useCallback(async () => {
-    if (!userId) {
+    if (!userId || !profileId) {
       setSeenNotificationIds(new Set());
       setHasHydratedSeen(false);
       return;
@@ -116,7 +119,7 @@ export function useNotifications(userId?: string) {
     let foundLocal = false;
 
     try {
-      const stored = await SecureStore.getItemAsync(seenNotificationsKey(userId));
+      const stored = await SecureStore.getItemAsync(seenNotificationsKey(userId, profileId));
       if (stored) {
         const parsed = JSON.parse(stored) as string[];
         localIds = new Set(parsed);
@@ -127,7 +130,7 @@ export function useNotifications(userId?: string) {
     }
 
     if (!foundLocal) {
-      const fileStored = await readSeenFromFile(userId);
+      const fileStored = await readSeenFromFile(userId, profileId);
       if (fileStored) {
         try {
           const parsed = JSON.parse(fileStored) as string[];
@@ -142,7 +145,7 @@ export function useNotifications(userId?: string) {
     if (!foundLocal) {
       const webStorage = getWebStorage();
       if (webStorage) {
-        const stored = webStorage.getItem(seenNotificationsKey(userId));
+        const stored = webStorage.getItem(seenNotificationsKey(userId, profileId));
         if (stored) {
           try {
             const parsed = JSON.parse(stored) as string[];
@@ -171,22 +174,22 @@ export function useNotifications(userId?: string) {
 
     setSeenNotificationIds(mergedIds);
     setHasHydratedSeen(true);
-  }, [userId]);
+  }, [userId, profileId]);
 
   const persistSeenNotifications = useCallback(
     async (nextIds: Set<string>) => {
-      if (!userId) return;
+      if (!userId || !profileId) return;
       const arrayPayload = Array.from(nextIds);
       const payload = JSON.stringify(arrayPayload);
       const webStorage = getWebStorage();
       try {
-        await SecureStore.setItemAsync(seenNotificationsKey(userId), payload);
+        await SecureStore.setItemAsync(seenNotificationsKey(userId, profileId), payload);
       } catch {
         // Ignore and still fall back to file/web storage.
       }
-      await writeSeenToFile(userId, payload);
+      await writeSeenToFile(userId, payload, profileId);
       if (webStorage) {
-        webStorage.setItem(seenNotificationsKey(userId), payload);
+        webStorage.setItem(seenNotificationsKey(userId, profileId), payload);
       }
       if (payload !== lastRemotePersist.current) {
         lastRemotePersist.current = payload;
@@ -197,7 +200,7 @@ export function useNotifications(userId?: string) {
         }
       }
     },
-    [userId]
+    [userId, profileId]
   );
 
   useEffect(() => {
@@ -218,7 +221,7 @@ export function useNotifications(userId?: string) {
   }, [persistSeenNotifications, seenNotificationIds, hasHydratedSeen]);
 
   const fetchNotifications = useCallback(async () => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
     setNotificationsLoading(true);
     setNotificationsError(null);
 
@@ -230,7 +233,7 @@ export function useNotifications(userId?: string) {
     const { data, error } = await supabase
       .from('user_appointments')
       .select('appointments')
-      .eq('user_id', userId)
+      .eq('profile_id', profileId)
       .maybeSingle();
 
     if (error) {
@@ -245,7 +248,7 @@ export function useNotifications(userId?: string) {
     }
 
     try {
-      const links = await careCircleApi.getLinks();
+      const links = await careCircleApi.getLinks(profileId);
         nextInvites =
           links.incoming
             ?.filter((link) => link.status === 'pending')
@@ -279,10 +282,10 @@ export function useNotifications(userId?: string) {
     if (nextAcceptances) setCareCircleAcceptances(nextAcceptances);
     setNotificationsError(hadError ? 'Some notifications could not be refreshed.' : null);
     setNotificationsLoading(false);
-  }, [userId]);
+  }, [userId, profileId]);
 
   useEffect(() => {
-    if (!userId) {
+    if (!userId || !profileId) {
       setAppointments([]);
       setCareCircleInvites([]);
       setCareCircleAcceptances([]);
@@ -300,7 +303,7 @@ export function useNotifications(userId?: string) {
   }, [userId, fetchNotifications]);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !profileId) return;
 
     const scheduleRefresh = () => {
       if (realtimeDebounce.current) {
@@ -311,7 +314,7 @@ export function useNotifications(userId?: string) {
       }, 500);
     };
 
-    const channel = supabase.channel(`notifications-${userId}`);
+    const channel = supabase.channel(`notifications-${userId}-${profileId}`);
     channel
       .on(
         'postgres_changes',
@@ -325,7 +328,7 @@ export function useNotifications(userId?: string) {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'user_appointments', filter: `user_id=eq.${userId}` },
+        { event: '*', schema: 'public', table: 'user_appointments', filter: `profile_id=eq.${profileId}` },
         scheduleRefresh
       )
       .subscribe();
@@ -336,7 +339,7 @@ export function useNotifications(userId?: string) {
       }
       supabase.removeChannel(channel);
     };
-  }, [userId, fetchNotifications]);
+  }, [userId, profileId, fetchNotifications]);
 
   const upcomingAppointments = useMemo(
     () => getUpcomingAppointments(appointments, now),

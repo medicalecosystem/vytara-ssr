@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/createClient";
+import { useAppProfile } from "@/components/AppProfileProvider";
 
 interface MedicationEntry {
   name: string;
@@ -77,6 +78,8 @@ const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 export default function HealthOnboardingChatbot() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { selectedProfile, selectProfile, refreshProfiles } = useAppProfile();
   const [step, setStep] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -86,6 +89,13 @@ export default function HealthOnboardingChatbot() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [isCancellingProfile, setIsCancellingProfile] = useState(false);
+
+  const newProfileId = searchParams.get("newProfileId")?.trim() || "";
+  const previousProfileId = searchParams.get("previousProfileId")?.trim() || "";
+  const returnToRaw = searchParams.get("returnTo")?.trim() || "/app/homepage";
+  const returnTo = returnToRaw.startsWith("/app/") ? returnToRaw : "/app/homepage";
+  const isNewProfileOnboarding = Boolean(newProfileId);
 
   const [profile, setProfile] = useState<Profile>({
     displayName: "",
@@ -185,7 +195,7 @@ export default function HealthOnboardingChatbot() {
 
   const setAnswerOnProfile = (key: keyof Profile, raw: string) => {
     const trimmed = raw.trim();
-    let value: any = trimmed;
+    let value: string | number | null = trimmed;
 
     if (key === "heightCm" || key === "weightKg") {
       const n = Number(trimmed);
@@ -337,10 +347,57 @@ export default function HealthOnboardingChatbot() {
 
   const progressPercent = Math.min(100, Math.round((step / QUESTIONS.length) * 100));
 
+  const handleDiscardNewProfile = async () => {
+    if (!isNewProfileOnboarding || !newProfileId) {
+      router.push(returnTo);
+      return;
+    }
+
+    const confirmed = window.confirm("If you go back, this new profile will not be created. Continue?");
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setIsCancellingProfile(true);
+      setSaveError(null);
+
+      const { error: deleteError } = await supabase
+        .from("profiles")
+        .delete()
+        .eq("id", newProfileId);
+
+      if (deleteError) {
+        throw new Error(deleteError.message || "Unable to remove this new profile.");
+      }
+
+      await refreshProfiles();
+
+      if (previousProfileId) {
+        try {
+          await selectProfile(previousProfileId);
+        } catch {
+          // If previous profile no longer exists, provider fallback selection is used.
+        }
+      }
+
+      router.push(returnTo);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Unable to go back right now.";
+      setSaveError(message);
+    } finally {
+      setIsCancellingProfile(false);
+    }
+  };
+
   const saveToDatabase = async () => {
     try {
       setIsSaving(true);
       setSaveError(null);
+
+      if (!selectedProfile?.id) {
+        throw new Error("Please select a profile before saving.");
+      }
 
       const normalizedProfile: Profile = {
         ...profile,
@@ -364,7 +421,10 @@ export default function HealthOnboardingChatbot() {
       const res = await fetch("/api/health-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(healthPayload),
+        body: JSON.stringify({
+          profileId: selectedProfile.id,
+          ...healthPayload,
+        }),
       });
 
       if (!res.ok) {
@@ -373,16 +433,12 @@ export default function HealthOnboardingChatbot() {
       }
 
       if (displayName.trim()) {
-        const { data: authData } = await supabase.auth.getUser();
-        const userId = authData?.user?.id;
-        if (userId) {
-          const { error } = await supabase
-            .from("personal")
-            .update({ display_name: displayName.trim() })
-            .eq("id", userId);
-          if (error) {
-            throw new Error(error.message);
-          }
+        const { error } = await supabase
+          .from("profiles")
+          .update({ display_name: displayName.trim() })
+          .eq("id", selectedProfile.id);
+        if (error) {
+          throw new Error(error.message);
         }
       }
 
@@ -391,8 +447,9 @@ export default function HealthOnboardingChatbot() {
       window.setTimeout(() => {
         router.push("/app/homepage");
       }, 500);
-    } catch (e: any) {
-      setSaveError(e?.message || "Something went wrong");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Something went wrong";
+      setSaveError(message);
       addMessage("bot", "❌ Couldn’t save. Please try again.");
     } finally {
       setIsSaving(false);
@@ -411,8 +468,22 @@ export default function HealthOnboardingChatbot() {
             <h1 style={styles.title}>Welcome, let’s build your profile.</h1>
             <p style={styles.subtitle}>This helps G1 organize your medical history securely.</p>
           </div>
-
-          <span style={styles.badge}>{isSaved ? "Saved" : isComplete ? "Review" : "In Progress"}</span>
+          <div style={styles.headerActions}>
+            {isNewProfileOnboarding && !isSaved && (
+              <button
+                type="button"
+                onClick={handleDiscardNewProfile}
+                disabled={isCancellingProfile}
+                style={{
+                  ...styles.goBackButton,
+                  ...(isCancellingProfile ? styles.goBackButtonDisabled : {}),
+                }}
+              >
+                {isCancellingProfile ? "Discarding..." : "Go Back"}
+              </button>
+            )}
+            <span style={styles.badge}>{isSaved ? "Saved" : isComplete ? "Review" : "In Progress"}</span>
+          </div>
         </div>
 
         <div style={styles.gridLayout}>
@@ -958,6 +1029,28 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
     backdropFilter: "blur(18px) saturate(1.4)",
     WebkitBackdropFilter: "blur(18px) saturate(1.4)",
+  },
+  headerActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  goBackButton: {
+    border: "1px solid rgba(15, 118, 110, 0.35)",
+    background: "rgba(255,255,255,0.7)",
+    color: "#0f766e",
+    padding: "6px 12px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+
+  goBackButtonDisabled: {
+    opacity: 0.7,
+    cursor: "not-allowed",
   },
 
   gridLayout: {

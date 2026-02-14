@@ -6,13 +6,44 @@ export type VaultFile = {
   created_at: string;
 };
 
+const sanitizeFileName = (name: string) => {
+  const trimmed = name.trim();
+  const safe = trimmed.replace(/[\\/]/g, '-');
+  return safe || 'untitled';
+};
+
+const loadBlobFromUri = async (uri: string): Promise<Blob> => {
+  try {
+    const response = await fetch(uri);
+    if (!response.ok) {
+      throw new Error(`Unable to read selected file (${response.status}).`);
+    }
+    return await response.blob();
+  } catch {
+    return await new Promise<Blob>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onload = () => {
+        if (xhr.response) {
+          resolve(xhr.response as Blob);
+          return;
+        }
+        reject(new Error('Unable to read selected file.'));
+      };
+      xhr.onerror = () => reject(new Error('Unable to read selected file.'));
+      xhr.responseType = 'blob';
+      xhr.open('GET', uri, true);
+      xhr.send();
+    });
+  }
+};
+
 // NOTE: These are stubs. In many apps you'd use Supabase Storage APIs
 // and signed URLs behind an API. This keeps the interface stable.
 export const vaultApi = {
-  listFiles: async (userId: string, folder: MedicalFolder) => {
+  listFiles: async (profileId: string, folder: MedicalFolder) => {
     const { data, error } = await supabase.storage
       .from('medical-vault')
-      .list(`${userId}/${folder}`, {
+      .list(`${profileId}/${folder}`, {
         sortBy: { column: 'created_at', order: 'desc' },
       });
 
@@ -34,21 +65,29 @@ export const vaultApi = {
     return { data, error: null };
   },
   uploadFile: async (
-    userId: string,
+    profileId: string,
     folder: MedicalFolder,
     file: { uri: string; name: string; mimeType?: string | null },
     targetName?: string
   ) => {
-    const response = await fetch(file.uri);
-    const blob = await response.blob();
-    const name = targetName ?? file.name;
-    const path = `${userId}/${folder}/${name}`;
-    const { data, error } = await supabase.storage.from('medical-vault').upload(path, blob, {
-      contentType: file.mimeType ?? undefined,
-      upsert: false,
-    });
-    if (error) return { data: null, error };
-    return { data, error: null };
+    try {
+      const blob = await loadBlobFromUri(file.uri);
+      const name = sanitizeFileName(targetName ?? file.name);
+      const path = `${profileId}/${folder}/${name}`;
+      const { data, error } = await supabase.storage.from('medical-vault').upload(path, blob, {
+        contentType: file.mimeType ?? undefined,
+        upsert: false,
+      });
+      if (error) return { data: null, error };
+      return { data, error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error: {
+          message: error instanceof Error ? error.message : 'Unable to upload file.',
+        },
+      };
+    }
   },
   deleteFile: async (path: string) => {
     const { data, error } = await supabase.storage.from('medical-vault').remove([path]);

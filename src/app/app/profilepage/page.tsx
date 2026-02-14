@@ -10,6 +10,7 @@ import { useRef, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Silk from '@/components/Silk';
 import jsPDF from 'jspdf';
+import { useAppProfile } from '@/components/AppProfileProvider';
 
 type CacheEntry<T> = { ts: number; value: T };
 const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -36,11 +37,14 @@ const writeProfileCache = <T,>(userId: string, key: string, value: T) => {
 export default function ProfilePageUI() {
 
   const router = useRouter();
+  const { selectedProfile } = useAppProfile();
   const [isPersonalInfoModalOpen, setIsPersonalInfoModalOpen] = useState(false);
   const [isCurrentMedicalModalOpen, setIsCurrentMedicalModalOpen] = useState(false);
   const [isPastMedicalModalOpen, setIsPastMedicalModalOpen] = useState(false);
   const [isFamilyHistoryModalOpen, setIsFamilyHistoryModalOpen] = useState(false);
   const [userId, setUserId] = useState("");
+  const profileId = selectedProfile?.id ?? "";
+  const cacheOwnerId = profileId || userId;
 
   {/* PERSONAL DATA */}
   const [userName, setUserName] = useState("");
@@ -302,13 +306,14 @@ export default function ProfilePageUI() {
 
 useEffect(() => {
     async function fetchPersonalData(){
-      if (!userId) return;
+      if (!userId || !profileId) return;
+
       const cachedPersonal = readProfileCache<{
         display_name: string | null;
         phone: string | null;
         gender: string | null;
         address: string | null;
-      }>(userId, 'personal');
+      }>(cacheOwnerId, 'personal');
       if (cachedPersonal) {
         if (cachedPersonal.display_name) {
           setUserName(cachedPersonal.display_name);
@@ -317,26 +322,36 @@ useEffect(() => {
         setGender((prev) => cachedPersonal.gender || prev || '');
         setAddress((prev) => cachedPersonal.address || prev || '');
       }
+
+      const profileName =
+        selectedProfile?.display_name?.trim() ||
+        selectedProfile?.name?.trim() ||
+        '';
+      if (profileName) {
+        setUserName(profileName);
+      }
+
       const { data, error } = await supabase
-        .from("personal")
-        .select("display_name, phone, gender, address")
-        .eq("id", userId)
+        .from("profiles")
+        .select("display_name, name, phone, gender, address")
+        .eq("id", profileId)
         .maybeSingle();
 
-      if (error){
+      if (error) {
         console.log("Error: ", error);
         return;
       }
 
-      if (data){
-        if (data.display_name) {
-          setUserName(data.display_name);
+      if (data) {
+        const resolvedName = data.display_name?.trim() || data.name?.trim() || "";
+        if (resolvedName) {
+          setUserName(resolvedName);
         }
         setPhoneNumber((prev) => data.phone || prev || "");
         setGender((prev) => data.gender || prev || "");
         setAddress((prev) => data.address || prev || "");
-        writeProfileCache(userId, 'personal', {
-          display_name: data.display_name ?? null,
+        writeProfileCache(cacheOwnerId, 'personal', {
+          display_name: resolvedName || null,
           phone: data.phone ?? null,
           gender: data.gender ?? null,
           address: data.address ?? null,
@@ -344,13 +359,13 @@ useEffect(() => {
       }
     }
     fetchPersonalData();
-  }, [userId]);
+  }, [cacheOwnerId, profileId, selectedProfile?.display_name, selectedProfile?.name, userId]);
 
 
 
   useEffect(() => {
     async function fetchHealthData(){
-      if (!userId) return;
+      if (!userId || !profileId) return;
       const cachedHealth = readProfileCache<{
         date_of_birth: string | null;
         blood_group: string | null;
@@ -364,7 +379,7 @@ useEffect(() => {
         past_surgeries: PastSurgery[] | null;
         childhood_illness: string[] | null;
         long_term_treatments: string[] | null;
-      }>(userId, 'health');
+      }>(cacheOwnerId, 'health');
       if (cachedHealth) {
         setConditions(cachedHealth.current_diagnosed_condition || []);
         setAllergy(cachedHealth.allergies || []);
@@ -403,7 +418,7 @@ useEffect(() => {
           childhood_illness,
           long_term_treatments
         `)
-        .eq("user_id", userId)
+        .eq("profile_id", profileId)
         .maybeSingle();
 
       if (error){
@@ -425,7 +440,7 @@ useEffect(() => {
         setPastSurgeries((data.past_surgeries as PastSurgery[]) || []);
         setChildhoodIllness((data.childhood_illness as string[]) || []);
         setLongTermTreatments((data.long_term_treatments as string[]) || []);
-        writeProfileCache(userId, 'health', {
+        writeProfileCache(cacheOwnerId, 'health', {
           date_of_birth: data.date_of_birth ?? null,
           blood_group: data.blood_group ?? null,
           current_diagnosed_condition: (data.current_diagnosed_condition as string[]) || [],
@@ -442,19 +457,19 @@ useEffect(() => {
       }
     }
     fetchHealthData();
-  }, [userId]);
+  }, [cacheOwnerId, profileId, userId]);
 
   useEffect(() => {
     async function fetchFamilyHealthData() {
-      if (!userId) return;
-      const cachedFamilyHistory = readProfileCache<FamilyMedicalHistory[]>(userId, 'family_history');
+      if (!userId || !profileId) return;
+      const cachedFamilyHistory = readProfileCache<FamilyMedicalHistory[]>(cacheOwnerId, 'family_history');
       if (cachedFamilyHistory) {
         setFamilyMedicalHistory(cachedFamilyHistory);
       }
       const { data, error } = await supabase
-        .from("personal")
+        .from("health")
         .select("family_history")
-        .eq("id", userId)
+        .eq("profile_id", profileId)
         .maybeSingle();
 
       if ( error ) { 
@@ -463,11 +478,11 @@ useEffect(() => {
 
       if (data && data.family_history) {
         setFamilyMedicalHistory(data.family_history.familyMedicalHistory || []);
-        writeProfileCache(userId, 'family_history', data.family_history.familyMedicalHistory || []);
+        writeProfileCache(cacheOwnerId, 'family_history', data.family_history.familyMedicalHistory || []);
       }
     }
     fetchFamilyHealthData();
-  }, [userId]);
+  }, [cacheOwnerId, profileId, userId]);
 
   return (
     <div className="min-h-screen pb-10 font-sans relative bg-[#F5F5DC]">
@@ -850,25 +865,34 @@ useEffect(() => {
               <div className="p-6">
                 <form onSubmit={async (e) => {
                   e.preventDefault();
+                  if (!profileId || !userId) {
+                    alert("Please select a profile first.");
+                    return;
+                  }
                   const personalData = {
                     display_name: personalDraft.userName,
                     phone: personalDraft.phoneNumber,
                     gender: personalDraft.gender,
                     address: personalDraft.address,
                   };
-                  const { error: personalError } = await supabase
-                    .from("personal")
+                  const { error: profileError } = await supabase
+                    .from("profiles")
                     .update(personalData)
-                    .eq("id", userId);
+                    .eq("id", profileId);
                   const { error: healthError } = await supabase
                     .from("health")
-                    .update({
-                      date_of_birth: personalDraft.dob,
-                      blood_group: personalDraft.bloodGroup,
-                    })
-                    .eq("user_id", userId);
-                  if (personalError) {
-                    alert("Error: " + personalError.message);
+                    .upsert(
+                      {
+                        profile_id: profileId,
+                        user_id: userId,
+                        date_of_birth: personalDraft.dob,
+                        blood_group: personalDraft.bloodGroup,
+                        updated_at: new Date().toISOString(),
+                      },
+                      { onConflict: "profile_id" }
+                    );
+                  if (profileError) {
+                    alert("Error: " + profileError.message);
                   } else if (healthError) {
                     alert("Error: " + healthError.message);
                   } else {
@@ -1009,7 +1033,12 @@ useEffect(() => {
               <div className="p-6">
                 <form onSubmit={async (e) => {
                   e.preventDefault();
+                  if (!profileId || !userId) {
+                    alert("Please select a profile first.");
+                    return;
+                  }
                   const healthData = {
+                    profile_id: profileId,
                     user_id: userId,
                     current_diagnosed_condition: conditions.map((item) => item.trim()).filter(Boolean),
                     current_medication: currentMedications
@@ -1024,7 +1053,7 @@ useEffect(() => {
                   };
                   const { error } = await supabase
                     .from("health")
-                    .upsert(healthData, { onConflict: "user_id" });
+                    .upsert(healthData, { onConflict: "profile_id" });
                   if (error) {
                     alert("Error: " + error.message);
                   } else {
@@ -1258,7 +1287,12 @@ useEffect(() => {
               <div className="p-6">
                 <form onSubmit={async (e) => {
                   e.preventDefault();
+                  if (!profileId || !userId) {
+                    alert("Please select a profile first.");
+                    return;
+                  }
                   const pastData = {
+                    profile_id: profileId,
                     user_id: userId,
                     previous_diagnosed_conditions: previousDiagnosedCondition.map((item) => item.trim()).filter(Boolean),
                     past_surgeries: pastSurgeries
@@ -1273,7 +1307,7 @@ useEffect(() => {
                   };
                   const { error } = await supabase
                     .from("health")
-                    .upsert(pastData, { onConflict: "user_id" });
+                    .upsert(pastData, { onConflict: "profile_id" });
                   if (error) {
                     alert("Error: " + error.message);
                   } else {
@@ -1500,11 +1534,22 @@ useEffect(() => {
               <div className="p-6">
                 <form onSubmit={async (e) => {
                   e.preventDefault();
+                  if (!profileId || !userId) {
+                    alert("Please select a profile first.");
+                    return;
+                  }
                   const familyData = { familyMedicalHistory };
                   const { error } = await supabase
-                    .from("personal")
-                    .update({ family_history: familyData })
-                    .eq("id", userId);
+                    .from("health")
+                    .upsert(
+                      {
+                        profile_id: profileId,
+                        user_id: userId,
+                        family_history: familyData,
+                        updated_at: new Date().toISOString(),
+                      },
+                      { onConflict: "profile_id" }
+                    );
                   if (error) {
                     alert("Error: " + error.message);
                   } else {

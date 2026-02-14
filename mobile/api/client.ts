@@ -35,23 +35,43 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const url = buildUrl(path);
   const authHeader = await getAuthHeader();
 
-  const response = await fetch(url, {
-    method,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeader,
-      ...headers,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeader,
+        ...headers,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (error: unknown) {
+    const networkMessage =
+      error && typeof error === 'object' && 'message' in error
+        ? String((error as { message?: unknown }).message ?? '')
+        : '';
+    throw new ApiError(networkMessage || 'Network request failed', 0, error);
+  }
 
   const contentType = response.headers.get('content-type') ?? '';
   const isJson = contentType.includes('application/json');
   const payload = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
-    const message = isJson && payload?.message ? payload.message : response.statusText;
+    let message = response.statusText || `Request failed (${response.status})`;
+    if (isJson && payload && typeof payload === 'object') {
+      const candidate =
+        (payload as { message?: unknown }).message ??
+        (payload as { error?: unknown }).error ??
+        (payload as { details?: unknown }).details;
+      if (typeof candidate === 'string' && candidate.trim()) {
+        message = candidate;
+      }
+    } else if (typeof payload === 'string' && payload.trim()) {
+      message = payload.trim();
+    }
     throw new ApiError(message || 'Request failed', response.status, payload);
   }
 

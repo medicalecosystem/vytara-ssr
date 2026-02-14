@@ -1,14 +1,14 @@
 import { profileApi } from '@/api';
 
 export const profileRepository = {
-  getPersonalProfile: async (userId: string) => {
-    const { data, error } = await profileApi.getPersonalProfile(userId);
+  getPersonalProfile: async (profileId: string) => {
+    const { data, error } = await profileApi.getPersonalProfile(profileId);
     if (error) throw error;
     return data;
   },
 
-  getHealthProfile: async (userId: string) => {
-    const { data, error } = await profileApi.getHealthProfile(userId);
+  getHealthProfile: async (profileId: string) => {
+    const { data, error } = await profileApi.getHealthProfile(profileId);
     if (error) throw error;
     return data;
   },
