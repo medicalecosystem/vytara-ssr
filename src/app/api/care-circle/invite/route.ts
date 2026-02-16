@@ -8,7 +8,28 @@ type InvitePayload = {
   profileId?: string;
 };
 
+type ProfileRow = {
+  id: string;
+  is_primary?: boolean | null;
+};
+
+type RecipientLookupRow = {
+  auth_id?: string | null;
+  user_id?: string | null;
+  is_primary?: boolean | null;
+  created_at?: string | null;
+};
+
 const normalizeContact = (value: string) => value.replace(/[^\d+]/g, '');
+const isMissingColumnError = (
+  error: { code?: string; message?: string } | null | undefined,
+  column: string
+) =>
+  error?.code === 'PGRST204' ||
+  error?.message?.toLowerCase().includes(column.toLowerCase()) ||
+  false;
+const isDuplicateKeyError = (error: { code?: string; message?: string } | null | undefined) =>
+  error?.code === '23505' || /duplicate key/i.test(error?.message ?? '');
 
 /** Normalize to E.164: if already has + use it, else assume India for 10 digits. */
 const normalizeContactToE164 = (value: string): string => {
@@ -85,12 +106,27 @@ export async function POST(request: Request) {
     );
   }
 
-  const payload = (await request.json()) as InvitePayload;
+  let payload: InvitePayload;
+  try {
+    payload = (await request.json()) as InvitePayload;
+  } catch {
+    return NextResponse.json({ message: 'Invalid request payload.' }, { status: 400 });
+  }
+
   const contact = payload.contact?.trim();
   const requestedProfileId = payload.profileId?.trim();
 
   if (!contact) {
     return NextResponse.json({ message: 'Contact is required.' }, { status: 400 });
+  }
+  if (!requestedProfileId) {
+    return NextResponse.json({ message: 'profileId is required.' }, { status: 400 });
+  }
+  if (contact.includes('@')) {
+    return NextResponse.json(
+      { message: 'Email invites are not supported. Use a phone number instead.' },
+      { status: 400 }
+    );
   }
 
   const adminClient = createClient(
@@ -101,79 +137,49 @@ export async function POST(request: Request) {
     }
   );
 
-  // Resolve active profile: requested profile if provided, else current user's primary profile.
-  let profileId = requestedProfileId ?? null;
-  if (profileId) {
-    let ownsProfile = false;
-    const { data: ownedByAuth, error: ownedByAuthError } = await adminClient
+  // Enforce inviter-owned primary profile for invite creation.
+  let selectedProfile: ProfileRow | null = null;
+  const ownedByAuth = await adminClient
+    .from('profiles')
+    .select('id, is_primary')
+    .eq('id', requestedProfileId)
+    .eq('auth_id', user.id)
+    .maybeSingle();
+
+  if (ownedByAuth.error && !isMissingColumnError(ownedByAuth.error, 'auth_id') && ownedByAuth.error.code !== 'PGRST116') {
+    return NextResponse.json({ message: ownedByAuth.error.message }, { status: 500 });
+  }
+  if (!ownedByAuth.error && ownedByAuth.data?.id) {
+    selectedProfile = ownedByAuth.data as ProfileRow;
+  }
+
+  if (!selectedProfile) {
+    const ownedByUser = await adminClient
       .from('profiles')
-      .select('id')
-      .eq('id', profileId)
-      .eq('auth_id', user.id)
+      .select('id, is_primary')
+      .eq('id', requestedProfileId)
+      .eq('user_id', user.id)
       .maybeSingle();
 
-    if (!ownedByAuthError && ownedByAuth?.id) {
-      ownsProfile = true;
+    if (ownedByUser.error && ownedByUser.error.code !== 'PGRST116') {
+      return NextResponse.json({ message: ownedByUser.error.message }, { status: 500 });
     }
-
-    if (!ownsProfile) {
-      const { data: ownedByUser, error: ownedByUserError } = await adminClient
-        .from('profiles')
-        .select('id')
-        .eq('id', profileId)
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (ownedByUserError && ownedByUserError.code !== 'PGRST116') {
-        return NextResponse.json({ message: ownedByUserError.message }, { status: 500 });
-      }
-
-      if (ownedByUser?.id) {
-        ownsProfile = true;
-      }
+    if (ownedByUser.data?.id) {
+      selectedProfile = ownedByUser.data as ProfileRow;
     }
+  }
 
-    if (!ownsProfile) {
-      return NextResponse.json({ message: 'Invalid profile selection.' }, { status: 403 });
-    }
-  } else {
-    const { data: primaryByAuth } = await adminClient
-      .from('profiles')
-      .select('id')
-      .eq('auth_id', user.id)
-      .eq('is_primary', true)
-      .maybeSingle();
-
-    profileId = primaryByAuth?.id ?? null;
-
-    if (!profileId) {
-      const { data: primaryByUser, error: primaryByUserError } = await adminClient
-        .from('profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('is_primary', true)
-        .maybeSingle();
-
-      if (primaryByUserError && primaryByUserError.code !== 'PGRST116') {
-        return NextResponse.json({ message: primaryByUserError.message }, { status: 500 });
-      }
-
-      profileId = primaryByUser?.id ?? null;
-    }
-
-    if (!profileId) {
-      return NextResponse.json({ message: 'No profile available for this account.' }, { status: 400 });
-    }
+  if (!selectedProfile?.id) {
+    return NextResponse.json({ message: 'Invalid profile selection.' }, { status: 403 });
+  }
+  if (!selectedProfile.is_primary) {
+    return NextResponse.json(
+      { message: 'Only the primary profile can send care circle invites.' },
+      { status: 403 }
+    );
   }
 
   let recipientId: string | null = null;
-
-  if (contact.includes('@')) {
-    return NextResponse.json(
-      { message: 'Email invites are not supported. Use a phone number instead.' },
-      { status: 400 }
-    );
-  }
 
   if (!recipientId) {
     const normalized = normalizeContact(contact);
@@ -196,16 +202,11 @@ export async function POST(request: Request) {
       .order('is_primary', { ascending: false })
       .order('created_at', { ascending: true });
 
-    const missingAuthColumn =
-      preferredProfilesLookup.error?.code === 'PGRST204' ||
-      preferredProfilesLookup.error?.message?.toLowerCase().includes('auth_id');
-
-    let profileRows:
-      | Array<{ auth_id?: string | null; user_id?: string | null; is_primary?: boolean | null; created_at?: string | null }>
-      | null = null;
+    const missingAuthColumn = isMissingColumnError(preferredProfilesLookup.error, 'auth_id');
+    let profileRows: RecipientLookupRow[] | null = null;
 
     if (!preferredProfilesLookup.error) {
-      profileRows = preferredProfilesLookup.data;
+      profileRows = preferredProfilesLookup.data as RecipientLookupRow[];
     } else if (missingAuthColumn) {
       const legacyProfilesLookup = await adminClient
         .from('profiles')
@@ -219,11 +220,7 @@ export async function POST(request: Request) {
           { status: 500 }
         );
       }
-      profileRows = legacyProfilesLookup.data as Array<{
-        user_id?: string | null;
-        is_primary?: boolean | null;
-        created_at?: string | null;
-      }>;
+      profileRows = legacyProfilesLookup.data as RecipientLookupRow[];
     } else {
       return NextResponse.json(
         { message: preferredProfilesLookup.error.message },
@@ -246,23 +243,116 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'You cannot invite yourself.' }, { status: 400 });
   }
 
-  if (!profileId) {
+  const { data: existingPairRows, error: existingPairError } = await adminClient
+    .from('care_circle_links')
+    .select('id, status')
+    .eq('requester_id', user.id)
+    .eq('recipient_id', recipientId);
+
+  if (existingPairError) {
+    return NextResponse.json({ message: existingPairError.message }, { status: 500 });
+  }
+
+  const existingStatuses = new Set((existingPairRows ?? []).map((row) => row.status));
+  if (existingStatuses.has('accepted')) {
+    return NextResponse.json({ message: 'This member is already in your care circle.' }, { status: 409 });
+  }
+  if (existingStatuses.has('pending')) {
+    return NextResponse.json({ message: 'An invite is already pending for this member.' }, { status: 409 });
+  }
+
+  const nowIso = new Date().toISOString();
+
+  // Re-open previously declined/archived rows instead of creating new ones.
+  if ((existingPairRows ?? []).length > 0) {
+    const { error: reactivateError } = await adminClient
+      .from('care_circle_links')
+      .update({
+        status: 'pending',
+        relationship: 'friend',
+        updated_at: nowIso,
+      })
+      .eq('requester_id', user.id)
+      .eq('recipient_id', recipientId);
+
+    if (reactivateError) {
+      return NextResponse.json({ message: reactivateError.message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      recipientId,
+      invitedProfilesCount: existingPairRows.length,
+      reactivatedExistingInvite: true,
+    });
+  }
+
+  const inviterProfilesByAuth = await adminClient
+    .from('profiles')
+    .select('id')
+    .eq('auth_id', user.id)
+    .order('is_primary', { ascending: false })
+    .order('created_at', { ascending: true });
+
+  let inviterProfiles: Array<{ id: string }> = [];
+
+  if (!inviterProfilesByAuth.error && inviterProfilesByAuth.data?.length) {
+    inviterProfiles = inviterProfilesByAuth.data;
+  } else {
+    if (inviterProfilesByAuth.error && !isMissingColumnError(inviterProfilesByAuth.error, 'auth_id')) {
+      return NextResponse.json({ message: inviterProfilesByAuth.error.message }, { status: 500 });
+    }
+    const inviterProfilesByUser = await adminClient
+      .from('profiles')
+      .select('id')
+      .eq('user_id', user.id)
+      .order('is_primary', { ascending: false })
+      .order('created_at', { ascending: true });
+
+    if (inviterProfilesByUser.error) {
+      return NextResponse.json({ message: inviterProfilesByUser.error.message }, { status: 500 });
+    }
+    inviterProfiles = inviterProfilesByUser.data ?? [];
+  }
+
+  if (inviterProfiles.length === 0) {
     return NextResponse.json({ message: 'No profile available for this account.' }, { status: 400 });
   }
 
-  const { error: inviteError } = await adminClient.from('care_circle_links').insert({
+  const inviteRows = inviterProfiles.map((profile) => ({
     requester_id: user.id,
     recipient_id: recipientId,
-    profile_id: profileId,
-  });
+    profile_id: profile.id,
+    status: 'pending' as const,
+    relationship: 'friend',
+    updated_at: nowIso,
+  }));
+
+  const { error: inviteError } = await adminClient
+    .from('care_circle_links')
+    .upsert(inviteRows, { onConflict: 'requester_id,recipient_id,profile_id' });
 
   if (inviteError) {
-    const message =
-      inviteError.code === '23505'
-        ? 'An invite already exists for this member.'
-        : inviteError.message;
-    return NextResponse.json({ message }, { status: 400 });
+    if (isDuplicateKeyError(inviteError) && inviteRows.length > 1) {
+      // Backward-compat fallback when legacy pair-level unique constraints still exist.
+      const primaryInviteRow = inviteRows.find((row) => row.profile_id === selectedProfile.id) ?? inviteRows[0];
+      const { error: fallbackInviteError } = await adminClient
+        .from('care_circle_links')
+        .upsert([primaryInviteRow], { onConflict: 'requester_id,recipient_id,profile_id' });
+
+      if (!fallbackInviteError) {
+        return NextResponse.json({
+          recipientId,
+          invitedProfilesCount: 1,
+          usedLegacyFallback: true,
+        });
+      }
+    }
+
+    const message = isDuplicateKeyError(inviteError)
+      ? 'An invite already exists for this member.'
+      : inviteError.message;
+    return NextResponse.json({ message }, { status: 409 });
   }
 
-  return NextResponse.json({ recipientId });
+  return NextResponse.json({ recipientId, invitedProfilesCount: inviteRows.length });
 }

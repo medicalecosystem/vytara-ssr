@@ -79,7 +79,6 @@ export default function Navbar() {
     { label: 'Profile', href: '/app/profilepage', icon: User },
     { label: 'Vault', href: '/app/vaultpage', icon: Folder },
     { label: 'Care Circle', href: '/app/carecircle', icon: Users },
-    { label: 'Family', href: '/app/family', icon: Users },
   ];
 
   useEffect(() => {

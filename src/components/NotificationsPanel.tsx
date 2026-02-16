@@ -797,7 +797,7 @@ export function NotificationsPanel({
               <button
                 key={request.id}
                 type="button"
-                onClick={() => router.push("/app/family?open=join-requests")}
+                onClick={() => router.push("/app/carecircle")}
                 className="group relative w-full rounded-2xl border border-slate-100 bg-indigo-50/80 p-3 text-left transition hover:bg-white hover:shadow-sm"
               >
                 <span className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-transparent transition group-hover:ring-indigo-100" />
@@ -834,7 +834,7 @@ export function NotificationsPanel({
               <button
                 key={acceptance.id}
                 type="button"
-                onClick={() => router.push("/app/family")}
+                onClick={() => router.push("/app/carecircle")}
                 className="group relative w-full rounded-2xl border border-slate-100 bg-emerald-50/80 p-3 text-left transition hover:bg-white hover:shadow-sm"
               >
                 <span className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-transparent transition group-hover:ring-emerald-100" />
@@ -873,7 +873,7 @@ export function NotificationsPanel({
               <button
                 key={id}
                 type="button"
-                onClick={() => router.push("/app/family")}
+                onClick={() => router.push("/app/carecircle")}
                 className="group relative w-full rounded-2xl border border-slate-100 bg-orange-50/80 p-3 text-left transition hover:bg-white hover:shadow-sm"
               >
                 <span className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-transparent transition group-hover:ring-orange-100" />
@@ -916,9 +916,7 @@ export function NotificationsPanel({
                 type="button"
                 onClick={() =>
                   router.push(
-                    `/app/family?open=member-vault&memberId=${encodeURIComponent(
-                      file.memberId
-                    )}&tab=vault`
+                    '/app/carecircle'
                   )
                 }
                 className="group relative w-full rounded-2xl border border-slate-100 bg-blue-50/80 p-3 text-left transition hover:bg-white hover:shadow-sm"
@@ -957,7 +955,7 @@ export function NotificationsPanel({
               <button
                 key={medication.id}
                 type="button"
-                onClick={() => router.push("/app/family")}
+                onClick={() => router.push("/app/carecircle")}
                 className="group relative w-full rounded-2xl border border-slate-100 bg-green-50/80 p-3 text-left transition hover:bg-white hover:shadow-sm"
               >
                 <span className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-transparent transition group-hover:ring-green-100" />

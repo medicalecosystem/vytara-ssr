@@ -12,11 +12,14 @@ const getDisplayName = (displayName: string | null, phone: string | null) => {
   return phoneValue || 'Unknown member';
 };
 
+type LinkStatus = 'pending' | 'accepted' | 'declined';
+
 type LinkRow = {
   id: string;
   requester_id: string;
   recipient_id: string;
-  status: 'pending' | 'accepted' | 'declined';
+  status: LinkStatus;
+  relationship: string | null;
   created_at: string;
   updated_at: string | null;
   profile_id: string | null;
@@ -31,6 +34,8 @@ type ProfileLookupRow = {
   created_at: string | null;
 };
 
+type CareCircleRole = 'family' | 'friend';
+
 const parseDate = (value: string | null) => {
   if (!value) return Number.MAX_SAFE_INTEGER;
   const ts = Date.parse(value);
@@ -43,6 +48,42 @@ const pickPreferredProfile = (profiles: ProfileLookupRow[]) =>
     if (primaryDiff !== 0) return primaryDiff;
     return parseDate(a.created_at) - parseDate(b.created_at);
   })[0] ?? null;
+
+const sortLinksByOwnerProfilePriority = (
+  links: LinkRow[],
+  profilesById: Map<string, ProfileLookupRow>
+) =>
+  [...links].sort((a, b) => {
+    const aPrimary = Number(Boolean(a.profile_id && profilesById.get(a.profile_id)?.is_primary));
+    const bPrimary = Number(Boolean(b.profile_id && profilesById.get(b.profile_id)?.is_primary));
+    if (aPrimary !== bPrimary) return bPrimary - aPrimary;
+    return parseDate(a.created_at) - parseDate(b.created_at);
+  });
+
+const pickPrimaryOwnerProfileLink = (
+  links: LinkRow[],
+  profilesById: Map<string, ProfileLookupRow>
+) => sortLinksByOwnerProfilePriority(links, profilesById)[0] ?? null;
+
+const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRole => {
+  const normalized = (value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s]+/g, '_');
+  if (normalized === 'family') return 'family';
+  return 'friend';
+};
+
+const groupLinksByPair = (links: LinkRow[]) => {
+  const byPair = new Map<string, LinkRow[]>();
+  links.forEach((link) => {
+    const key = `${link.requester_id}:${link.recipient_id}`;
+    const rows = byPair.get(key) ?? [];
+    rows.push(link);
+    byPair.set(key, rows);
+  });
+  return byPair;
+};
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -158,7 +199,7 @@ export async function GET(request: Request) {
 
   let outgoingQuery = adminClient
     .from('care_circle_links')
-    .select('id, requester_id, recipient_id, status, created_at, updated_at, profile_id')
+    .select('id, requester_id, recipient_id, status, relationship, created_at, updated_at, profile_id')
     .eq('requester_id', user.id);
 
   if (requestedProfileId) {
@@ -167,7 +208,7 @@ export async function GET(request: Request) {
 
   const incomingQuery = adminClient
     .from('care_circle_links')
-    .select('id, requester_id, recipient_id, status, created_at, updated_at, profile_id')
+    .select('id, requester_id, recipient_id, status, relationship, created_at, updated_at, profile_id')
     .eq('recipient_id', user.id);
 
   const [{ data: outgoingLinks, error: outgoingError }, { data: incomingLinks, error: incomingError }] =
@@ -234,42 +275,123 @@ export async function GET(request: Request) {
     }
   }
 
+  const linkedProfileIds = Array.from(
+    new Set(
+      links
+        .map((link) => link.profile_id)
+        .filter((profileId): profileId is string => Boolean(profileId))
+    )
+  );
+  const missingLinkedProfileIds = linkedProfileIds.filter((id) => !profilesById.has(id));
+
+  if (missingLinkedProfileIds.length > 0) {
+    const { data: linkedProfiles, error: linkedProfilesError } = await adminClient
+      .from('profiles')
+      .select('id, display_name, name, phone, is_primary, created_at')
+      .in('id', missingLinkedProfileIds);
+
+    if (linkedProfilesError) {
+      return NextResponse.json({ message: linkedProfilesError.message }, { status: 500 });
+    }
+
+    (linkedProfiles ?? []).forEach((profile) => {
+      profilesById.set(profile.id, {
+        id: profile.id,
+        display_name: profile.display_name ?? null,
+        name: profile.name ?? null,
+        phone: profile.phone ?? null,
+        is_primary: profile.is_primary ?? null,
+        created_at: profile.created_at ?? null,
+      });
+    });
+  }
+
   const resolveDisplayName = (profile: ProfileLookupRow | null) =>
     profile?.display_name?.trim() ||
     profile?.name?.trim() ||
     getDisplayName(null, profile?.phone ?? null);
 
-  const outgoing = (outgoingLinks ?? []).map((link) => {
-    const memberUserId = link.recipient_id;
-    const memberProfile = pickPreferredProfile(profilesByUserId.get(memberUserId) ?? []);
-    return {
-      id: link.id,
-      memberId: memberUserId,
-      memberProfileId: memberProfile?.id ?? null,
-      profileId: link.profile_id,
-      status: link.status,
-      displayName: resolveDisplayName(memberProfile),
-      createdAt: link.created_at,
-      updatedAt: link.updated_at,
-    };
-  });
+  const buildOutgoingRows = () => {
+    const sourceRows = (outgoingLinks ?? []) as LinkRow[];
+    const rows = requestedProfileId
+      ? sourceRows
+      : Array.from(groupLinksByPair(sourceRows).values())
+          .map((pairRows) => pickPrimaryOwnerProfileLink(pairRows, profilesById))
+          .filter((row): row is LinkRow => Boolean(row));
 
-  const incoming = (incomingLinks ?? []).map((link) => {
-    const memberUserId = link.requester_id;
-    const linkedProfile = link.profile_id ? profilesById.get(link.profile_id) ?? null : null;
-    const fallbackProfile = pickPreferredProfile(profilesByUserId.get(memberUserId) ?? []);
-    const memberProfile = linkedProfile ?? fallbackProfile;
-    return {
-      id: link.id,
-      memberId: memberUserId,
-      memberProfileId: memberProfile?.id ?? null,
-      profileId: link.profile_id,
-      status: link.status,
-      displayName: resolveDisplayName(memberProfile),
-      createdAt: link.created_at,
-      updatedAt: link.updated_at,
-    };
-  });
+    return rows.map((link) => {
+      const memberUserId = link.recipient_id;
+      const memberProfile = pickPreferredProfile(profilesByUserId.get(memberUserId) ?? []);
+      const ownerProfile = link.profile_id ? profilesById.get(link.profile_id) ?? null : null;
+
+      return {
+        id: link.id,
+        memberId: memberUserId,
+        memberProfileId: memberProfile?.id ?? null,
+        profileId: link.profile_id,
+        ownerProfileIsPrimary: Boolean(ownerProfile?.is_primary),
+        status: link.status,
+        role: normalizeCareCircleRole(link.relationship),
+        displayName: resolveDisplayName(memberProfile),
+        createdAt: link.created_at,
+        updatedAt: link.updated_at,
+      };
+    });
+  };
+
+  const buildIncomingRows = () => {
+    const groupedIncoming = groupLinksByPair((incomingLinks ?? []) as LinkRow[]);
+    const shaped: LinkRow[] = [];
+
+    groupedIncoming.forEach((pairRows) => {
+      const acceptedRows = pairRows.filter((row) => row.status === 'accepted');
+      const pendingRows = pairRows.filter((row) => row.status === 'pending');
+      const declinedRows = pairRows.filter((row) => row.status === 'declined');
+
+      if (acceptedRows.length > 0) {
+        const representative = pickPrimaryOwnerProfileLink(acceptedRows, profilesById) ?? acceptedRows[0];
+        const pairRole = normalizeCareCircleRole(representative?.relationship);
+        if (pairRole === 'family') {
+          shaped.push(...sortLinksByOwnerProfilePriority(acceptedRows, profilesById));
+        } else {
+          shaped.push(representative);
+        }
+        return;
+      }
+
+      if (pendingRows.length > 0) {
+        shaped.push(pickPrimaryOwnerProfileLink(pendingRows, profilesById) ?? pendingRows[0]);
+        return;
+      }
+
+      if (declinedRows.length > 0) {
+        shaped.push(pickPrimaryOwnerProfileLink(declinedRows, profilesById) ?? declinedRows[0]);
+      }
+    });
+
+    return shaped.map((link) => {
+      const memberUserId = link.requester_id;
+      const linkedProfile = link.profile_id ? profilesById.get(link.profile_id) ?? null : null;
+      const fallbackProfile = pickPreferredProfile(profilesByUserId.get(memberUserId) ?? []);
+      const memberProfile = linkedProfile ?? fallbackProfile;
+
+      return {
+        id: link.id,
+        memberId: memberUserId,
+        memberProfileId: memberProfile?.id ?? null,
+        profileId: link.profile_id,
+        ownerProfileIsPrimary: Boolean(linkedProfile?.is_primary),
+        status: link.status,
+        role: normalizeCareCircleRole(link.relationship),
+        displayName: resolveDisplayName(memberProfile),
+        createdAt: link.created_at,
+        updatedAt: link.updated_at,
+      };
+    });
+  };
+
+  const outgoing = buildOutgoingRows();
+  const incoming = buildIncomingRows();
 
   return NextResponse.json({ outgoing, incoming });
 }

@@ -158,6 +158,29 @@ export default function HealthOnboardingChatbot() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
+  useEffect(() => {
+    if (!isNewProfileOnboarding || !newProfileId) return;
+    if (selectedProfile?.id === newProfileId) return;
+
+    let isCancelled = false;
+
+    const ensureNewProfileSelected = async () => {
+      try {
+        await refreshProfiles();
+        if (isCancelled) return;
+        await selectProfile(newProfileId);
+      } catch {
+        // Save flow still targets newProfileId directly.
+      }
+    };
+
+    void ensureNewProfileSelected();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isNewProfileOnboarding, newProfileId, refreshProfiles, selectProfile, selectedProfile?.id]);
+
   const currentQ = QUESTIONS[step];
   const canSkip = step >= 4;
   const isRequired = !!currentQ.required;
@@ -395,7 +418,10 @@ export default function HealthOnboardingChatbot() {
       setIsSaving(true);
       setSaveError(null);
 
-      if (!selectedProfile?.id) {
+      const targetProfileId =
+        (isNewProfileOnboarding && newProfileId) || selectedProfile?.id || "";
+
+      if (!targetProfileId) {
         throw new Error("Please select a profile before saving.");
       }
 
@@ -422,7 +448,7 @@ export default function HealthOnboardingChatbot() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          profileId: selectedProfile.id,
+          profileId: targetProfileId,
           ...healthPayload,
         }),
       });
@@ -436,7 +462,7 @@ export default function HealthOnboardingChatbot() {
         const { error } = await supabase
           .from("profiles")
           .update({ display_name: displayName.trim() })
-          .eq("id", selectedProfile.id);
+          .eq("id", targetProfileId);
         if (error) {
           throw new Error(error.message);
         }
