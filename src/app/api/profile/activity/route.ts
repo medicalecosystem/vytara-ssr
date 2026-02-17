@@ -22,6 +22,12 @@ const ALLOWED_ACTIONS: CareCircleActivityAction[] = ['upload', 'rename', 'delete
 const isObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
+const isCareCircleActivityDomain = (value: string): value is CareCircleActivityDomain =>
+  ALLOWED_DOMAINS.includes(value as CareCircleActivityDomain);
+
+const isCareCircleActivityAction = (value: string): value is CareCircleActivityAction =>
+  ALLOWED_ACTIONS.includes(value as CareCircleActivityAction);
+
 const getAuthenticatedUser = async (request: Request): Promise<User | null> => {
   const authHeader = request.headers.get('authorization');
 
@@ -101,18 +107,16 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => null)) as ProfileActivityPayload | null;
     const profileId = typeof body?.profileId === 'string' ? body.profileId.trim() : '';
-    const domain =
-      typeof body?.domain === 'string' ? (body.domain.trim() as CareCircleActivityDomain) : '';
-    const action =
-      typeof body?.action === 'string' ? (body.action.trim() as CareCircleActivityAction) : '';
+    const domain = typeof body?.domain === 'string' ? body.domain.trim() : '';
+    const action = typeof body?.action === 'string' ? body.action.trim() : '';
 
     if (!profileId) {
       return NextResponse.json({ message: 'profileId is required.' }, { status: 400 });
     }
-    if (!ALLOWED_DOMAINS.includes(domain)) {
+    if (!isCareCircleActivityDomain(domain)) {
       return NextResponse.json({ message: 'Invalid domain.' }, { status: 400 });
     }
-    if (!ALLOWED_ACTIONS.includes(action)) {
+    if (!isCareCircleActivityAction(action)) {
       return NextResponse.json({ message: 'Invalid action.' }, { status: 400 });
     }
 
