@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/createClient";
 import { AppointmentsModal } from "@/components/AppointmentsModal";
@@ -319,6 +319,20 @@ const logProfileActivity = async (payload: ProfileActivityPayload) => {
 ======================= */
 
 export default function HomePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center text-slate-600">
+          Loading...
+        </div>
+      }
+    >
+      <HomePageContent />
+    </Suspense>
+  );
+}
+
+function HomePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const openParam = searchParams.get("open");
