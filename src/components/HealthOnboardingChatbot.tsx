@@ -31,6 +31,7 @@ interface PastSurgeryEntry {
 
 interface Profile {
   displayName: string;
+  gender: string;
   dateOfBirth: string; // YYYY-MM-DD
   bloodGroup: string;
   heightCm: number | null;
@@ -61,11 +62,18 @@ interface QuestionConfig {
   inputType: InputType;
   options?: string[];
   placeholder?: string;
-  required?: boolean; // first 4 required
+  required?: boolean;
 }
 
 const QUESTIONS: QuestionConfig[] = [
   { key: "displayName", question: "What should we call you?", inputType: "text", required: true, placeholder: "Eg:John Doe" },
+  {
+    key: "gender",
+    question: "What is your gender?",
+    inputType: "single-select",
+    required: true,
+    options: ["Male", "Female", "Other"],
+  },
   { key: "dateOfBirth", question: "What is your date of birth?", inputType: "date", required: true },
   {
     key: "bloodGroup",
@@ -119,7 +127,9 @@ export default function HealthOnboardingChatbot() {
   const searchParams = useSearchParams();
   const { selectedProfile, selectProfile, refreshProfiles } = useAppProfile();
   const [step, setStep] = useState(0);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([
+    { id: uid(), role: "bot", text: QUESTIONS[0].question },
+  ]);
   const [inputValue, setInputValue] = useState("");
   const [isComplete, setIsComplete] = useState(false);
   const [dobParts, setDobParts] = useState({ day: "", month: "", year: "" });
@@ -137,6 +147,7 @@ export default function HealthOnboardingChatbot() {
 
   const [profile, setProfile] = useState<Profile>({
     displayName: "",
+    gender: "",
     dateOfBirth: "",
     bloodGroup: "",
     heightCm: null,
@@ -178,11 +189,9 @@ export default function HealthOnboardingChatbot() {
   };
 
   useEffect(() => {
-    if (messages.length === 0) addMessage("bot", QUESTIONS[0].question);
     return () => {
       if (botTimeoutRef.current) window.clearTimeout(botTimeoutRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -220,7 +229,8 @@ export default function HealthOnboardingChatbot() {
   }, [isNewProfileOnboarding, newProfileId, refreshProfiles, selectProfile, selectedProfile?.id]);
 
   const currentQ = QUESTIONS[step];
-  const canSkip = step >= 4;
+  const canSkip = !currentQ.required;
+  const canGoBack = step > 0;
   const isRequired = !!currentQ.required;
   const dobDaysInMonth =
     dobParts.year && dobParts.month
@@ -238,6 +248,19 @@ export default function HealthOnboardingChatbot() {
   }, [dobDaysInMonth]);
 
   useEffect(() => {
+    if (currentQ.inputType === "text") {
+      const existingValue = profile[currentQ.key];
+      setInputValue(
+        typeof existingValue === "string"
+          ? existingValue
+          : existingValue == null
+            ? ""
+            : String(existingValue)
+      );
+    } else {
+      setInputValue("");
+    }
+
     if (currentQ.inputType === "multi-text") {
       const key = currentQ.key as keyof Profile;
       const values = profile[key] as string[];
@@ -422,7 +445,17 @@ export default function HealthOnboardingChatbot() {
     handleSingleNext("Skip");
   };
 
-  const progressPercent = Math.min(100, Math.round((step / QUESTIONS.length) * 100));
+  const handlePreviousQuestion = () => {
+    if (!canGoBack) return;
+    const previousStep = Math.max(0, step - 1);
+    setIsComplete(false);
+    setStep(previousStep);
+    addMessage("bot", `↩️ Going back to: ${QUESTIONS[previousStep].question}`);
+  };
+
+  const progressPercent = isComplete
+    ? 100
+    : Math.min(100, Math.round((step / QUESTIONS.length) * 100));
 
   const handleDiscardNewProfile = async () => {
     if (!isNewProfileOnboarding || !newProfileId) {
@@ -506,7 +539,7 @@ export default function HealthOnboardingChatbot() {
         longTermTreatments: sanitizeTextList(profile.longTermTreatments),
       };
 
-      const { displayName, ...healthPayload } = normalizedProfile;
+      const { displayName, gender, ...healthPayload } = normalizedProfile;
       const res = await fetch("/api/health-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -521,10 +554,18 @@ export default function HealthOnboardingChatbot() {
         throw new Error(data?.error || "Failed to save");
       }
 
+      const profileUpdates: { display_name?: string; gender?: string } = {};
       if (displayName.trim()) {
+        profileUpdates.display_name = displayName.trim();
+      }
+      if (gender.trim()) {
+        profileUpdates.gender = gender.trim();
+      }
+
+      if (Object.keys(profileUpdates).length) {
         const { error } = await supabase
           .from("profiles")
-          .update({ display_name: displayName.trim() })
+          .update(profileUpdates)
           .eq("id", targetProfileId);
         if (error) {
           throw new Error(error.message);
@@ -534,6 +575,19 @@ export default function HealthOnboardingChatbot() {
       setIsSaved(true);
       addMessage("bot", "💾 Saved successfully!");
       window.setTimeout(() => {
+        if (isNewProfileOnboarding && targetProfileId) {
+          void (async () => {
+            try {
+              await refreshProfiles();
+              await selectProfile(targetProfileId);
+            } catch {
+              // Fallback: continue with redirect even if provider sync fails.
+            } finally {
+              router.push("/app/profilepage");
+            }
+          })();
+          return;
+        }
         router.push("/app/homepage");
       }, 500);
     } catch (e: unknown) {
@@ -633,6 +687,11 @@ export default function HealthOnboardingChatbot() {
                 </div>
 
                 <div style={styles.questionText}>{currentQ.question}</div>
+                {canGoBack && (
+                  <button type="button" onClick={handlePreviousQuestion} style={styles.previousQuestionBtn}>
+                    ← Previous question
+                  </button>
+                )}
 
                 {currentQ.inputType === "date" && (
                   <div style={styles.inputRow}>
@@ -1040,8 +1099,20 @@ export default function HealthOnboardingChatbot() {
                 <div style={styles.innerRim} />
 
                 <div style={styles.sectionTitle}>Save</div>
-
-                <pre style={styles.codeBlock}>{JSON.stringify(profile, null, 2)}</pre>
+                <div style={styles.greetingCard}>
+                  <div style={styles.greetingTitle}>
+                    You are all set, {profile.displayName.trim() || "there"}.
+                  </div>
+                  <div style={styles.greetingCopy}>
+                    Thanks for completing your health onboarding. You can still go back to the previous question
+                    if you want to adjust anything before saving.
+                  </div>
+                </div>
+                {canGoBack && (
+                  <button type="button" onClick={handlePreviousQuestion} style={styles.previousQuestionBtn}>
+                    ← Previous question
+                  </button>
+                )}
 
                 {saveError && <div style={styles.errorText}>{saveError}</div>}
 
@@ -1437,6 +1508,20 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 850,
   },
 
+  previousQuestionBtn: {
+    position: "relative",
+    zIndex: 2,
+    marginBottom: 12,
+    padding: "8px 12px",
+    background: "rgba(15, 118, 110, 0.06)",
+    border: "1px solid rgba(15, 118, 110, 0.22)",
+    borderRadius: 10,
+    cursor: "pointer",
+    color: "#0f172a",
+    fontWeight: 800,
+    fontSize: 12,
+  },
+
   multiActions: {
     position: "relative",
     zIndex: 2,
@@ -1519,6 +1604,28 @@ const styles: Record<string, React.CSSProperties> = {
     overflowX: "auto",
     margin: 0,
     border: "1px solid rgba(15, 118, 110, 0.12)",
+  },
+
+  greetingCard: {
+    position: "relative",
+    zIndex: 2,
+    backgroundColor: "rgba(15, 23, 42, 0.04)",
+    color: "#0f172a",
+    padding: 12,
+    borderRadius: 12,
+    border: "1px solid rgba(15, 118, 110, 0.12)",
+  },
+
+  greetingTitle: {
+    fontSize: 16,
+    fontWeight: 900,
+    marginBottom: 8,
+  },
+
+  greetingCopy: {
+    fontSize: 13,
+    lineHeight: 1.45,
+    color: "#334155",
   },
 
   errorText: {

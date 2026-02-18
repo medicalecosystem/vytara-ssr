@@ -42,12 +42,23 @@ type AuthorizedMedicationAccess = {
 
 type MedicationUpsertPayload = {
   linkId?: string;
+  actorProfileId?: string;
   medication?: Record<string, unknown>;
 };
 
 type MedicationDeletePayload = {
   linkId?: string;
+  actorProfileId?: string;
   medicationId?: string;
+};
+
+type ActivityMetadataValue = string | number | boolean | null;
+
+type ActivityMetadataChange = {
+  field: string;
+  label: string;
+  before: ActivityMetadataValue;
+  after: ActivityMetadataValue;
 };
 
 const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRole => {
@@ -60,6 +71,51 @@ const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRo
 };
 
 const canManageMedicalData = (role: CareCircleRole) => role === 'family';
+
+const isMissingAuthColumnError = (error: { code?: string; message?: string } | null) =>
+  error?.code === 'PGRST204' || error?.message?.toLowerCase().includes('auth_id');
+
+const normalizeActorProfileId = (value: unknown) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+};
+
+const resolveActorProfileId = async (
+  adminClient: SupabaseClient,
+  actorUserId: string,
+  requestedActorProfileId: string | null
+) => {
+  if (!requestedActorProfileId) return null;
+
+  const byAuth = await adminClient
+    .from('profiles')
+    .select('id')
+    .eq('id', requestedActorProfileId)
+    .eq('auth_id', actorUserId)
+    .maybeSingle();
+
+  if (!byAuth.error && byAuth.data?.id) {
+    return byAuth.data.id;
+  }
+
+  if (byAuth.error && !isMissingAuthColumnError(byAuth.error) && byAuth.error.code !== 'PGRST116') {
+    return null;
+  }
+
+  const byUser = await adminClient
+    .from('profiles')
+    .select('id')
+    .eq('id', requestedActorProfileId)
+    .eq('user_id', actorUserId)
+    .maybeSingle();
+
+  if (byUser.error || !byUser.data?.id) {
+    return null;
+  }
+
+  return byUser.data.id;
+};
 
 const formatDateOnly = (value: Date) =>
   `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(
@@ -83,6 +139,70 @@ const normalizeTimesPerDay = (value: unknown): number | undefined => {
   const numeric = typeof value === 'number' ? value : Number(String(value).trim());
   if (!Number.isFinite(numeric) || numeric < 0) return undefined;
   return Math.floor(numeric);
+};
+
+const normalizeActivityMetadataValue = (value: unknown): ActivityMetadataValue => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'boolean') return value;
+  return null;
+};
+
+const appendChange = (
+  changes: ActivityMetadataChange[],
+  field: string,
+  label: string,
+  before: unknown,
+  after: unknown
+) => {
+  const normalizedBefore = normalizeActivityMetadataValue(before);
+  const normalizedAfter = normalizeActivityMetadataValue(after);
+  if (normalizedBefore === normalizedAfter) return;
+  changes.push({
+    field,
+    label,
+    before: normalizedBefore,
+    after: normalizedAfter,
+  });
+};
+
+const buildMedicationChanges = (
+  previousMedication: MedicationRecord,
+  nextMedication: MedicationRecord
+): ActivityMetadataChange[] => {
+  const changes: ActivityMetadataChange[] = [];
+  appendChange(changes, 'name', 'Name', previousMedication.name, nextMedication.name);
+  appendChange(changes, 'dosage', 'Dosage', previousMedication.dosage, nextMedication.dosage);
+  appendChange(
+    changes,
+    'frequency',
+    'Frequency',
+    previousMedication.frequency,
+    nextMedication.frequency
+  );
+  appendChange(changes, 'purpose', 'Purpose', previousMedication.purpose, nextMedication.purpose);
+  appendChange(
+    changes,
+    'timesPerDay',
+    'Times per day',
+    previousMedication.timesPerDay,
+    nextMedication.timesPerDay
+  );
+  appendChange(
+    changes,
+    'startDate',
+    'Start date',
+    previousMedication.startDate,
+    nextMedication.startDate
+  );
+  appendChange(changes, 'endDate', 'End date', previousMedication.endDate, nextMedication.endDate);
+  return changes;
 };
 
 const normalizeMedicationLog = (value: unknown): MedicationLog | null => {
@@ -344,6 +464,7 @@ export async function POST(request: Request) {
     }
 
     const linkId = payload.linkId?.trim();
+    const requestedActorProfileId = normalizeActorProfileId(payload.actorProfileId);
     const input = payload.medication;
     if (!linkId || !input || typeof input !== 'object') {
       return NextResponse.json({ message: 'linkId and medication are required.' }, { status: 400 });
@@ -380,6 +501,11 @@ export async function POST(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const context = await loadMedicationContext(access);
     if (context.error) {
@@ -413,6 +539,7 @@ export async function POST(request: Request) {
       adminClient: access.adminClient,
       profileId: access.ownerProfileId,
       actorUserId: access.actorUserId,
+      actorProfileId,
       domain: 'medication',
       action: 'add',
       entity: {
@@ -449,6 +576,7 @@ export async function PATCH(request: Request) {
     }
 
     const linkId = payload.linkId?.trim();
+    const requestedActorProfileId = normalizeActorProfileId(payload.actorProfileId);
     const input = payload.medication;
     if (!linkId || !input || typeof input !== 'object') {
       return NextResponse.json({ message: 'linkId and medication are required.' }, { status: 400 });
@@ -467,6 +595,11 @@ export async function PATCH(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const context = await loadMedicationContext(access);
     if (context.error) {
@@ -542,10 +675,13 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ message: saveError.message }, { status: 500 });
     }
 
+    const medicationChanges = buildMedicationChanges(existing, updatedMedication);
+
     await logCareCircleActivity({
       adminClient: access.adminClient,
       profileId: access.ownerProfileId,
       actorUserId: access.actorUserId,
+      actorProfileId,
       domain: 'medication',
       action: 'update',
       entity: {
@@ -559,6 +695,8 @@ export async function PATCH(request: Request) {
         timesPerDay: updatedMedication.timesPerDay ?? null,
         startDate: updatedMedication.startDate ?? null,
         endDate: updatedMedication.endDate ?? null,
+        changes: medicationChanges,
+        changeCount: medicationChanges.length,
       },
     });
 
@@ -582,6 +720,7 @@ export async function DELETE(request: Request) {
     }
 
     const linkId = payload.linkId?.trim();
+    const requestedActorProfileId = normalizeActorProfileId(payload.actorProfileId);
     const medicationId = payload.medicationId?.trim();
     if (!linkId || !medicationId) {
       return NextResponse.json({ message: 'linkId and medicationId are required.' }, { status: 400 });
@@ -591,6 +730,11 @@ export async function DELETE(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const context = await loadMedicationContext(access);
     if (context.error) {
@@ -612,6 +756,7 @@ export async function DELETE(request: Request) {
       adminClient: access.adminClient,
       profileId: access.ownerProfileId,
       actorUserId: access.actorUserId,
+      actorProfileId,
       domain: 'medication',
       action: 'delete',
       entity: {

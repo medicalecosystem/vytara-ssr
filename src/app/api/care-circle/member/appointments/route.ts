@@ -33,12 +33,45 @@ type AuthorizedAppointmentAccess = {
 
 type AppointmentUpsertPayload = {
   linkId?: string;
+  actorProfileId?: string;
   appointment?: Record<string, unknown>;
 };
 
 type AppointmentDeletePayload = {
   linkId?: string;
+  actorProfileId?: string;
   appointmentId?: string;
+};
+
+type ActivityMetadataValue = string | number | boolean | null;
+
+type ActivityMetadataChange = {
+  field: string;
+  label: string;
+  before: ActivityMetadataValue;
+  after: ActivityMetadataValue;
+};
+
+const APPOINTMENT_FIELD_LABELS: Record<string, string> = {
+  title: 'Title',
+  type: 'Type',
+  date: 'Date',
+  time: 'Time',
+  doctorName: 'Doctor name',
+  specialty: 'Specialty',
+  hospitalName: 'Hospital or clinic',
+  reason: 'Reason',
+  testName: 'Test name',
+  labName: 'Lab name',
+  instructions: 'Instructions',
+  department: 'Department',
+  therapyType: 'Therapy type',
+  therapistName: 'Therapist name',
+  location: 'Location',
+  previousDoctor: 'Previous doctor',
+  previousVisitReason: 'Previous visit reason',
+  description: 'Description',
+  contactPerson: 'Contact person',
 };
 
 const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRole => {
@@ -51,6 +84,125 @@ const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRo
 };
 
 const canManageMedicalData = (role: CareCircleRole) => role === 'family';
+
+const isMissingAuthColumnError = (error: { code?: string; message?: string } | null) =>
+  error?.code === 'PGRST204' || error?.message?.toLowerCase().includes('auth_id');
+
+const normalizeActorProfileId = (value: unknown) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+};
+
+const resolveActorProfileId = async (
+  adminClient: SupabaseClient,
+  actorUserId: string,
+  requestedActorProfileId: string | null
+) => {
+  if (!requestedActorProfileId) return null;
+
+  const byAuth = await adminClient
+    .from('profiles')
+    .select('id')
+    .eq('id', requestedActorProfileId)
+    .eq('auth_id', actorUserId)
+    .maybeSingle();
+
+  if (!byAuth.error && byAuth.data?.id) {
+    return byAuth.data.id;
+  }
+
+  if (byAuth.error && !isMissingAuthColumnError(byAuth.error) && byAuth.error.code !== 'PGRST116') {
+    return null;
+  }
+
+  const byUser = await adminClient
+    .from('profiles')
+    .select('id')
+    .eq('id', requestedActorProfileId)
+    .eq('user_id', actorUserId)
+    .maybeSingle();
+
+  if (byUser.error || !byUser.data?.id) {
+    return null;
+  }
+
+  return byUser.data.id;
+};
+
+const normalizeActivityMetadataValue = (value: unknown): ActivityMetadataValue => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'boolean') return value;
+  return null;
+};
+
+const appendChange = (
+  changes: ActivityMetadataChange[],
+  field: string,
+  label: string,
+  before: unknown,
+  after: unknown
+) => {
+  const normalizedBefore = normalizeActivityMetadataValue(before);
+  const normalizedAfter = normalizeActivityMetadataValue(after);
+  if (normalizedBefore === normalizedAfter) return;
+  changes.push({
+    field,
+    label,
+    before: normalizedBefore,
+    after: normalizedAfter,
+  });
+};
+
+const toTitleCase = (value: string) =>
+  value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+
+const getAppointmentFieldLabel = (field: string) => {
+  if (APPOINTMENT_FIELD_LABELS[field]) {
+    return APPOINTMENT_FIELD_LABELS[field];
+  }
+  const normalized = field
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  return toTitleCase(normalized || field);
+};
+
+const buildAppointmentChanges = (
+  previousAppointment: AppointmentRecord,
+  nextAppointment: AppointmentRecord
+): ActivityMetadataChange[] => {
+  const keys = Array.from(
+    new Set([...Object.keys(previousAppointment), ...Object.keys(nextAppointment)])
+  ).filter((key) => key !== 'id');
+  const prioritized = ['title', 'type', 'date', 'time'];
+  const orderedKeys = [
+    ...prioritized.filter((key) => keys.includes(key)),
+    ...keys.filter((key) => !prioritized.includes(key)).sort(),
+  ];
+  const changes: ActivityMetadataChange[] = [];
+  orderedKeys.forEach((key) => {
+    appendChange(
+      changes,
+      key,
+      getAppointmentFieldLabel(key),
+      previousAppointment[key],
+      nextAppointment[key]
+    );
+  });
+  return changes;
+};
 
 const normalizeDateInput = (value: unknown): string => {
   if (typeof value !== 'string') return '';
@@ -331,6 +483,7 @@ export async function POST(request: Request) {
     }
 
     const linkId = payload.linkId?.trim();
+    const requestedActorProfileId = normalizeActorProfileId(payload.actorProfileId);
     const input = payload.appointment;
     if (!linkId || !input || typeof input !== 'object') {
       return NextResponse.json({ message: 'linkId and appointment are required.' }, { status: 400 });
@@ -351,6 +504,11 @@ export async function POST(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const context = await loadAppointmentContext(access);
     if (context.error) {
@@ -372,6 +530,7 @@ export async function POST(request: Request) {
       adminClient: access.adminClient,
       profileId: access.ownerProfileId,
       actorUserId: access.actorUserId,
+      actorProfileId,
       domain: 'appointment',
       action: 'add',
       entity: {
@@ -406,6 +565,7 @@ export async function PATCH(request: Request) {
     }
 
     const linkId = payload.linkId?.trim();
+    const requestedActorProfileId = normalizeActorProfileId(payload.actorProfileId);
     const input = payload.appointment;
     if (!linkId || !input || typeof input !== 'object') {
       return NextResponse.json({ message: 'linkId and appointment are required.' }, { status: 400 });
@@ -423,13 +583,19 @@ export async function PATCH(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const context = await loadAppointmentContext(access);
     if (context.error) {
       return NextResponse.json({ message: context.error.message }, { status: 500 });
     }
 
-    if (!context.appointments.some((entry) => entry.id === normalized.id)) {
+    const existing = context.appointments.find((entry) => entry.id === normalized.id);
+    if (!existing) {
       return NextResponse.json({ message: 'Appointment not found.' }, { status: 404 });
     }
 
@@ -442,10 +608,13 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ message: saveError.message }, { status: 500 });
     }
 
+    const appointmentChanges = buildAppointmentChanges(existing, normalized);
+
     await logCareCircleActivity({
       adminClient: access.adminClient,
       profileId: access.ownerProfileId,
       actorUserId: access.actorUserId,
+      actorProfileId,
       domain: 'appointment',
       action: 'update',
       entity: {
@@ -457,6 +626,8 @@ export async function PATCH(request: Request) {
         type: normalized.type,
         date: normalized.date,
         time: normalized.time,
+        changes: appointmentChanges,
+        changeCount: appointmentChanges.length,
       },
     });
 
@@ -480,6 +651,7 @@ export async function DELETE(request: Request) {
     }
 
     const linkId = payload.linkId?.trim();
+    const requestedActorProfileId = normalizeActorProfileId(payload.actorProfileId);
     const appointmentId = payload.appointmentId?.trim();
     if (!linkId || !appointmentId) {
       return NextResponse.json({ message: 'linkId and appointmentId are required.' }, { status: 400 });
@@ -489,6 +661,11 @@ export async function DELETE(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const context = await loadAppointmentContext(access);
     if (context.error) {
@@ -511,6 +688,7 @@ export async function DELETE(request: Request) {
       adminClient: access.adminClient,
       profileId: access.ownerProfileId,
       actorUserId: access.actorUserId,
+      actorProfileId,
       domain: 'appointment',
       action: 'delete',
       entity: {

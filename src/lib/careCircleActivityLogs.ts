@@ -12,6 +12,8 @@ type LogCareCircleActivityInput = {
   adminClient: SupabaseClient;
   profileId: string;
   actorUserId: string;
+  actorProfileId?: string | null;
+  actorDisplayName?: string | null;
   domain: CareCircleActivityDomain;
   action: CareCircleActivityAction;
   entity?: ActivityEntity;
@@ -50,7 +52,57 @@ const pickDisplayName = (rows: ActorProfileRow[]) => {
 const isMissingAuthColumnError = (error: { code?: string; message?: string } | null) =>
   error?.code === 'PGRST204' || error?.message?.toLowerCase().includes('auth_id');
 
-const resolveActorDisplayName = async (adminClient: SupabaseClient, actorUserId: string) => {
+const resolveActorDisplayNameFromProfileId = async (
+  adminClient: SupabaseClient,
+  actorUserId: string,
+  actorProfileId: string
+) => {
+  const byAuth = await adminClient
+    .from('profiles')
+    .select('display_name, name')
+    .eq('id', actorProfileId)
+    .eq('auth_id', actorUserId)
+    .maybeSingle();
+
+  if (!byAuth.error && byAuth.data) {
+    return sanitizeText(byAuth.data.display_name) ?? sanitizeText(byAuth.data.name);
+  }
+
+  if (byAuth.error && !isMissingAuthColumnError(byAuth.error) && byAuth.error.code !== 'PGRST116') {
+    return null;
+  }
+
+  const byUser = await adminClient
+    .from('profiles')
+    .select('display_name, name')
+    .eq('id', actorProfileId)
+    .eq('user_id', actorUserId)
+    .maybeSingle();
+
+  if (byUser.error || !byUser.data) {
+    return null;
+  }
+
+  return sanitizeText(byUser.data.display_name) ?? sanitizeText(byUser.data.name);
+};
+
+const resolveActorDisplayName = async (
+  adminClient: SupabaseClient,
+  actorUserId: string,
+  actorProfileId?: string | null
+) => {
+  const preferredProfileId = sanitizeText(actorProfileId);
+  if (preferredProfileId) {
+    const preferredName = await resolveActorDisplayNameFromProfileId(
+      adminClient,
+      actorUserId,
+      preferredProfileId
+    );
+    if (preferredName) {
+      return preferredName;
+    }
+  }
+
   const byAuth = await adminClient
     .from('profiles')
     .select('display_name, name, is_primary, created_at')
@@ -86,6 +138,8 @@ export async function logCareCircleActivity({
   adminClient,
   profileId,
   actorUserId,
+  actorProfileId,
+  actorDisplayName,
   domain,
   action,
   entity,
@@ -94,14 +148,16 @@ export async function logCareCircleActivity({
   if (!profileId || !actorUserId) return;
 
   try {
-    const actorDisplayName = await resolveActorDisplayName(adminClient, actorUserId);
+    const resolvedActorDisplayName =
+      sanitizeText(actorDisplayName) ??
+      (await resolveActorDisplayName(adminClient, actorUserId, actorProfileId));
     const payload = {
       profile_id: profileId,
       source: 'care_circle',
       domain,
       action,
       actor_user_id: actorUserId,
-      actor_display_name: actorDisplayName,
+      actor_display_name: resolvedActorDisplayName,
       entity_id: sanitizeText(entity?.id),
       entity_label: sanitizeText(entity?.label),
       metadata: metadata ?? {},

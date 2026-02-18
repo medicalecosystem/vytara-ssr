@@ -155,6 +155,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Not allowed for this profile.' }, { status: 403 });
     }
 
+    const { data: actorProfileRow, error: actorProfileError } = await adminClient
+      .from('profiles')
+      .select('display_name, name')
+      .eq('id', profileId)
+      .maybeSingle();
+
+    if (actorProfileError && actorProfileError.code !== 'PGRST116') {
+      return NextResponse.json({ message: actorProfileError.message }, { status: 500 });
+    }
+
+    const actorDisplayName =
+      actorProfileRow?.display_name?.trim() || actorProfileRow?.name?.trim() || null;
+
     const entity = isObject(body?.entity) ? body?.entity : null;
     const metadata = isObject(body?.metadata) ? body.metadata : {};
 
@@ -162,6 +175,8 @@ export async function POST(request: Request) {
       adminClient,
       profileId,
       actorUserId: user.id,
+      actorProfileId: profileId,
+      actorDisplayName,
       domain,
       action,
       entity: {

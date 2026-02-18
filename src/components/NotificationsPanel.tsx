@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Calendar, FileText, Pill, X } from "lucide-react";
 import { supabase } from "@/lib/createClient";
@@ -114,6 +114,27 @@ type ActivityLogRow = {
 
 type SharedActivityLogRow = ActivityLogRow & {
   profile_label?: string | null;
+  link_id?: string | null;
+};
+
+type ActivityMetadataChangeValue = string | number | boolean | null;
+
+type ActivityMetadataChange = {
+  field: string;
+  label: string;
+  before: ActivityMetadataChangeValue;
+  after: ActivityMetadataChangeValue;
+};
+
+type ActivityLogText = {
+  title: string;
+  subtitle: string;
+  details?: string;
+  changeItems?: Array<{
+    label: string;
+    before: string;
+    after: string;
+  }>;
 };
 
 type AccountAppointmentNotification = {
@@ -141,6 +162,11 @@ const selfAppointmentNotificationId = (ownerProfileId: string, appointmentId: st
   `appointment:self:${ownerProfileId}:${appointmentId}`;
 const inviteNotificationId = (inviteId: string) => `invite:${inviteId}`;
 const familyActivityNotificationId = (activityId: string) => `family-activity:${activityId}`;
+const careCircleTabByDomain: Record<ActivityLogDomain, "vault" | "medications" | "appointments"> = {
+  vault: "vault",
+  medication: "medications",
+  appointment: "appointments",
+};
 const vaultFolderLabels: Record<FamilyVaultFile["folder"], string> = {
   reports: "Lab report",
   prescriptions: "Prescription",
@@ -262,6 +288,9 @@ export function NotificationsPanel({
   const [serverDismissedNotificationIds, setServerDismissedNotificationIds] = useState<Set<string>>(
     () => new Set()
   );
+  const [hasHydratedServerDismissedNotifications, setHasHydratedServerDismissedNotifications] =
+    useState(false);
+  const syncedDismissedStateNotificationIdsKeyRef = useRef("");
   const [hasHydratedDismissedNotifications, setHasHydratedDismissedNotifications] = useState(false);
   const [hydratedDismissedInvitesKey, setHydratedDismissedInvitesKey] = useState<string | null>(null);
   const [hydratedDismissedAppointmentsKey, setHydratedDismissedAppointmentsKey] = useState<string | null>(
@@ -1128,6 +1157,130 @@ export function NotificationsPanel({
     return typeof value === "string" ? value.trim() : "";
   };
 
+  const isActivityMetadataChangeValue = (value: unknown): value is ActivityMetadataChangeValue =>
+    value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+
+  const getActivityMetadataChanges = (metadata: Record<string, unknown>): ActivityMetadataChange[] => {
+    const value = metadata.changes;
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") return null;
+        const row = entry as Record<string, unknown>;
+        const field = typeof row.field === "string" ? row.field.trim() : "";
+        const label = typeof row.label === "string" ? row.label.trim() : "";
+        if (!field || !label) return null;
+        return {
+          field,
+          label,
+          before: isActivityMetadataChangeValue(row.before) ? row.before : null,
+          after: isActivityMetadataChangeValue(row.after) ? row.after : null,
+        };
+      })
+      .filter((entry): entry is ActivityMetadataChange => entry !== null);
+  };
+
+  const formatDateOnlyValue = (value: string) => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const parsed = new Date(`${value}T00:00:00`);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+      }
+    }
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    }
+    return value;
+  };
+
+  const formatTimeOnlyValue = (value: string) => {
+    const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(value);
+    if (!timeMatch) return value;
+    const hours = Number(timeMatch[1]);
+    const minutes = Number(timeMatch[2]);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return value;
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return value;
+    const parsed = new Date(2000, 0, 1, hours, minutes, 0, 0);
+    return parsed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  };
+
+  const humanizeCodeValue = (value: string) => {
+    if (!/^[a-z0-9]+(?:[_-][a-z0-9]+)+$/i.test(value)) return value;
+    return value
+      .replace(/[_-]+/g, " ")
+      .toLowerCase()
+      .replace(/^\w/, (char) => char.toUpperCase());
+  };
+
+  const formatActivityMetadataValue = (
+    value: ActivityMetadataChangeValue,
+    domain: ActivityLogDomain,
+    field: string
+  ) => {
+    if (value === null) return "cleared";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (typeof value === "number") return Number.isFinite(value) ? String(value) : "cleared";
+    const trimmed = value.trim();
+    if (!trimmed) return "cleared";
+    if (domain === "appointment" && field === "date") {
+      return formatDateOnlyValue(trimmed);
+    }
+    if (domain === "appointment" && field === "time") {
+      return formatTimeOnlyValue(trimmed);
+    }
+    if (domain === "medication" && field === "frequency") {
+      return humanizeCodeValue(trimmed);
+    }
+    if (domain === "medication" && field === "timesPerDay") {
+      const numeric = Number(trimmed);
+      if (Number.isFinite(numeric) && numeric >= 0) {
+        return `${numeric} times/day`;
+      }
+    }
+    return trimmed;
+  };
+
+  const formatActivityChangeItems = (
+    changes: ActivityMetadataChange[],
+    domain: ActivityLogDomain
+  ) => {
+    if (changes.length === 0) return [];
+    return changes.map((change) => {
+        const before = formatActivityMetadataValue(change.before, domain, change.field);
+        const after = formatActivityMetadataValue(change.after, domain, change.field);
+        return {
+          label: change.label,
+          before,
+          after,
+        };
+      });
+  };
+
+  const renderLogDetails = (logText: ActivityLogText) => {
+    if (logText.changeItems && logText.changeItems.length > 0) {
+      const truncateInlineValue = (value: string, maxLength = 18) =>
+        value.length > maxLength ? `${value.slice(0, Math.max(maxLength - 1, 1))}…` : value;
+      return (
+        <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
+          {logText.changeItems.map((change, index) => (
+            <span key={`${change.label}-${index}`}>
+              {index > 0 ? <span className="text-slate-400"> · </span> : null}
+              <span className="text-slate-600">{change.label}: </span>
+              <span className="text-rose-600">{truncateInlineValue(change.before)}</span>
+              <span className="text-slate-400">→</span>
+              <span className="text-emerald-700">{truncateInlineValue(change.after)}</span>
+            </span>
+          ))}
+        </p>
+      );
+    }
+    if (logText.details) {
+      return <p className="mt-0.5 text-[11px] text-slate-500">{logText.details}</p>;
+    }
+    return null;
+  };
+
   const getLogCardTheme = (domain: ActivityLogDomain) => {
     if (domain === "vault") {
       return {
@@ -1156,7 +1309,31 @@ export function NotificationsPanel({
     };
   };
 
-  const getLogText = (log: ActivityLogRow) => {
+  const getActivityNavigationPath = (
+    log: Pick<ActivityLogRow, "domain">,
+    options?: { preferCareCircle?: boolean }
+  ) => {
+    if (options?.preferCareCircle) {
+      return "/app/carecircle";
+    }
+    if (log.domain === "vault") {
+      return "/app/vaultpage";
+    }
+    if (log.domain === "appointment") {
+      return "/app/homepage?open=calendar";
+    }
+    if (log.domain === "medication") {
+      return "/app/homepage?open=medications";
+    }
+    return "/app/homepage";
+  };
+
+  const getCareCircleMemberDetailsPath = (linkId: string, domain: ActivityLogDomain) =>
+    `/app/carecircle?memberLinkId=${encodeURIComponent(linkId)}&tab=${encodeURIComponent(
+      careCircleTabByDomain[domain]
+    )}`;
+
+  const getLogText = (log: ActivityLogRow): ActivityLogText => {
     const metadata =
       log.metadata && typeof log.metadata === "object"
         ? (log.metadata as Record<string, unknown>)
@@ -1200,9 +1377,15 @@ export function NotificationsPanel({
         };
       }
       if (log.action === "update") {
+        const changeItems = formatActivityChangeItems(
+          getActivityMetadataChanges(metadata),
+          "medication"
+        );
         return {
           title: `${actor} updated medication`,
           subtitle: medicationName,
+          changeItems,
+          details: changeItems.length === 0 ? "Updated details" : undefined,
         };
       }
       return {
@@ -1219,9 +1402,15 @@ export function NotificationsPanel({
       };
     }
     if (log.action === "update") {
+      const changeItems = formatActivityChangeItems(
+        getActivityMetadataChanges(metadata),
+        "appointment"
+      );
       return {
         title: `${actor} updated appointment`,
         subtitle: appointmentTitle,
+        changeItems,
+        details: changeItems.length === 0 ? "Updated details" : undefined,
       };
     }
     return {
@@ -1345,12 +1534,20 @@ export function NotificationsPanel({
       !serverDismissedNotificationIds.has(medication.id)
     );
   });
+  const hasSharedFamilyActivityLogs = sharedFamilyActivityLogs.length > 0;
+  const visibleLegacyFamilyAppointments = hasSharedFamilyActivityLogs
+    ? []
+    : visibleFamilyAppointments;
+  const visibleLegacyFamilyVaultUpdates = hasSharedFamilyActivityLogs ? [] : visibleFamilyVaultUpdates;
+  const visibleLegacyFamilyMedicationStarts = hasSharedFamilyActivityLogs
+    ? []
+    : visibleFamilyMedicationStarts;
   const hasLegacyFamilyActivity =
-    visibleFamilyAppointments.length > 0 ||
-    visibleFamilyVaultUpdates.length > 0 ||
-    visibleFamilyMedicationStarts.length > 0;
+    visibleLegacyFamilyAppointments.length > 0 ||
+    visibleLegacyFamilyVaultUpdates.length > 0 ||
+    visibleLegacyFamilyMedicationStarts.length > 0;
   const recentFamilyActivityLogs: SharedActivityLogRow[] =
-    sharedFamilyActivityLogs.length > 0
+    hasSharedFamilyActivityLogs
       ? sharedFamilyActivityLogs
       : hasLegacyFamilyActivity
         ? []
@@ -1373,25 +1570,42 @@ export function NotificationsPanel({
       ...upcomingAppointments.map((entry) => entry.notificationId),
       ...visibleFamilyJoinRequests.map((request) => request.id),
       ...visibleFamilyAcceptance.map((acceptance) => acceptance.id),
-      ...visibleFamilyAppointments.map(({ id }) => id),
-      ...visibleFamilyVaultUpdates.map((file) => file.id),
-      ...visibleFamilyMedicationStarts.map((medication) => medication.id),
+      ...visibleLegacyFamilyAppointments.map(({ id }) => id),
+      ...visibleLegacyFamilyVaultUpdates.map((file) => file.id),
+      ...visibleLegacyFamilyMedicationStarts.map((medication) => medication.id),
       ...visibleRecentFamilyActivityLogs.map((log) => familyActivityNotificationId(log.id)),
       ...visibleCareCircleInvites.map((invite) => inviteNotificationId(invite.id)),
     ])
   );
+  const notificationIdsKey = JSON.stringify(notificationIds);
 
   useEffect(() => {
     setServerDismissedNotificationIds(new Set());
+    syncedDismissedStateNotificationIdsKeyRef.current = "";
+    setHasHydratedServerDismissedNotifications(false);
   }, [userId]);
 
   useEffect(() => {
-    if (!userId || notificationIds.length === 0) return;
+    if (!userId) return;
+    if (notificationIds.length === 0) {
+      if (!notificationsLoading && !familyNotificationsLoading) {
+        setHasHydratedServerDismissedNotifications(true);
+        syncedDismissedStateNotificationIdsKeyRef.current = "";
+      }
+      return;
+    }
+    if (syncedDismissedStateNotificationIdsKeyRef.current === notificationIdsKey) {
+      setHasHydratedServerDismissedNotifications(true);
+      return;
+    }
+    setHasHydratedServerDismissedNotifications(false);
+
     let isActive = true;
 
     const loadDismissedState = async () => {
       try {
-        const encodedIds = notificationIds.map((id) => encodeURIComponent(id)).join(",");
+        const parsedNotificationIds = JSON.parse(notificationIdsKey) as string[];
+        const encodedIds = parsedNotificationIds.map((id) => encodeURIComponent(id)).join(",");
         const response = await fetch(`/api/notifications/state?ids=${encodedIds}`, {
           cache: "no-store",
         });
@@ -1411,8 +1625,13 @@ export function NotificationsPanel({
           dismissedIds.forEach((id) => next.add(id));
           return next;
         });
+        syncedDismissedStateNotificationIdsKeyRef.current = notificationIdsKey;
       } catch {
         // Non-blocking state sync.
+      } finally {
+        if (isActive) {
+          setHasHydratedServerDismissedNotifications(true);
+        }
       }
     };
 
@@ -1421,11 +1640,12 @@ export function NotificationsPanel({
     return () => {
       isActive = false;
     };
-  }, [notificationIds, userId]);
+  }, [familyNotificationsLoading, notificationIds.length, notificationIdsKey, notificationsLoading, userId]);
 
   useEffect(() => {
     if (activeTab !== "notifications") return;
     if (!hasHydratedSeenNotifications) return;
+    if (!hasHydratedServerDismissedNotifications) return;
     if (notificationIds.length === 0) return;
 
     setSeenNotificationIds((previous) => {
@@ -1438,18 +1658,19 @@ export function NotificationsPanel({
       });
       return changed ? next : previous;
     });
-  }, [activeTab, hasHydratedSeenNotifications, notificationIds]);
+  }, [activeTab, hasHydratedSeenNotifications, hasHydratedServerDismissedNotifications, notificationIds]);
 
   const totalNotifications =
     visibleCareCircleInvites.length +
     upcomingAppointments.length +
     visibleFamilyJoinRequests.length +
     visibleFamilyAcceptance.length +
-    visibleFamilyAppointments.length +
-    visibleFamilyVaultUpdates.length +
-    visibleFamilyMedicationStarts.length +
+    visibleLegacyFamilyAppointments.length +
+    visibleLegacyFamilyVaultUpdates.length +
+    visibleLegacyFamilyMedicationStarts.length +
     visibleRecentFamilyActivityLogs.length;
-  const unreadNotificationsCount = notificationIds.reduce(
+  const effectiveNotificationIds = hasHydratedServerDismissedNotifications ? notificationIds : [];
+  const unreadNotificationsCount = effectiveNotificationIds.reduce(
     (count, id) => (seenNotificationIds.has(id) ? count : count + 1),
     0
   );
@@ -1459,6 +1680,7 @@ export function NotificationsPanel({
   );
   const isLoading = notificationsLoading || familyNotificationsLoading;
   const notificationError = notificationsError || familyNotificationsError;
+  const isDismissedStateSyncing = !hasHydratedServerDismissedNotifications;
   const hasUnreadNotifications =
     hasHydratedSeenNotifications && unreadNotificationsCount > 0;
   const hasUnreadLogs = hasHydratedSeenLogs && unreadLogsCount > 0;
@@ -1522,7 +1744,11 @@ export function NotificationsPanel({
           </div>
         </div>
         {activeTab === "notifications" ? (
-          isLoading && totalNotifications === 0 ? (
+          isDismissedStateSyncing ? (
+            <div className="flex-1 flex items-center justify-center px-6 py-4 text-sm text-slate-500">
+              Checking for updates...
+            </div>
+          ) : isLoading && totalNotifications === 0 ? (
             <div className="flex-1 flex items-center justify-center px-6 py-4 text-sm text-slate-500">
               Checking for updates...
             </div>
@@ -1540,7 +1766,7 @@ export function NotificationsPanel({
                 <button
                   key={notificationId}
                   type="button"
-                  onClick={() => router.push("/app/homepage")}
+                  onClick={() => router.push("/app/homepage?open=calendar")}
                   className="group relative w-full rounded-2xl border border-slate-100 bg-amber-50/80 p-3 text-left transition hover:bg-white hover:shadow-sm"
                 >
                   <span className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-transparent transition group-hover:ring-amber-100" />
@@ -1645,11 +1871,11 @@ export function NotificationsPanel({
                   </div>
                 </button>
               ))}
-              {visibleFamilyAppointments.map(({ id, memberName, appointment, dateTime }) => (
+              {visibleLegacyFamilyAppointments.map(({ id, memberName, appointment, dateTime }) => (
                 <button
                   key={id}
                   type="button"
-                  onClick={() => router.push("/app/carecircle")}
+                  onClick={() => router.push("/app/homepage?open=calendar")}
                   className="group relative w-full rounded-2xl border border-slate-100 bg-orange-50/80 p-3 text-left transition hover:bg-white hover:shadow-sm"
                 >
                   <span className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-transparent transition group-hover:ring-orange-100" />
@@ -1684,11 +1910,11 @@ export function NotificationsPanel({
                   </div>
                 </button>
               ))}
-              {visibleFamilyVaultUpdates.map((file) => (
+              {visibleLegacyFamilyVaultUpdates.map((file) => (
                 <button
                   key={file.id}
                   type="button"
-                  onClick={() => router.push("/app/carecircle")}
+                  onClick={() => router.push("/app/vaultpage")}
                   className="group relative w-full rounded-2xl border border-slate-100 bg-blue-50/80 p-3 text-left transition hover:bg-white hover:shadow-sm"
                 >
                   <span className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-transparent transition group-hover:ring-blue-100" />
@@ -1721,11 +1947,11 @@ export function NotificationsPanel({
                   </div>
                 </button>
               ))}
-              {visibleFamilyMedicationStarts.map((medication) => (
+              {visibleLegacyFamilyMedicationStarts.map((medication) => (
                 <button
                   key={medication.id}
                   type="button"
-                  onClick={() => router.push("/app/carecircle")}
+                  onClick={() => router.push("/app/homepage?open=medications")}
                   className="group relative w-full rounded-2xl border border-slate-100 bg-green-50/80 p-3 text-left transition hover:bg-white hover:shadow-sm"
                 >
                   <span className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-transparent transition group-hover:ring-green-100" />
@@ -1762,18 +1988,28 @@ export function NotificationsPanel({
                 const { cardClassName, ringClassName, iconClassName, Icon } = getLogCardTheme(
                   log.domain
                 );
-                const { title, subtitle } = getLogText(log);
+                const logText = getLogText(log);
+                const { title, subtitle } = logText;
                 const sharedProfileLabel =
                   typeof log.profile_label === "string" ? log.profile_label.trim() : "";
                 const subtitleText = sharedProfileLabel
                   ? `${subtitle} · ${sharedProfileLabel}`
                   : subtitle;
                 const notificationId = familyActivityNotificationId(log.id);
+                const deepLinkedPath =
+                  typeof log.link_id === "string" && log.link_id.trim()
+                    ? getCareCircleMemberDetailsPath(log.link_id.trim(), log.domain)
+                    : null;
+                const targetPath =
+                  deepLinkedPath ||
+                  getActivityNavigationPath(log, {
+                    preferCareCircle: Boolean(sharedProfileLabel),
+                  });
                 return (
                   <button
                     key={notificationId}
                     type="button"
-                    onClick={() => router.push("/app/carecircle")}
+                    onClick={() => router.push(targetPath)}
                     className={cardClassName}
                   >
                     <span
@@ -1805,6 +2041,7 @@ export function NotificationsPanel({
                         <div>
                           <p className="text-sm font-semibold text-slate-800">{title}</p>
                           <p className="text-xs text-slate-500">{subtitleText}</p>
+                          {renderLogDetails(logText)}
                         </div>
                       </div>
                       <span className="text-[11px] text-slate-400">
@@ -1873,12 +2110,14 @@ export function NotificationsPanel({
               const { cardClassName, ringClassName, iconClassName, Icon } = getLogCardTheme(
                 log.domain
               );
-              const { title, subtitle } = getLogText(log);
+              const logText = getLogText(log);
+              const { title, subtitle } = logText;
+              const targetPath = getActivityNavigationPath(log);
               return (
                 <button
                   key={log.id}
                   type="button"
-                  onClick={() => router.push("/app/carecircle")}
+                  onClick={() => router.push(targetPath)}
                   className={cardClassName}
                 >
                   <span
@@ -1894,6 +2133,7 @@ export function NotificationsPanel({
                       <div>
                         <p className="text-sm font-semibold text-slate-800">{title}</p>
                         <p className="text-xs text-slate-500">{subtitle}</p>
+                        {renderLogDetails(logText)}
                       </div>
                     </div>
                     <span className="text-[11px] text-slate-400">

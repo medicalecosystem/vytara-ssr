@@ -45,6 +45,15 @@ type ProfileActivityPayload = {
   metadata?: Record<string, unknown>;
 };
 
+type ActivityMetadataValue = string | number | boolean | null;
+
+type ActivityMetadataChange = {
+  field: string;
+  label: string;
+  before: ActivityMetadataValue;
+  after: ActivityMetadataValue;
+};
+
 const logProfileActivity = async (payload: ProfileActivityPayload) => {
   try {
     await fetch("/api/profile/activity", {
@@ -149,6 +158,7 @@ export default function ProfilePageUI() {
   };
   
   const [currentMedications, setCurrentMedications] = useState<Medication[]>([]);
+  const [persistedCurrentMedications, setPersistedCurrentMedications] = useState<Medication[]>([]);
 
   {/* PAST MEDICAL HISTORY */}
 
@@ -213,6 +223,146 @@ export default function ProfilePageUI() {
 
   const getFrequencyTimesPerDay = (frequencyValue: string) =>
     medicationFrequencyOptions.find((option) => option.value === frequencyValue)?.times ?? 1;
+
+  const cloneMedicationList = (items: Medication[]) =>
+    items.map((medication) => ({
+      ...medication,
+      logs: Array.isArray(medication.logs) ? [...medication.logs] : [],
+    }));
+
+  type MedicationActivityRecord = {
+    id: string;
+    name: string;
+    dosage: string;
+    purpose: string;
+    frequency: string;
+    timesPerDay: number | null;
+    startDate: string | null;
+    endDate: string | null;
+  };
+
+  const medicationActivityFieldLabels: Record<string, string> = {
+    name: "Name",
+    dosage: "Dosage",
+    purpose: "Purpose",
+    frequency: "Frequency",
+    timesPerDay: "Times per day",
+    startDate: "Start date",
+    endDate: "End date",
+  };
+
+  const normalizeMedicationActivityValue = (value: unknown): ActivityMetadataValue => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed || null;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : null;
+    }
+    if (typeof value === "boolean") return value;
+    return null;
+  };
+
+  const normalizeMedicationForActivity = (
+    medication: Medication,
+    index: number
+  ): MedicationActivityRecord => {
+    const name = (medication.name || "").trim();
+    const dosage = (medication.dosage || "").trim();
+    const purpose = (medication.purpose || "").trim();
+    const frequency = (medication.frequency || "").trim();
+    const startDate = (medication.startDate || "").trim() || null;
+    const endDate = (medication.endDate || "").trim() || null;
+    const timesPerDay =
+      typeof medication.timesPerDay === "number" && Number.isFinite(medication.timesPerDay)
+        ? Math.max(0, Math.floor(medication.timesPerDay))
+        : null;
+    const fallbackKey = [name, dosage, frequency, startDate || "", endDate || ""]
+      .map((entry) => entry.toLowerCase())
+      .join("|");
+    const id = (medication.id || "").trim() || `legacy-${index}-${fallbackKey || "medication"}`;
+
+    return {
+      id,
+      name,
+      dosage,
+      purpose,
+      frequency,
+      timesPerDay,
+      startDate,
+      endDate,
+    };
+  };
+
+  const getMedicationActivitySummary = (medication: MedicationActivityRecord) => {
+    const name = medication.name || "Medication";
+    const detailParts = [
+      medication.dosage,
+      medication.frequency ? getFrequencyLabel(medication.frequency) : "",
+    ].filter(Boolean);
+    return detailParts.length > 0 ? `${name} (${detailParts.join(" · ")})` : name;
+  };
+
+  const buildMedicationRecordChanges = (
+    previousMedication: MedicationActivityRecord,
+    nextMedication: MedicationActivityRecord
+  ): ActivityMetadataChange[] => {
+    const medicationLabel = nextMedication.name || previousMedication.name || "Medication";
+    return (
+      ["name", "dosage", "purpose", "frequency", "timesPerDay", "startDate", "endDate"] as const
+    )
+      .map((field) => {
+        const before = normalizeMedicationActivityValue(previousMedication[field]);
+        const after = normalizeMedicationActivityValue(nextMedication[field]);
+        if (before === after) return null;
+        return {
+          field: `${field}:${nextMedication.id}`,
+          label: `${medicationLabel} ${medicationActivityFieldLabels[field]}`,
+          before,
+          after,
+        };
+      })
+      .filter((entry): entry is ActivityMetadataChange => entry !== null);
+  };
+
+  const buildMedicationListActivityChanges = (
+    previousMedications: Medication[],
+    nextMedications: Medication[]
+  ) => {
+    const previousNormalized = previousMedications.map(normalizeMedicationForActivity);
+    const nextNormalized = nextMedications.map(normalizeMedicationForActivity);
+    const previousById = new Map(previousNormalized.map((medication) => [medication.id, medication]));
+    const nextById = new Map(nextNormalized.map((medication) => [medication.id, medication]));
+
+    const changes: ActivityMetadataChange[] = [];
+
+    nextNormalized.forEach((nextMedication) => {
+      const previousMedication = previousById.get(nextMedication.id);
+      if (!previousMedication) {
+        changes.push({
+          field: `added:${nextMedication.id}`,
+          label: "Added medication",
+          before: "none",
+          after: getMedicationActivitySummary(nextMedication),
+        });
+        return;
+      }
+      changes.push(...buildMedicationRecordChanges(previousMedication, nextMedication));
+    });
+
+    previousNormalized.forEach((previousMedication) => {
+      if (nextById.has(previousMedication.id)) return;
+      changes.push({
+        field: `removed:${previousMedication.id}`,
+        label: "Removed medication",
+        before: getMedicationActivitySummary(previousMedication),
+        after: "removed",
+      });
+    });
+
+    return changes;
+  };
 
   const parseNullablePositiveNumber = (raw: string): number | null => {
     const trimmed = raw.trim();
@@ -481,7 +631,12 @@ useEffect(() => {
         const cachedMeds = Array.isArray(cachedHealth.medications)
           ? cachedHealth.medications
           : cachedHealth.current_medication || [];
-        setCurrentMedications(cachedMeds);
+        const clonedCachedMeds = cachedMeds.map((medication) => ({
+          ...medication,
+          logs: Array.isArray(medication.logs) ? [...medication.logs] : [],
+        }));
+        setCurrentMedications(clonedCachedMeds);
+        setPersistedCurrentMedications(clonedCachedMeds);
         setHeightCm(
           cachedHealth.height_cm !== null && cachedHealth.height_cm !== undefined
             ? String(cachedHealth.height_cm)
@@ -563,7 +718,12 @@ useEffect(() => {
       const resolvedMedicationList = useLegacyMedicationList
         ? legacyMedicationList
         : medicationListFromTable;
-      setCurrentMedications(resolvedMedicationList);
+      const clonedResolvedMedicationList = resolvedMedicationList.map((medication) => ({
+        ...medication,
+        logs: Array.isArray(medication.logs) ? [...medication.logs] : [],
+      }));
+      setCurrentMedications(clonedResolvedMedicationList);
+      setPersistedCurrentMedications(clonedResolvedMedicationList);
 
       if (data){
         setConditions((data.current_diagnosed_condition as string[]) || []);
@@ -1287,6 +1447,10 @@ useEffect(() => {
                   } else if (medicationError) {
                     alert("Error: " + medicationError.message);
                   } else {
+                    const medicationChanges = buildMedicationListActivityChanges(
+                      persistedCurrentMedications,
+                      normalizedMedications
+                    );
                     const latestMedication =
                       normalizedMedications[normalizedMedications.length - 1] ?? null;
                     void logProfileActivity({
@@ -1304,10 +1468,17 @@ useEffect(() => {
                             : "Medication list",
                       },
                       metadata: {
+                        name:
+                          typeof latestMedication?.name === "string"
+                            ? latestMedication.name
+                            : "Medication list",
                         totalMedications: normalizedMedications.length,
+                        changes: medicationChanges,
+                        changeCount: medicationChanges.length,
                       },
                     });
                     setCurrentMedications(normalizedMedications);
+                    setPersistedCurrentMedications(cloneMedicationList(normalizedMedications));
                     setIsCurrentMedicalModalOpen(false);
                     alert("Health information updated successfully!");
                   }

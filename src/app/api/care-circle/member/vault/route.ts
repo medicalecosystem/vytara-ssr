@@ -48,6 +48,7 @@ type AuthorizedVaultAccess = {
 
 type RenamePayload = {
   linkId?: string;
+  actorProfileId?: string;
   folder?: string;
   name?: string;
   nextName?: string;
@@ -55,6 +56,7 @@ type RenamePayload = {
 
 type DeletePayload = {
   linkId?: string;
+  actorProfileId?: string;
   folder?: string;
   name?: string;
 };
@@ -69,6 +71,51 @@ const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRo
 };
 
 const canReadMedicalData = (role: CareCircleRole) => role === 'family';
+
+const isMissingAuthColumnError = (error: { code?: string; message?: string } | null) =>
+  error?.code === 'PGRST204' || error?.message?.toLowerCase().includes('auth_id');
+
+const normalizeActorProfileId = (value: unknown) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+};
+
+const resolveActorProfileId = async (
+  adminClient: SupabaseClient,
+  actorUserId: string,
+  requestedActorProfileId: string | null
+) => {
+  if (!requestedActorProfileId) return null;
+
+  const byAuth = await adminClient
+    .from('profiles')
+    .select('id')
+    .eq('id', requestedActorProfileId)
+    .eq('auth_id', actorUserId)
+    .maybeSingle();
+
+  if (!byAuth.error && byAuth.data?.id) {
+    return byAuth.data.id;
+  }
+
+  if (byAuth.error && !isMissingAuthColumnError(byAuth.error) && byAuth.error.code !== 'PGRST116') {
+    return null;
+  }
+
+  const byUser = await adminClient
+    .from('profiles')
+    .select('id')
+    .eq('id', requestedActorProfileId)
+    .eq('user_id', actorUserId)
+    .maybeSingle();
+
+  if (byUser.error || !byUser.data?.id) {
+    return null;
+  }
+
+  return byUser.data.id;
+};
 
 const isVaultFolder = (value: string | null | undefined): value is CareCircleFolder =>
   typeof value === 'string' && CARE_CIRCLE_FOLDERS.includes(value as CareCircleFolder);
@@ -344,6 +391,7 @@ export async function POST(request: Request) {
     const linkId = trimStringField(formData.get('linkId'));
     const folder = trimStringField(formData.get('folder'));
     const rawFileName = trimStringField(formData.get('fileName'));
+    const requestedActorProfileId = normalizeActorProfileId(formData.get('actorProfileId'));
     const file = formData.get('file');
 
     if (!linkId) {
@@ -381,6 +429,11 @@ export async function POST(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const targetPath = buildStoragePath(access.ownerProfileId, folder, finalName);
     const { data, error } = await access.adminClient.storage.from('medical-vault').upload(targetPath, file, {
@@ -401,6 +454,7 @@ export async function POST(request: Request) {
       adminClient: access.adminClient,
       profileId: access.ownerProfileId,
       actorUserId: access.actorUserId,
+      actorProfileId,
       domain: 'vault',
       action: 'upload',
       entity: {
@@ -438,6 +492,7 @@ export async function PATCH(request: Request) {
     }
 
     const linkId = payload.linkId?.trim();
+    const requestedActorProfileId = normalizeActorProfileId(payload.actorProfileId);
     const folder = payload.folder?.trim();
     const currentName = payload.name?.trim() ?? '';
     const nextName = payload.nextName?.trim() ?? '';
@@ -459,6 +514,11 @@ export async function PATCH(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const currentPath = buildStoragePath(access.ownerProfileId, folder, currentName);
     const nextPath = buildStoragePath(access.ownerProfileId, folder, nextName);
@@ -477,6 +537,7 @@ export async function PATCH(request: Request) {
       adminClient: access.adminClient,
       profileId: access.ownerProfileId,
       actorUserId: access.actorUserId,
+      actorProfileId,
       domain: 'vault',
       action: 'rename',
       entity: {
@@ -512,6 +573,7 @@ export async function DELETE(request: Request) {
     }
 
     const linkId = payload.linkId?.trim();
+    const requestedActorProfileId = normalizeActorProfileId(payload.actorProfileId);
     const folder = payload.folder?.trim();
     const fileName = payload.name?.trim() ?? '';
 
@@ -529,6 +591,11 @@ export async function DELETE(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const path = buildStoragePath(access.ownerProfileId, folder, fileName);
     const { error } = await access.adminClient.storage.from('medical-vault').remove([path]);
@@ -541,6 +608,7 @@ export async function DELETE(request: Request) {
       adminClient: access.adminClient,
       profileId: access.ownerProfileId,
       actorUserId: access.actorUserId,
+      actorProfileId,
       domain: 'vault',
       action: 'delete',
       entity: {

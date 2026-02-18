@@ -123,6 +123,9 @@ type VaultCategory = 'all' | 'reports' | 'prescriptions' | 'insurance' | 'bills'
 type VaultFolder = Exclude<VaultCategory, 'all'>;
 type MemberDetailsTab = 'personal' | 'appointments' | 'medications' | 'vault';
 
+const isMemberDetailsTab = (value: string | null): value is MemberDetailsTab =>
+  value === 'personal' || value === 'appointments' || value === 'medications' || value === 'vault';
+
 type MemberVaultFile = {
   name: string;
   created_at: string | null;
@@ -649,6 +652,9 @@ export default function CareCirclePage() {
   );
   const [appointmentSaving, setAppointmentSaving] = useState(false);
   const [appointmentDeletingId, setAppointmentDeletingId] = useState<string | null>(null);
+  const [pendingMemberLinkId, setPendingMemberLinkId] = useState<string | null>(null);
+  const [pendingMemberTab, setPendingMemberTab] = useState<MemberDetailsTab | null>(null);
+  const hasAppliedMemberDeepLinkRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -658,7 +664,37 @@ export default function CareCirclePage() {
       setShowIncomingPendingInvites(true);
       setShowMyPendingInvites(false);
     }
+    const memberLinkId = params.get('memberLinkId')?.trim() || null;
+    const tabParam = params.get('tab');
+    setPendingMemberLinkId(memberLinkId);
+    setPendingMemberTab(isMemberDetailsTab(tabParam) ? tabParam : null);
+    hasAppliedMemberDeepLinkRef.current = false;
   }, []);
+
+  useEffect(() => {
+    if (!pendingMemberLinkId || hasAppliedMemberDeepLinkRef.current) return;
+
+    const allMembers = [...circleData.myCircleMembers, ...circleData.circlesImIn];
+    const targetMember = allMembers.find(
+      (member) => member.linkId === pendingMemberLinkId && member.status === 'accepted'
+    );
+    if (!targetMember) return;
+
+    hasAppliedMemberDeepLinkRef.current = true;
+    setShowIncomingPendingInvites(false);
+    setShowMyPendingInvites(false);
+    setSelectedMember(targetMember);
+    setMemberDetailsTab(pendingMemberTab ?? 'personal');
+
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('memberLinkId');
+      url.searchParams.delete('tab');
+      const nextSearch = url.searchParams.toString();
+      const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
+      window.history.replaceState({}, '', nextUrl);
+    }
+  }, [circleData.circlesImIn, circleData.myCircleMembers, pendingMemberLinkId, pendingMemberTab]);
 
   const loadEmergencyCard = useCallback(async (targetProfileId: string) => {
     setIsEmergencyLoading(true);
@@ -1308,6 +1344,9 @@ export default function CareCirclePage() {
         formData.append('folder', vaultUploadCategory);
         formData.append('file', vaultUploadFile);
         formData.append('fileName', finalName);
+        if (profileId) {
+          formData.append('actorProfileId', profileId);
+        }
 
         const response = await fetch('/api/care-circle/member/vault', {
           method: 'POST',
@@ -1330,6 +1369,7 @@ export default function CareCirclePage() {
     [
       closeVaultUploadModal,
       fetchVaultFiles,
+      profileId,
       selectedMember,
       vaultCategory,
       vaultUploadCategory,
@@ -1361,6 +1401,7 @@ export default function CareCirclePage() {
             folder: file.folder,
             name: file.name,
             nextName,
+            actorProfileId: profileId || undefined,
           }),
         });
 
@@ -1376,7 +1417,7 @@ export default function CareCirclePage() {
         setVaultRenamingKey(null);
       }
     },
-    [fetchVaultFiles, selectedMember, vaultCategory]
+    [fetchVaultFiles, profileId, selectedMember, vaultCategory]
   );
 
   const handleVaultDelete = useCallback(
@@ -1397,6 +1438,7 @@ export default function CareCirclePage() {
             linkId: selectedMember.linkId,
             folder: file.folder,
             name: file.name,
+            actorProfileId: profileId || undefined,
           }),
         });
 
@@ -1412,7 +1454,7 @@ export default function CareCirclePage() {
         setVaultDeletingKey(null);
       }
     },
-    [fetchVaultFiles, selectedMember, vaultCategory]
+    [fetchVaultFiles, profileId, selectedMember, vaultCategory]
   );
 
   const handleMedicationSubmit = useCallback(
@@ -1458,6 +1500,7 @@ export default function CareCirclePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             linkId: selectedMember.linkId,
+            actorProfileId: profileId || undefined,
             medication: {
               ...(medicationFormMode === 'edit' ? { id: medicationForm.id } : {}),
               name,
@@ -1490,7 +1533,7 @@ export default function CareCirclePage() {
         setMedicationSaving(false);
       }
     },
-    [closeMedicationFormModal, medicationForm, medicationFormMode, selectedMember]
+    [closeMedicationFormModal, medicationForm, medicationFormMode, profileId, selectedMember]
   );
 
   const handleMedicationDelete = useCallback(
@@ -1509,6 +1552,7 @@ export default function CareCirclePage() {
           body: JSON.stringify({
             linkId: selectedMember.linkId,
             medicationId: medication.id,
+            actorProfileId: profileId || undefined,
           }),
         });
 
@@ -1529,7 +1573,7 @@ export default function CareCirclePage() {
         setMedicationDeletingId(null);
       }
     },
-    [selectedMember]
+    [profileId, selectedMember]
   );
 
   const handleAppointmentSubmit = useCallback(
@@ -1568,6 +1612,7 @@ export default function CareCirclePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             linkId: selectedMember.linkId,
+            actorProfileId: profileId || undefined,
             appointment: {
               id:
                 appointmentFormMode === 'edit' && appointmentForm.id
@@ -1606,6 +1651,7 @@ export default function CareCirclePage() {
       appointmentForm,
       appointmentFormMode,
       closeAppointmentFormModal,
+      profileId,
       selectedMember,
     ]
   );
@@ -1626,6 +1672,7 @@ export default function CareCirclePage() {
           body: JSON.stringify({
             linkId: selectedMember.linkId,
             appointmentId: appointment.id,
+            actorProfileId: profileId || undefined,
           }),
         });
 
@@ -1648,7 +1695,7 @@ export default function CareCirclePage() {
         setAppointmentDeletingId(null);
       }
     },
-    [selectedMember]
+    [profileId, selectedMember]
   );
 
   const handleEmergencyChange = <Key extends keyof EmergencyCardData>(
@@ -3405,14 +3452,14 @@ export default function CareCirclePage() {
 
       {showAppointmentFormModal ? (
         <div
-          className="fixed inset-0 z-[87] flex items-center justify-center bg-slate-900/60 px-4"
+          className="fixed inset-0 z-[87] flex items-center justify-center overflow-y-auto bg-slate-900/60 px-4 py-6"
           onClick={closeAppointmentFormModal}
         >
           <div
-            className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl"
+            className="my-auto w-full max-w-xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-shrink-0 items-center justify-between p-6 pb-0">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">
                   {appointmentFormMode === 'add' ? 'Add appointment' : 'Edit appointment'}
@@ -3431,7 +3478,10 @@ export default function CareCirclePage() {
               </button>
             </div>
 
-            <form onSubmit={handleAppointmentSubmit} className="mt-5 space-y-4">
+            <form
+              onSubmit={handleAppointmentSubmit}
+              className="mt-5 flex-1 min-h-0 overflow-y-auto space-y-4 p-6 pt-5"
+            >
               <label className="block text-sm font-medium text-slate-700">
                 Title
                 <input

@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient, type User } from '@supabase/supabase-js';
 
 type LinkRow = {
+  id: string;
   profile_id: string | null;
 };
 
@@ -122,7 +123,7 @@ export async function GET(request: Request) {
 
     const { data: linkRows, error: linksError } = await adminClient
       .from('care_circle_links')
-      .select('profile_id')
+      .select('id, profile_id')
       .eq('recipient_id', user.id)
       .eq('status', 'accepted')
       .eq('relationship', 'family')
@@ -139,6 +140,11 @@ export async function GET(request: Request) {
           .filter((profileId): profileId is string => Boolean(profileId))
       )
     );
+    const linkIdByProfileId = new Map<string, string>();
+    ((linkRows ?? []) as LinkRow[]).forEach((row) => {
+      if (!row.profile_id || !row.id || linkIdByProfileId.has(row.profile_id)) return;
+      linkIdByProfileId.set(row.profile_id, row.id);
+    });
 
     if (sharedProfileIds.length === 0) {
       return NextResponse.json({ logs: [] });
@@ -187,6 +193,7 @@ export async function GET(request: Request) {
       logs: logs.map((log) => ({
         ...log,
         profile_label: profileNameById.get(log.profile_id) ?? null,
+        link_id: linkIdByProfileId.get(log.profile_id) ?? null,
       })),
     });
   } catch (error) {
@@ -194,4 +201,3 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: 'Failed to fetch care circle activity.' }, { status: 500 });
   }
 }
-

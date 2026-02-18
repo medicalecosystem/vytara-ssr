@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/createClient";
 import { AppointmentsModal } from "@/components/AppointmentsModal";
 import { EmergencyContactsModal, type EmergencyContact } from "@/components/EmergencyContactsModal";
@@ -29,6 +30,7 @@ type Appointment = {
   time: string;
   title: string;
   type: string;
+  [key: string]: string;
 };
 
 type CacheEntry<T> = {
@@ -45,6 +47,15 @@ type ProfileActivityPayload = {
     label?: string | null;
   };
   metadata?: Record<string, unknown>;
+};
+
+type ActivityMetadataValue = string | number | boolean | null;
+
+type ActivityMetadataChange = {
+  field: string;
+  label: string;
+  before: ActivityMetadataValue;
+  after: ActivityMetadataValue;
 };
 
 type RawMedicationLog = {
@@ -100,6 +111,135 @@ const medicationFrequencyTimes: Record<string, number> = {
   as_needed: 0,
   with_meals: 3,
   before_bed: 1,
+};
+
+const APPOINTMENT_ACTIVITY_FIELD_LABELS: Record<string, string> = {
+  title: "Title",
+  type: "Type",
+  date: "Date",
+  time: "Time",
+  doctorName: "Doctor name",
+  specialty: "Specialty",
+  hospitalName: "Hospital or clinic",
+  reason: "Reason",
+  testName: "Test name",
+  labName: "Lab name",
+  instructions: "Instructions",
+  department: "Department",
+  therapyType: "Therapy type",
+  therapistName: "Therapist name",
+  location: "Location",
+  previousDoctor: "Previous doctor",
+  previousVisitReason: "Previous visit reason",
+  description: "Description",
+  contactPerson: "Contact person",
+};
+
+const MEDICATION_ACTIVITY_FIELD_LABELS: Record<string, string> = {
+  name: "Name",
+  dosage: "Dosage",
+  purpose: "Purpose",
+  frequency: "Frequency",
+  timesPerDay: "Times per day",
+  startDate: "Start date",
+  endDate: "End date",
+};
+
+const normalizeActivityMetadataValue = (value: unknown): ActivityMetadataValue => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "boolean") return value;
+  return null;
+};
+
+const toTitleCase = (value: string) =>
+  value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const getAppointmentActivityFieldLabel = (field: string) => {
+  if (APPOINTMENT_ACTIVITY_FIELD_LABELS[field]) {
+    return APPOINTMENT_ACTIVITY_FIELD_LABELS[field];
+  }
+  const normalized = field
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  return toTitleCase(normalized || field);
+};
+
+const buildAppointmentActivityChanges = (
+  previousAppointment: Appointment,
+  nextAppointment: Appointment
+): ActivityMetadataChange[] => {
+  const keys = Array.from(
+    new Set([...Object.keys(previousAppointment), ...Object.keys(nextAppointment)])
+  ).filter((key) => key !== "id");
+  const prioritized = ["title", "type", "date", "time"];
+  const orderedKeys = [
+    ...prioritized.filter((key) => keys.includes(key)),
+    ...keys.filter((key) => !prioritized.includes(key)).sort(),
+  ];
+  return orderedKeys
+    .map((key) => {
+      const before = normalizeActivityMetadataValue(previousAppointment[key]);
+      const after = normalizeActivityMetadataValue(nextAppointment[key]);
+      if (before === after) return null;
+      return {
+        field: key,
+        label: getAppointmentActivityFieldLabel(key),
+        before,
+        after,
+      };
+    })
+    .filter((entry): entry is ActivityMetadataChange => entry !== null);
+};
+
+const getMedicationActivityFieldLabel = (field: string) => {
+  if (MEDICATION_ACTIVITY_FIELD_LABELS[field]) {
+    return MEDICATION_ACTIVITY_FIELD_LABELS[field];
+  }
+  const normalized = field
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  return toTitleCase(normalized || field);
+};
+
+const buildMedicationActivityChanges = (
+  previousMedication: Medication,
+  nextMedication: Medication
+): ActivityMetadataChange[] => {
+  const fields = [
+    "name",
+    "dosage",
+    "purpose",
+    "frequency",
+    "timesPerDay",
+    "startDate",
+    "endDate",
+  ] as const;
+  return fields
+    .map((field) => {
+      const before = normalizeActivityMetadataValue(previousMedication[field] ?? null);
+      const after = normalizeActivityMetadataValue(nextMedication[field] ?? null);
+      if (before === after) return null;
+      return {
+        field,
+        label: getMedicationActivityFieldLabel(field),
+        before,
+        after,
+      };
+    })
+    .filter((entry): entry is ActivityMetadataChange => entry !== null);
 };
 
 const resolveTimesPerDay = (frequency: string, value: unknown) => {
@@ -180,6 +320,9 @@ const logProfileActivity = async (payload: ProfileActivityPayload) => {
 ======================= */
 
 export default function HomePage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const openParam = searchParams.get("open");
   const { selectedProfile } = useAppProfile();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [activeSection, setActiveSection] = useState<string | null>(null);
@@ -195,6 +338,25 @@ export default function HomePage() {
   const [greeting, setGreeting] = useState("Good Morning");
   const profileId = selectedProfile?.id ?? "";
   const cacheOwnerId = profileId || userId;
+
+  useEffect(() => {
+    if (!openParam) return;
+
+    const sectionMap: Record<string, string> = {
+      calendar: "calendar",
+      emergency: "emergency",
+      doctors: "doctors",
+      medications: "medications",
+    };
+    const targetSection = sectionMap[openParam];
+
+    if (targetSection) {
+      setIsNotificationsOpen(false);
+      setActiveSection(targetSection);
+    }
+
+    router.replace("/app/homepage", { scroll: false });
+  }, [openParam, router]);
 
   useEffect(() => {
     const updateGreeting = () => {
@@ -438,8 +600,9 @@ export default function HomePage() {
   const handleAddAppointment = async (appointment: Appointment) => {
     if (!userId || !profileId) return;
 
+    const existingAppointment = appointments.find((a) => a.id === appointment.id) ?? null;
     let updatedAppointments: Appointment[];
-    const isUpdate = appointments.some((a) => a.id === appointment.id);
+    const isUpdate = Boolean(existingAppointment);
 
     if (isUpdate) {
       updatedAppointments = appointments.map((a) =>
@@ -467,6 +630,22 @@ export default function HomePage() {
       return;
     }
 
+    const appointmentChanges =
+      isUpdate && existingAppointment
+        ? buildAppointmentActivityChanges(existingAppointment, appointment)
+        : [];
+    const metadata: Record<string, unknown> = {
+      id: appointment.id,
+      title: appointment.title || null,
+      type: appointment.type || null,
+      date: appointment.date || null,
+      time: appointment.time || null,
+    };
+    if (isUpdate) {
+      metadata.changes = appointmentChanges;
+      metadata.changeCount = appointmentChanges.length;
+    }
+
     void logProfileActivity({
       profileId,
       domain: "appointment",
@@ -475,13 +654,7 @@ export default function HomePage() {
         id: appointment.id,
         label: appointment.title || appointment.type || "Appointment",
       },
-      metadata: {
-        id: appointment.id,
-        title: appointment.title || null,
-        type: appointment.type || null,
-        date: appointment.date || null,
-        time: appointment.time || null,
-      },
+      metadata,
     });
 
     setAppointments(updatedAppointments);
@@ -792,8 +965,30 @@ export default function HomePage() {
       return;
     }
 
+    const existingMedication = medications.find((m) => m.id === medication.id) ?? null;
+    const medicationId = medication.id || existingMedication?.id || "";
+    if (!medicationId) {
+      alert("Medication ID is missing. Please reopen and try again.");
+      return;
+    }
+    const normalizedMedication: Medication = {
+      ...medication,
+      id: medicationId,
+      name: medication.name.trim(),
+      dosage: medication.dosage.trim(),
+      purpose: (medication.purpose || "").trim(),
+      frequency: medication.frequency.trim(),
+      timesPerDay:
+        typeof medication.timesPerDay === "number" && medication.timesPerDay >= 0
+          ? medication.timesPerDay
+          : resolveTimesPerDay(medication.frequency.trim(), medication.timesPerDay),
+      startDate: medication.startDate || undefined,
+      endDate: medication.endDate || undefined,
+      logs: Array.isArray(medication.logs) ? medication.logs : existingMedication?.logs || [],
+    };
+
     const updatedMedications = medications.map((m) =>
-      m.id === medication.id ? medication : m
+      m.id === medicationId ? normalizedMedication : m
     );
 
     try {
@@ -813,20 +1008,29 @@ export default function HomePage() {
 
       if (error) throw error;
 
+      const medicationChanges = existingMedication
+        ? buildMedicationActivityChanges(existingMedication, normalizedMedication)
+        : [];
+
       void logProfileActivity({
         profileId,
         domain: "medication",
         action: "update",
         entity: {
-          id: medication.id,
-          label: medication.name,
+          id: normalizedMedication.id,
+          label: normalizedMedication.name,
         },
         metadata: {
-          id: medication.id,
-          name: medication.name,
-          dosage: medication.dosage,
-          frequency: medication.frequency,
-          startDate: medication.startDate ?? null,
+          id: normalizedMedication.id,
+          name: normalizedMedication.name,
+          dosage: normalizedMedication.dosage,
+          purpose: normalizedMedication.purpose ?? null,
+          frequency: normalizedMedication.frequency,
+          timesPerDay: normalizedMedication.timesPerDay ?? null,
+          startDate: normalizedMedication.startDate ?? null,
+          endDate: normalizedMedication.endDate ?? null,
+          changes: medicationChanges,
+          changeCount: medicationChanges.length,
         },
       });
 
