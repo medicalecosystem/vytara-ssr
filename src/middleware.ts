@@ -9,9 +9,7 @@ const PROTECTED_PATH_PREFIX = '/app';
 
 export async function middleware(request: NextRequest) {
   // Build response first so Supabase can write refreshed cookies to it
-  let response = NextResponse.next({
-    request: { request },
-  });
+  let response = NextResponse.next();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
