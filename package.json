@@ -27,7 +27,7 @@
     "ogl": "^1.0.11",
     "react": "19.2.1",
     "react-dom": "19.2.1",
-    "supabase": "^2.76.8",
+    "supabase": "^2.76.11",
     "tailwind-merge": "^3.4.0",
     "three": "^0.167.1",
     "twilio": "^5.11.2"

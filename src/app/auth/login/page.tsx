@@ -8,7 +8,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { ChevronDown, MoreVertical } from "lucide-react";
 import Plasma from "@/components/Plasma";
@@ -33,8 +33,17 @@ type RememberedAccount = {
 
 const REMEMBERED_ACCOUNT_KEY = "vytara_remembered_account";
 
+/** Safe redirect path after login: must be under /app to avoid open redirect */
+function getPostLoginPath(returnTo: string | null): string {
+  if (!returnTo || typeof returnTo !== "string") return "/app/homepage";
+  const path = returnTo.startsWith("/") ? returnTo : `/${returnTo}`;
+  return path.startsWith("/app") ? path : "/app/homepage";
+}
+
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = searchParams.get("returnTo");
   const [phone, setPhone] = useState("");
   const [selectedCountry, setSelectedCountry] = useState<CountryOption>(DEFAULT_COUNTRY);
   const [otpDigits, setOtpDigits] = useState<string[]>(Array(6).fill(""));
@@ -170,7 +179,7 @@ export default function LoginPage() {
     }
 
     setContinueLoading(false);
-    router.push("/app/homepage");
+    router.push(getPostLoginPath(returnTo));
   };
 
   const sendOtp = async () => {
@@ -294,7 +303,7 @@ export default function LoginPage() {
       }
     }
 
-    router.push("/app/homepage");
+    router.push(getPostLoginPath(returnTo));
   };
 
   return (
