@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
-import { createClient, type User } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
+import { getAuthenticatedUser } from '@/lib/auth';
 
 type NotificationStateRow = {
   notification_id: string;
@@ -17,64 +16,6 @@ type UpdateNotificationStatePayload = {
 };
 
 const MAX_NOTIFICATION_IDS = 200;
-
-const getAuthenticatedUser = async (request: Request): Promise<User | null> => {
-  const authHeader = request.headers.get('authorization');
-
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.replace('Bearer ', '');
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      }
-    );
-
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser(token);
-
-    if (!error && user) {
-      return user;
-    }
-    return null;
-  }
-
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
-          });
-        },
-      },
-    }
-  );
-
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (!error && user) {
-    return user;
-  }
-
-  return null;
-};
 
 const createAdminClient = () => {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -210,4 +151,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'Failed to update notification state.' }, { status: 500 });
   }
 }
-

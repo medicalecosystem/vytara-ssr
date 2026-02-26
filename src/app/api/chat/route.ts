@@ -3,11 +3,23 @@
  * Requires Flask backend running (e.g. python app.py in backend/).
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedUser } from '@/lib/auth';
 
 const FLASK_API_URL = process.env.NEXT_PUBLIC_CHATBOT_URL || 'http://localhost:5000';
 
 export async function POST(request: NextRequest) {
   try {
+    if (!(await getAuthenticatedUser(request))) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Unauthorized',
+          reply: 'Please sign in to use the assistant.',
+        },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const res = await fetch(`${FLASK_API_URL}/api/chat`, {
       method: 'POST',

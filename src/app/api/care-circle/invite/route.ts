@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
+import { getAuthenticatedUser } from '@/lib/auth';
 
 type InvitePayload = {
   contact?: string;
@@ -48,52 +47,7 @@ const normalizeContactToE164 = (value: string): string => {
 };
 
 export async function POST(request: Request) {
-  // Check for Bearer token in Authorization header (for mobile apps)
-  const authHeader = request.headers.get('authorization');
-  let user: { id: string } | null = null;
-
-  if (authHeader?.startsWith('Bearer ')) {
-    // Mobile app authentication via Bearer token
-    const token = authHeader.replace('Bearer ', '');
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      }
-    );
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token);
-    if (!authError && authUser) {
-      user = authUser;
-    }
-  } else {
-    // Web app authentication via cookies
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, options);
-            });
-          },
-        },
-      }
-    );
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-    if (!authError && authUser) {
-      user = authUser;
-    }
-  }
+  const user = await getAuthenticatedUser(request);
 
   if (!user) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });

@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { supabaseServer } from "@/lib/server";
+import { getAuthenticatedUser } from "@/lib/auth";
 type ProfilePayload = {
   profileId: string; // Profile ID to save data for
   displayName?: string;
@@ -136,7 +136,11 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as ProfilePayload;
 
-    const supabase = await supabaseServer();
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized", message: "Unauthorized" }, { status: 401 });
+    }
+
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
       return NextResponse.json(
         { error: "Service role key is missing.", message: "Service role key is missing." },
@@ -148,17 +152,6 @@ export async function POST(req: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY,
       { auth: { persistSession: false } }
     );
-    const authHeader = req.headers.get("authorization") || "";
-    const bearerToken = authHeader.toLowerCase().startsWith("bearer ")
-      ? authHeader.slice(7).trim()
-      : null;
-    const { data, error } = bearerToken
-      ? await supabase.auth.getUser(bearerToken)
-      : await supabase.auth.getUser();
-
-    if (error || !data?.user) {
-      return NextResponse.json({ error: "Unauthorized", message: "Unauthorized" }, { status: 401 });
-    }
 
     // Validate profileId
     if (!body?.profileId || typeof body.profileId !== 'string') {
@@ -174,7 +167,7 @@ export async function POST(req: Request) {
       .from("profiles")
       .select("id")
       .eq("id", body.profileId)
-      .eq("auth_id", data.user.id)
+      .eq("auth_id", user.id)
       .maybeSingle();
 
     if (!ownedByAuthError && ownedByAuth?.id) {
@@ -186,7 +179,7 @@ export async function POST(req: Request) {
         .from("profiles")
         .select("id")
         .eq("id", body.profileId)
-        .eq("user_id", data.user.id)
+        .eq("user_id", user.id)
         .maybeSingle();
 
       if (ownedByUserError && ownedByUserError.code !== "PGRST116") {
@@ -309,7 +302,7 @@ export async function POST(req: Request) {
 
     const payload = {
       profile_id: verifiedProfileId,
-      user_id: data.user.id, // Keep user_id for reference
+      user_id: user.id, // Keep user_id for reference
       date_of_birth: body.dateOfBirth,
       age,
       blood_group: body.bloodGroup,
@@ -357,7 +350,7 @@ export async function POST(req: Request) {
 
     const medicationPayload = {
       profile_id: verifiedProfileId,
-      user_id: data.user.id, // Keep user_id for reference
+      user_id: user.id, // Keep user_id for reference
       medications: medicationsForUser,
       updated_at: new Date().toISOString(),
     };

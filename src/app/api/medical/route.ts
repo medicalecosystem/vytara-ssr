@@ -3,6 +3,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedUser } from '@/lib/auth';
 
 const FLASK_API_URL = process.env.NEXT_PUBLIC_CHATBOT_URL || 'http://localhost:8000';
 const DEFAULT_BACKEND_URLS = ['http://127.0.0.1:8000', 'http://localhost:8000'];
@@ -104,6 +105,13 @@ async function callFlask(endpoint: string, method: string, body?: unknown) {
 export async function POST(request: NextRequest) {
   try {
     console.log('📥 [Next.js API] POST /api/medical');
+
+    if (!(await getAuthenticatedUser(request))) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized', message: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
     
     const body = await request.json();
     const {
