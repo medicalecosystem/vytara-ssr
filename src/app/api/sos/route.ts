@@ -127,8 +127,16 @@ ${userName || 'A user'} has triggered an SOS emergency`;
       })
     );
 
-    const successful = results.filter((r) => r.status === 'fulfilled' && r.value.success);
-    const failed = results.filter((r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success));
+    const successful = results
+      .filter(
+        (r): r is PromiseFulfilledResult<SendSmsSuccess> =>
+          r.status === 'fulfilled' && r.value.success
+      )
+      .map((r) => r.value);
+    const failed = results.filter(
+      (r): r is PromiseRejectedResult | PromiseFulfilledResult<SendSmsFailure> =>
+        r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success)
+    );
 
     if (successful.length === 0) {
       return NextResponse.json(
@@ -143,7 +151,7 @@ ${userName || 'A user'} has triggered an SOS emergency`;
     return NextResponse.json({
       success: true,
       message: `SOS alert sent successfully to ${successful.length} emergency contact(s)`,
-      successful: successful.map((s) => s.value),
+      successful,
       failed: failed.length > 0 ? failed.map((f) => getFailedResultDetail(f)) : undefined,
     });
   } catch (error: unknown) {
