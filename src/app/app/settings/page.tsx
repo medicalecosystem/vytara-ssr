@@ -92,6 +92,13 @@ export default function SettingsPage() {
       nav, footer, #footer { display: none !important; }
       [class*="w-72"][class*="border-r"][class*="overflow-y-auto"] { display: none !important; }
       [class*="justify-end"][class*="md:hidden"] { display: none !important; }
+      #vytara-translate,
+      [id*="conveythis"],
+      [class*="conveythis"] {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
       html, body { background: #ffffff !important; }
       body { overflow: auto !important; }
     `;

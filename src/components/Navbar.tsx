@@ -342,6 +342,52 @@ export default function Navbar() {
     setSavingProfileId(profileId);
     setNotice(null);
 
+    // Check age requirement: primary profile must be 18+
+    const { data: healthData, error: healthError } = await supabase
+      .from('health')
+      .select('date_of_birth')
+      .eq('profile_id', profileId)
+      .maybeSingle();
+
+    if (healthError && healthError.code !== 'PGRST116') {
+      setNotice({
+        type: 'error',
+        text: 'Unable to verify age for this profile. Please try again.',
+      });
+      setSavingProfileId(null);
+      return;
+    }
+
+    const dobValue = healthData?.date_of_birth;
+    if (!dobValue) {
+      setNotice({
+        type: 'error',
+        text: 'This profile has no date of birth on record. Complete health onboarding first.',
+      });
+      setSavingProfileId(null);
+      return;
+    }
+
+    const dobStr = typeof dobValue === 'string' ? dobValue : String(dobValue);
+    const dobMatch = dobStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dobMatch) {
+      const birthDate = new Date(`${dobMatch[1]}-${dobMatch[2]}-${dobMatch[3]}T00:00:00`);
+      if (!Number.isNaN(birthDate.getTime())) {
+        const today = new Date();
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+        if (age < 18) {
+          setNotice({
+            type: 'error',
+            text: 'This profile\u2019s account holder must be at least 18 years old to be set as primary.',
+          });
+          setSavingProfileId(null);
+          return;
+        }
+      }
+    }
+
     const clearPrimary = await supabase
       .from('profiles')
       .update({ is_primary: false, updated_at: new Date().toISOString() })
@@ -425,9 +471,8 @@ export default function Navbar() {
   return (
     <>
       <header
-        className={`sticky top-0 z-40 w-full border-b border-teal-900/20 bg-gradient-to-r from-teal-950 via-slate-950 to-slate-950 text-white md:hidden ${
-          isOnboarding ? 'pointer-events-none opacity-70' : ''
-        }`}
+        className={`sticky top-0 z-40 w-full border-b border-teal-900/20 bg-gradient-to-r from-teal-950 via-slate-950 to-slate-950 text-white md:hidden ${isOnboarding ? 'pointer-events-none opacity-70' : ''
+          }`}
       >
         <div className="flex items-center justify-between px-4 py-3">
           <button
@@ -469,11 +514,10 @@ export default function Navbar() {
                       setMobileMenuOpen(false);
                       router.push(item.href);
                     }}
-                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-                      isActive
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${isActive
                         ? 'bg-teal-500/25 text-white'
                         : 'text-teal-100/85 hover:bg-white/10 hover:text-white'
-                    }`}
+                      }`}
                   >
                     <Icon className="h-4 w-4" />
                     {item.label}
@@ -496,11 +540,10 @@ export default function Navbar() {
                   setMobileMenuOpen(false);
                   router.push('/app/settings');
                 }}
-                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-                  isSettingsPage
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${isSettingsPage
                     ? 'bg-teal-500/25 text-white'
                     : 'text-teal-100/90 hover:bg-white/10 hover:text-white'
-                }`}
+                  }`}
               >
                 <Settings2 className="h-4 w-4" />
                 Settings
@@ -525,9 +568,8 @@ export default function Navbar() {
       </header>
 
       <aside
-        className={`sticky top-0 hidden h-screen shrink-0 border-r border-teal-900/20 bg-gradient-to-b from-teal-950 via-slate-950 to-slate-950 text-white transition-[width] duration-200 md:block ${
-          effectiveCollapsed ? 'w-20' : 'w-64'
-        } ${isOnboarding ? 'pointer-events-none opacity-70' : ''}`}
+        className={`sticky top-0 hidden h-screen shrink-0 border-r border-teal-900/20 bg-gradient-to-b from-teal-950 via-slate-950 to-slate-950 text-white transition-[width] duration-200 md:block ${effectiveCollapsed ? 'w-20' : 'w-64'
+          } ${isOnboarding ? 'pointer-events-none opacity-70' : ''}`}
       >
         <div className="flex h-full flex-col px-3 py-6">
           <div className="flex items-center justify-between px-1">
@@ -568,11 +610,10 @@ export default function Navbar() {
                 <button
                   key={item.href}
                   onClick={() => router.push(item.href)}
-                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${
-                    isActive
+                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${isActive
                       ? 'bg-teal-500/20 text-white shadow-sm'
                       : 'text-teal-100/80 hover:bg-white/10 hover:text-white'
-                  }`}
+                    }`}
                   title={effectiveCollapsed ? item.label : undefined}
                 >
                   <Icon className="w-4 h-4" />
@@ -601,11 +642,10 @@ export default function Navbar() {
             <button
               onClick={() => router.push('/app/settings')}
               title={effectiveCollapsed ? 'Settings' : undefined}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
-                isSettingsPage
+              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${isSettingsPage
                   ? 'bg-teal-500/20 text-white shadow-sm'
                   : 'text-teal-100/90 hover:bg-white/10 hover:text-white'
-              }`}
+                }`}
             >
               <Settings2 className="w-4 h-4" />
               {!effectiveCollapsed && 'Settings'}
@@ -689,11 +729,10 @@ export default function Navbar() {
                     setEditingProfileName('');
                     setNotice(null);
                   }}
-                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition ${
-                    manageProfilesMode
+                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition ${manageProfilesMode
                       ? 'border-slate-800 bg-slate-900 text-white'
                       : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                  }`}
+                    }`}
                 >
                   <Settings2 className="h-4 w-4" />
                   {manageProfilesMode ? 'Managing Children' : 'Manage Child Profiles'}
@@ -702,11 +741,10 @@ export default function Navbar() {
 
               {notice && (
                 <div
-                  className={`mt-3 rounded-xl border px-3 py-2 text-sm ${
-                    notice.type === 'success'
+                  className={`mt-3 rounded-xl border px-3 py-2 text-sm ${notice.type === 'success'
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                       : 'border-rose-200 bg-rose-50 text-rose-700'
-                  }`}
+                    }`}
                 >
                   {notice.text}
                 </div>
@@ -770,11 +808,10 @@ export default function Navbar() {
                     return (
                       <div
                         key={profile.id}
-                        className={`rounded-2xl border px-4 py-3 transition ${
-                          isActive
+                        className={`rounded-2xl border px-4 py-3 transition ${isActive
                             ? 'border-teal-300 bg-teal-50/70'
                             : 'border-slate-200 bg-white hover:border-slate-300'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex min-w-0 items-center gap-3">
@@ -806,11 +843,10 @@ export default function Navbar() {
                             onClick={() => {
                               void handleSelectProfile(profile.id);
                             }}
-                            className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
-                              isActive
+                            className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${isActive
                                 ? 'border border-teal-300 bg-white text-teal-700'
                                 : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                            }`}
+                              }`}
                           >
                             {isActive ? (
                               <>

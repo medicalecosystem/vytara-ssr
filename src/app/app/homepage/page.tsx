@@ -1338,17 +1338,17 @@ function HomePageContent() {
           </Modal>
         )}
 
-        {activeSection && (
-          <Modal onClose={() => setActiveSection(null)}>
-            {activeSection === "calendar" && (
-              <AppointmentsModal
-                appointments={appointments}
-                onClose={() => setActiveSection(null)}
-                onAddAppointment={handleAddAppointment}
-                onDeleteAppointment={handleDeleteAppointment}
-              />
-            )}
+        {activeSection === "calendar" && (
+          <AppointmentsModal
+            appointments={appointments}
+            onClose={() => setActiveSection(null)}
+            onAddAppointment={handleAddAppointment}
+            onDeleteAppointment={handleDeleteAppointment}
+          />
+        )}
 
+        {activeSection && activeSection !== "calendar" && (
+          <Modal onClose={() => setActiveSection(null)}>
             {activeSection === "emergency" && (
               <EmergencyContactsModal
                 data={emergencyContacts}

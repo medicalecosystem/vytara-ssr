@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, ChevronLeft, ChevronRight, Trash2, Calendar as CalendarIcon, List, Clock, MapPin } from 'lucide-react';
 
 type Appointment = {
@@ -103,6 +104,15 @@ const clampTimePart = (value: string, max: number) => {
   return String(Math.min(numeric, max));
 };
 
+const parseDateOnly = (dateStr: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!match) return new Date(dateStr);
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  return new Date(year, month, day);
+};
+
 export function AppointmentsModal({
   appointments,
   onClose,
@@ -132,6 +142,8 @@ export function AppointmentsModal({
   const [additionalFields, setAdditionalFields] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
+    // Delay client-only calendar rendering to avoid hydration mismatch on date-sensitive UI.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsClient(true);
   }, []);
 
@@ -292,7 +304,7 @@ export function AppointmentsModal({
     });
 
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
+    const date = parseDateOnly(dateStr);
     return date.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
@@ -309,6 +321,10 @@ export function AppointmentsModal({
   const currentTypeFields = eventForm.type
     ? appointmentTypeFields[eventForm.type as keyof typeof appointmentTypeFields] || []
     : [];
+
+  const canUsePortal = isClient && typeof document !== 'undefined';
+  const renderLayer = (content: React.ReactNode) =>
+    canUsePortal ? createPortal(content, document.body) : content;
 
   return (
     <div className="fixed inset-0 flex items-center justify-center p-3 sm:p-4 z-50 bg-black/40 backdrop-blur-sm">
@@ -357,7 +373,9 @@ export function AppointmentsModal({
                 <div className="text-center py-8 sm:py-12">
                   <CalendarIcon className="w-12 h-12 sm:w-16 sm:h-16 mx-auto text-slate-300 mb-3 sm:mb-4" />
                   <p className="text-slate-500 text-base sm:text-lg font-medium">No upcoming appointments</p>
-                  <p className="text-slate-400 text-xs sm:text-sm mt-2">Click "Add New Appointment" to schedule one</p>
+                  <p className="text-slate-400 text-xs sm:text-sm mt-2">
+                    Click &quot;Add New Appointment&quot; to schedule one
+                  </p>
                 </div>
               ) : (
                 upcomingAppointments.map((apt) => {
@@ -520,15 +538,11 @@ export function AppointmentsModal({
       </div>
 
       {/* Add/Edit Event Modal */}
-      {showEventModal && (
+      {showEventModal && renderLayer(
         <div className="fixed inset-0 flex items-center justify-center p-3 sm:p-4 z-[60] bg-black/50 backdrop-blur-sm overflow-y-auto">
-          <div className="relative overflow-hidden rounded-2xl sm:rounded-[28px] max-w-md w-full my-4 sm:my-8 border border-white/30 bg-white/20 shadow-[0_18px_60px_-28px_rgba(15,23,42,0.45)] ring-1 ring-white/40 backdrop-blur-2xl backdrop-saturate-150">
-            <div className="pointer-events-none absolute inset-0 rounded-2xl sm:rounded-[28px] bg-gradient-to-br from-white/45 via-white/18 to-white/8" />
-            <div className="pointer-events-none absolute inset-0 rounded-2xl sm:rounded-[28px] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.35),rgba(255,255,255,0)_55%)]" />
-            <div className="pointer-events-none absolute inset-0 rounded-2xl sm:rounded-[28px] ring-1 ring-white/20" />
-
+          <div className="relative overflow-hidden rounded-2xl sm:rounded-[28px] max-w-md w-full my-4 sm:my-8 border border-slate-200 bg-white shadow-2xl">
             <div className="relative z-10">
-              <div className="p-4 sm:p-6 border-b border-white/40 bg-white/35 backdrop-blur-md flex justify-between items-center">
+              <div className="p-4 sm:p-6 border-b border-slate-200 bg-white flex justify-between items-center">
                 <h3 className="text-lg sm:text-xl font-bold text-slate-900">
                   {selectedEvent ? 'Edit Appointment' : 'Add Appointment'}
                 </h3>
@@ -540,7 +554,7 @@ export function AppointmentsModal({
                     setEventTime({ hour: '', minute: '', period: '' });
                     setAdditionalFields({});
                   }}
-                  className="p-1.5 sm:p-2 hover:bg-white/60 rounded-lg transition text-slate-600"
+                  className="p-1.5 sm:p-2 hover:bg-slate-100 rounded-lg transition text-slate-600"
                 >
                   <X className="w-5 h-5 sm:w-6 sm:h-6" />
                 </button>
@@ -580,7 +594,7 @@ export function AppointmentsModal({
                 <div>
                   <label className="block text-slate-700 mb-1.5 sm:mb-2 font-semibold text-xs sm:text-sm">Event Time</label>
                   <div className="rounded-xl border border-slate-300 bg-slate-50 p-2.5 sm:p-3">
-                    <div className="grid grid-cols-[1fr_auto_1fr_auto_2.5fr] items-center gap-1.5 sm:gap-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2">
                       <input
                         type="text"
                         value={eventTime.hour}
@@ -588,7 +602,7 @@ export function AppointmentsModal({
                         placeholder="HH"
                         inputMode="numeric"
                         maxLength={2}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-1.5 sm:py-2 text-center text-xs sm:text-sm font-semibold tracking-wide focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none"
+                        className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-1.5 sm:py-2 text-center text-xs sm:text-sm font-semibold tracking-wide focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none"
                         aria-label="Hour"
                       />
 
@@ -605,11 +619,11 @@ export function AppointmentsModal({
                         placeholder="MM"
                         inputMode="numeric"
                         maxLength={2}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-1.5 sm:py-2 text-center text-xs sm:text-sm font-semibold tracking-wide focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none"
+                        className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-1.5 sm:py-2 text-center text-xs sm:text-sm font-semibold tracking-wide focus:border-teal-500 focus:ring-1 focus:ring-teal-500 focus:outline-none"
                         aria-label="Minute"
                       />
 
-                      <div className="grid grid-rows-2 gap-1.5 sm:gap-2">
+                      <div className="w-20 sm:w-24 shrink-0 grid grid-rows-2 gap-1.5 sm:gap-2">
                         <button
                           type="button"
                           onClick={() => updateTime({ period: 'AM' })}
@@ -738,7 +752,7 @@ export function AppointmentsModal({
       )}
 
       {/* Delete Confirmation Modal */}
-      {showDeleteConfirmation && (
+      {showDeleteConfirmation && renderLayer(
         <div className="fixed inset-0 flex items-center justify-center p-3 sm:p-4 z-[70] bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200">
             <div className="p-4 sm:p-6 border-b border-slate-200">

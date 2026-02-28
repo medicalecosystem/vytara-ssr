@@ -106,20 +106,20 @@ const normalizeMedicationLogs = (
 ): MedicationLog[] =>
   Array.isArray(logs)
     ? logs
-        .map((log) => ({
-          medicationId:
-            typeof log.medicationId === "string" && log.medicationId.trim()
-              ? log.medicationId.trim()
-              : medicationId,
-          timestamp:
-            typeof log.timestamp === "string" && log.timestamp.trim()
-              ? log.timestamp.trim()
-              : "",
-          taken: typeof log.taken === "boolean" ? log.taken : null,
-        }))
-        .filter(
-          (log): log is MedicationLog => Boolean(log.timestamp) && log.taken !== null
-        )
+      .map((log) => ({
+        medicationId:
+          typeof log.medicationId === "string" && log.medicationId.trim()
+            ? log.medicationId.trim()
+            : medicationId,
+        timestamp:
+          typeof log.timestamp === "string" && log.timestamp.trim()
+            ? log.timestamp.trim()
+            : "",
+        taken: typeof log.taken === "boolean" ? log.taken : null,
+      }))
+      .filter(
+        (log): log is MedicationLog => Boolean(log.timestamp) && log.taken !== null
+      )
     : [];
 
 const PROFILE_MIGRATION_HINT =
@@ -237,36 +237,36 @@ export async function POST(req: Request) {
     const medicationStartDate = new Date().toISOString().split("T")[0];
     const currentMedication = Array.isArray(body.currentMedication)
       ? body.currentMedication
-          .map((item) => {
-            const id =
-              typeof item.id === "string" && item.id.trim() ? item.id.trim() : randomUUID();
-            const name = item.name?.trim() || "";
-            const dosage = item.dosage?.trim() || "";
-            const purpose = item.purpose?.trim() || "";
-            const frequency = item.frequency?.trim() || "";
-            const startDate =
-              typeof item.startDate === "string" && DATE_ONLY_REGEX.test(item.startDate)
-                ? item.startDate
-                : medicationStartDate;
-            const endDate =
-              typeof item.endDate === "string" && DATE_ONLY_REGEX.test(item.endDate)
-                ? item.endDate
-                : undefined;
-            const timesPerDay = resolveTimesPerDay(frequency, item.timesPerDay);
-            const logs = normalizeMedicationLogs(item.logs, id);
-            return {
-              id,
-              name,
-              dosage,
-              purpose,
-              frequency,
-              timesPerDay,
-              startDate,
-              endDate,
-              logs,
-            };
-          })
-          .filter((item) => item.name || item.dosage || item.frequency || item.purpose)
+        .map((item) => {
+          const id =
+            typeof item.id === "string" && item.id.trim() ? item.id.trim() : randomUUID();
+          const name = item.name?.trim() || "";
+          const dosage = item.dosage?.trim() || "";
+          const purpose = item.purpose?.trim() || "";
+          const frequency = item.frequency?.trim() || "";
+          const startDate =
+            typeof item.startDate === "string" && DATE_ONLY_REGEX.test(item.startDate)
+              ? item.startDate
+              : medicationStartDate;
+          const endDate =
+            typeof item.endDate === "string" && DATE_ONLY_REGEX.test(item.endDate)
+              ? item.endDate
+              : undefined;
+          const timesPerDay = resolveTimesPerDay(frequency, item.timesPerDay);
+          const logs = normalizeMedicationLogs(item.logs, id);
+          return {
+            id,
+            name,
+            dosage,
+            purpose,
+            frequency,
+            timesPerDay,
+            startDate,
+            endDate,
+            logs,
+          };
+        })
+        .filter((item) => item.name || item.dosage || item.frequency || item.purpose)
       : [];
 
     const hasIncompleteMedication = currentMedication.some(
@@ -300,6 +300,23 @@ export async function POST(req: Request) {
     const age = computeAge(body.dateOfBirth);
     const bmi = computeBMI(body.heightCm, body.weightKg);
 
+    // Enforce minimum age of 18 for primary (account holder) profiles
+    const { data: profileRow } = await adminClient
+      .from("profiles")
+      .select("is_primary")
+      .eq("id", verifiedProfileId)
+      .maybeSingle();
+
+    if (profileRow?.is_primary && (age === null || age < 18)) {
+      return NextResponse.json(
+        {
+          error: "Primary account holder must be at least 18 years old.",
+          message: "Primary account holder must be at least 18 years old.",
+        },
+        { status: 400 }
+      );
+    }
+
     const payload = {
       profile_id: verifiedProfileId,
       user_id: user.id, // Keep user_id for reference
@@ -315,10 +332,10 @@ export async function POST(req: Request) {
       ongoing_treatments: ongoingTreatments.length ? ongoingTreatments : null,
       current_medication: medicationsForUser.length
         ? medicationsForUser.map((item) => ({
-            name: item.name,
-            dosage: item.dosage,
-            frequency: item.frequency,
-          }))
+          name: item.name,
+          dosage: item.dosage,
+          frequency: item.frequency,
+        }))
         : null,
       previous_diagnosed_conditions: previousDiagnosedConditions.length ? previousDiagnosedConditions : null,
       past_surgeries: pastSurgeries.length ? pastSurgeries : null,

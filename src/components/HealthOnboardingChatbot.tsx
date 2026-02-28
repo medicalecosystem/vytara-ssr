@@ -354,10 +354,32 @@ export default function HealthOnboardingChatbot() {
     }
   };
 
+  const computeAgeFromDob = (dobISO: string): number | null => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dobISO)) return null;
+    const birthDate = new Date(`${dobISO}T00:00:00`);
+    if (Number.isNaN(birthDate.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age >= 0 && age <= 130 ? age : null;
+  };
+
+  const isPrimaryProfile = !isNewProfileOnboarding || (selectedProfile?.is_primary ?? false);
+
   const handleSingleNext = (answer: string) => {
     if (!validateRequired(currentQ.key, answer)) {
       addMessage("bot", "⚠️ This field is required. Please enter a valid answer to continue.");
       return;
+    }
+
+    // Enforce minimum age of 18 for primary (account holder) profiles
+    if (currentQ.key === "dateOfBirth" && isPrimaryProfile) {
+      const age = computeAgeFromDob(answer);
+      if (age === null || age < 18) {
+        addMessage("bot", "⚠️ You must be at least 18 years old to create an account. Please enter a valid date of birth.");
+        return;
+      }
     }
 
     if (currentQ.key === "displayName") {
@@ -642,535 +664,535 @@ export default function HealthOnboardingChatbot() {
   };
 
   return (
-  <div style={styles.pageWrap}>
-    {/* FULL PAGE BACKGROUND (below navbar) */}
-    <div style={styles.fullBg} />
-    <div style={styles.noiseOverlay} />
+    <div style={styles.pageWrap}>
+      {/* FULL PAGE BACKGROUND (below navbar) */}
+      <div style={styles.fullBg} />
+      <div style={styles.noiseOverlay} />
 
-        <div style={styles.header}>
-          <div>
-            <div style={styles.kicker}>Health Setup</div>
-            <h1 style={styles.title}>Welcome, let’s build your profile.</h1>
-            <p style={styles.subtitle}>This helps G1 organize your medical history securely.</p>
+      <div style={styles.header}>
+        <div>
+          <div style={styles.kicker}>Health Setup</div>
+          <h1 style={styles.title}>Welcome, let’s build your profile.</h1>
+          <p style={styles.subtitle}>This helps G1 organize your medical history securely.</p>
+        </div>
+        <div style={styles.headerActions}>
+          {isNewProfileOnboarding && !isSaved && (
+            <button
+              type="button"
+              onClick={handleDiscardNewProfile}
+              disabled={isCancellingProfile}
+              style={{
+                ...styles.goBackButton,
+                ...(isCancellingProfile ? styles.goBackButtonDisabled : {}),
+              }}
+            >
+              {isCancellingProfile ? "Discarding..." : "Go Back"}
+            </button>
+          )}
+          <span style={styles.badge}>{isSaved ? "Saved" : isComplete ? "Review" : "In Progress"}</span>
+        </div>
+      </div>
+
+      <div style={styles.gridLayout}>
+        {/* CHAT */}
+        <div style={{ ...styles.liquidCard, ...styles.chatPanel }}>
+          <div style={styles.specular} />
+          <div style={styles.innerRim} />
+
+          <div style={styles.chatHeader}>
+            <div style={styles.chatHeaderLeft}>
+              <div style={styles.dot} />
+              <div style={styles.chatHeaderTitle}>Assistant</div>
+            </div>
+            <div style={styles.chatHeaderRight}>Secure • Private</div>
           </div>
-          <div style={styles.headerActions}>
-            {isNewProfileOnboarding && !isSaved && (
-              <button
-                type="button"
-                onClick={handleDiscardNewProfile}
-                disabled={isCancellingProfile}
+
+          <div style={styles.chatWindow} ref={scrollRef}>
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
                 style={{
-                  ...styles.goBackButton,
-                  ...(isCancellingProfile ? styles.goBackButtonDisabled : {}),
+                  ...styles.messageBubble,
+                  ...(msg.role === "user" ? styles.userBubble : styles.botBubble),
                 }}
               >
-                {isCancellingProfile ? "Discarding..." : "Go Back"}
-              </button>
-            )}
-            <span style={styles.badge}>{isSaved ? "Saved" : isComplete ? "Review" : "In Progress"}</span>
+                <div style={styles.bubbleMeta}>{msg.role === "user" ? "You" : "G1"}</div>
+                <div>{msg.text}</div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div style={styles.gridLayout}>
-          {/* CHAT */}
-          <div style={{ ...styles.liquidCard, ...styles.chatPanel }}>
+        {/* RIGHT */}
+        <div style={styles.rightPanel}>
+          <div style={styles.liquidCard}>
             <div style={styles.specular} />
             <div style={styles.innerRim} />
 
-            <div style={styles.chatHeader}>
-              <div style={styles.chatHeaderLeft}>
-                <div style={styles.dot} />
-                <div style={styles.chatHeaderTitle}>Assistant</div>
+            <div style={styles.sectionTitle}>Progress</div>
+            <div style={styles.progressRow}>
+              <div style={styles.progressBarBg}>
+                <div style={{ ...styles.progressBarFill, width: `${progressPercent}%` }} />
               </div>
-              <div style={styles.chatHeaderRight}>Secure • Private</div>
+              <div style={styles.progressPct}>{progressPercent}%</div>
             </div>
-
-            <div style={styles.chatWindow} ref={scrollRef}>
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  style={{
-                    ...styles.messageBubble,
-                    ...(msg.role === "user" ? styles.userBubble : styles.botBubble),
-                  }}
-                >
-                  <div style={styles.bubbleMeta}>{msg.role === "user" ? "You" : "G1"}</div>
-                  <div>{msg.text}</div>
-                </div>
-              ))}
+            <div style={styles.progressText}>
+              Step {Math.min(step + 1, QUESTIONS.length)} of {QUESTIONS.length}
             </div>
           </div>
 
-          {/* RIGHT */}
-          <div style={styles.rightPanel}>
+          {!isComplete && (
             <div style={styles.liquidCard}>
               <div style={styles.specular} />
               <div style={styles.innerRim} />
 
-              <div style={styles.sectionTitle}>Progress</div>
-              <div style={styles.progressRow}>
-                <div style={styles.progressBarBg}>
-                  <div style={{ ...styles.progressBarFill, width: `${progressPercent}%` }} />
-                </div>
-                <div style={styles.progressPct}>{progressPercent}%</div>
+              <div style={styles.sectionTitle}>
+                Your details {isRequired ? <span style={{ opacity: 0.75 }}>(Required)</span> : null}
               </div>
-              <div style={styles.progressText}>
-                Step {Math.min(step + 1, QUESTIONS.length)} of {QUESTIONS.length}
-              </div>
-            </div>
 
-            {!isComplete && (
-              <div style={styles.liquidCard}>
-                <div style={styles.specular} />
-                <div style={styles.innerRim} />
+              <div style={styles.questionText}>{currentQ.question}</div>
+              {canGoBack && (
+                <button type="button" onClick={handlePreviousQuestion} style={styles.previousQuestionBtn}>
+                  ← Previous question
+                </button>
+              )}
 
-                <div style={styles.sectionTitle}>
-                  Your details {isRequired ? <span style={{ opacity: 0.75 }}>(Required)</span> : null}
-                </div>
+              {currentQ.inputType === "date" && (
+                <div style={styles.inputRow}>
+                  <select
+                    style={styles.input}
+                    value={dobParts.month}
+                    onWheel={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      const month = e.target.value;
+                      const next = { ...dobParts, month };
+                      setDobParts(next);
+                      if (next.day && next.month && next.year) {
+                        setAnswerOnProfile("dateOfBirth", `${next.year}-${next.month}-${next.day}`);
+                      } else {
+                        setAnswerOnProfile("dateOfBirth", "");
+                      }
+                    }}
+                  >
+                    <option value="">Month</option>
+                    {monthOptions.map((opt) => (
+                      <option key={opt.value} value={String(opt.value).padStart(2, "0")}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    style={styles.input}
+                    value={dobParts.day}
+                    onWheel={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      const day = e.target.value;
+                      const next = { ...dobParts, day };
+                      setDobParts(next);
+                      if (next.day && next.month && next.year) {
+                        setAnswerOnProfile("dateOfBirth", `${next.year}-${next.month}-${next.day}`);
+                      } else {
+                        setAnswerOnProfile("dateOfBirth", "");
+                      }
+                    }}
+                  >
+                    <option value="">Day</option>
+                    {dobDayOptions.map((day) => (
+                      <option key={day} value={day}>
+                        {day}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    style={styles.input}
+                    value={dobParts.year}
+                    onWheel={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      const year = e.target.value;
+                      const next = { ...dobParts, year };
+                      setDobParts(next);
+                      if (next.day && next.month && next.year) {
+                        setAnswerOnProfile("dateOfBirth", `${next.year}-${next.month}-${next.day}`);
+                      } else {
+                        setAnswerOnProfile("dateOfBirth", "");
+                      }
+                    }}
+                  >
+                    <option value="">Year</option>
+                    {dobYearOptions.map((year) => (
+                      <option key={year} value={String(year)}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
 
-                <div style={styles.questionText}>{currentQ.question}</div>
-                {canGoBack && (
-                  <button type="button" onClick={handlePreviousQuestion} style={styles.previousQuestionBtn}>
-                    ← Previous question
+                  <button type="button" style={styles.sendButton} onClick={() => handleSingleNext(profile.dateOfBirth)}>
+                    ➤
                   </button>
-                )}
+                </div>
+              )}
 
-                {currentQ.inputType === "date" && (
-                  <div style={styles.inputRow}>
-                    <select
-                      style={styles.input}
-                      value={dobParts.month}
-                      onWheel={(e) => e.stopPropagation()}
-                      onChange={(e) => {
-                        const month = e.target.value;
-                        const next = { ...dobParts, month };
-                        setDobParts(next);
-                        if (next.day && next.month && next.year) {
-                          setAnswerOnProfile("dateOfBirth", `${next.year}-${next.month}-${next.day}`);
-                        } else {
-                          setAnswerOnProfile("dateOfBirth", "");
-                        }
-                      }}
-                    >
-                      <option value="">Month</option>
-                      {monthOptions.map((opt) => (
-                        <option key={opt.value} value={String(opt.value).padStart(2, "0")}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      style={styles.input}
-                      value={dobParts.day}
-                      onWheel={(e) => e.stopPropagation()}
-                      onChange={(e) => {
-                        const day = e.target.value;
-                        const next = { ...dobParts, day };
-                        setDobParts(next);
-                        if (next.day && next.month && next.year) {
-                          setAnswerOnProfile("dateOfBirth", `${next.year}-${next.month}-${next.day}`);
-                        } else {
-                          setAnswerOnProfile("dateOfBirth", "");
-                        }
-                      }}
-                    >
-                      <option value="">Day</option>
-                      {dobDayOptions.map((day) => (
-                        <option key={day} value={day}>
-                          {day}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      style={styles.input}
-                      value={dobParts.year}
-                      onWheel={(e) => e.stopPropagation()}
-                      onChange={(e) => {
-                        const year = e.target.value;
-                        const next = { ...dobParts, year };
-                        setDobParts(next);
-                        if (next.day && next.month && next.year) {
-                          setAnswerOnProfile("dateOfBirth", `${next.year}-${next.month}-${next.day}`);
-                        } else {
-                          setAnswerOnProfile("dateOfBirth", "");
-                        }
-                      }}
-                    >
-                      <option value="">Year</option>
-                      {dobYearOptions.map((year) => (
-                        <option key={year} value={String(year)}>
-                          {year}
-                        </option>
-                      ))}
-                    </select>
+              {currentQ.inputType === "text" && (
+                <>
+                  <div style={styles.helperText}>
+                    {currentQ.required ? "This field is mandatory." : "Optional — you can skip if it doesn’t apply."}
+                  </div>
 
-                    <button type="button" style={styles.sendButton} onClick={() => handleSingleNext(profile.dateOfBirth)}>
+                  <form onSubmit={handleTextSubmit} style={styles.inputRow}>
+                    <input
+                      style={styles.input}
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      placeholder={currentQ.placeholder || "Type here..."}
+                      autoFocus
+                    />
+                    <button type="submit" style={styles.sendButton}>
+                      ➤
+                    </button>
+                  </form>
+                </>
+              )}
+
+              {currentQ.inputType === "single-select" && (
+                <div style={styles.quickRepliesGrid}>
+                  {currentQ.options?.map((opt) => (
+                    <button key={opt} onClick={() => handleSingleNext(opt)} style={styles.chipBtn}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {currentQ.inputType === "multi-text" && (
+                <>
+                  <div style={styles.helperText}>Optional — you can leave any field blank if it doesn’t apply.</div>
+                  {(profile[currentQ.key] as string[]).map((value, index) => (
+                    <div key={`${currentQ.key}-${index}`} style={styles.inputRow}>
+                      <input
+                        style={styles.input}
+                        value={value}
+                        onChange={(e) => {
+                          const next = [...(profile[currentQ.key] as string[])];
+                          next[index] = e.target.value;
+                          setProfile((prev) => ({ ...prev, [currentQ.key]: next } as Profile));
+                        }}
+                        placeholder={currentQ.placeholder || "Type here..."}
+                      />
+                      {index > 0 && (
+                        <button
+                          type="button"
+                          style={styles.removeBtn}
+                          onClick={() => {
+                            const next = [...(profile[currentQ.key] as string[])];
+                            next.splice(index, 1);
+                            setProfile((prev) => ({ ...prev, [currentQ.key]: next } as Profile));
+                          }}
+                        >
+                          X
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                  <div style={styles.multiActions}>
+                    <button
+                      type="button"
+                      style={styles.addRowBtn}
+                      onClick={() => {
+                        const list = profile[currentQ.key] as string[];
+                        if (!list[list.length - 1]?.trim()) {
+                          addMessage("bot", "⚠️ Please fill the current field before adding another.");
+                          return;
+                        }
+                        setProfile((prev) => ({ ...prev, [currentQ.key]: [...list, ""] } as Profile));
+                      }}
+                    >
+                      + Add another
+                    </button>
+                    <button type="button" style={styles.sendButton} onClick={() => handleMultiTextNext(currentQ.key)}>
                       ➤
                     </button>
                   </div>
-                )}
+                </>
+              )}
 
-                {currentQ.inputType === "text" && (
-                  <>
-                    <div style={styles.helperText}>
-                      {currentQ.required ? "This field is mandatory." : "Optional — you can skip if it doesn’t apply."}
-                    </div>
-
-                    <form onSubmit={handleTextSubmit} style={styles.inputRow}>
-                      <input
-                        style={styles.input}
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        placeholder={currentQ.placeholder || "Type here..."}
-                        autoFocus
-                      />
-                      <button type="submit" style={styles.sendButton}>
-                        ➤
-                      </button>
-                    </form>
-                  </>
-                )}
-
-                {currentQ.inputType === "single-select" && (
-                  <div style={styles.quickRepliesGrid}>
-                    {currentQ.options?.map((opt) => (
-                      <button key={opt} onClick={() => handleSingleNext(opt)} style={styles.chipBtn}>
-                        {opt}
-                      </button>
-                    ))}
+              {currentQ.inputType === "multi-medication" && (
+                <>
+                  <div style={styles.helperText}>
+                    Name, dosage, and frequency are required to match your homepage medication format.
                   </div>
-                )}
-
-                {currentQ.inputType === "multi-text" && (
-                  <>
-                    <div style={styles.helperText}>Optional — you can leave any field blank if it doesn’t apply.</div>
-                    {(profile[currentQ.key] as string[]).map((value, index) => (
-                      <div key={`${currentQ.key}-${index}`} style={styles.inputRow}>
+                  {profile.currentMedication.map((item, index) => (
+                    <div key={`med-${index}`} style={styles.multiGroup}>
+                      <div style={styles.multiLabel}>Medication {index + 1}</div>
+                      <div style={styles.inputRow}>
                         <input
                           style={styles.input}
-                          value={value}
+                          value={item.name}
                           onChange={(e) => {
-                            const next = [...(profile[currentQ.key] as string[])];
-                            next[index] = e.target.value;
-                            setProfile((prev) => ({ ...prev, [currentQ.key]: next } as Profile));
+                            const next = [...profile.currentMedication];
+                            next[index] = { ...next[index], name: e.target.value };
+                            setProfile((prev) => ({ ...prev, currentMedication: next }));
                           }}
-                          placeholder={currentQ.placeholder || "Type here..."}
+                          placeholder="Medication name"
                         />
                         {index > 0 && (
                           <button
                             type="button"
                             style={styles.removeBtn}
                             onClick={() => {
-                              const next = [...(profile[currentQ.key] as string[])];
+                              const next = [...profile.currentMedication];
                               next.splice(index, 1);
-                              setProfile((prev) => ({ ...prev, [currentQ.key]: next } as Profile));
+                              setProfile((prev) => ({ ...prev, currentMedication: next }));
                             }}
                           >
                             X
                           </button>
                         )}
                       </div>
-                    ))}
-
-                    <div style={styles.multiActions}>
-                      <button
-                        type="button"
-                        style={styles.addRowBtn}
-                        onClick={() => {
-                          const list = profile[currentQ.key] as string[];
-                          if (!list[list.length - 1]?.trim()) {
-                            addMessage("bot", "⚠️ Please fill the current field before adding another.");
-                            return;
-                          }
-                          setProfile((prev) => ({ ...prev, [currentQ.key]: [...list, ""] } as Profile));
-                        }}
-                      >
-                        + Add another
-                      </button>
-                      <button type="button" style={styles.sendButton} onClick={() => handleMultiTextNext(currentQ.key)}>
-                        ➤
-                      </button>
-                    </div>
-                  </>
-                )}
-
-                {currentQ.inputType === "multi-medication" && (
-                  <>
-                    <div style={styles.helperText}>
-                      Name, dosage, and frequency are required to match your homepage medication format.
-                    </div>
-                    {profile.currentMedication.map((item, index) => (
-                      <div key={`med-${index}`} style={styles.multiGroup}>
-                        <div style={styles.multiLabel}>Medication {index + 1}</div>
-                        <div style={styles.inputRow}>
-                          <input
-                            style={styles.input}
-                            value={item.name}
-                            onChange={(e) => {
-                              const next = [...profile.currentMedication];
-                              next[index] = { ...next[index], name: e.target.value };
-                              setProfile((prev) => ({ ...prev, currentMedication: next }));
-                            }}
-                            placeholder="Medication name"
-                          />
-                          {index > 0 && (
-                            <button
-                              type="button"
-                              style={styles.removeBtn}
-                              onClick={() => {
-                                const next = [...profile.currentMedication];
-                                next.splice(index, 1);
-                                setProfile((prev) => ({ ...prev, currentMedication: next }));
-                              }}
-                            >
-                              X
-                            </button>
-                          )}
-                        </div>
-                        <div style={styles.inputRow}>
-                          <input
-                            style={styles.input}
-                            value={item.dosage}
-                            onChange={(e) => {
-                              const next = [...profile.currentMedication];
-                              next[index] = { ...next[index], dosage: e.target.value };
-                              setProfile((prev) => ({ ...prev, currentMedication: next }));
-                            }}
-                            placeholder="Dosage"
-                          />
-                        </div>
-                        <div style={styles.inputRow}>
-                          <input
-                            style={styles.input}
-                            value={item.purpose || ""}
-                            onChange={(e) => {
-                              const next = [...profile.currentMedication];
-                              next[index] = { ...next[index], purpose: e.target.value };
-                              setProfile((prev) => ({ ...prev, currentMedication: next }));
-                            }}
-                            placeholder="Purpose (optional)"
-                          />
-                        </div>
-                        <div style={styles.inputRow}>
-                          <select
-                            style={styles.input}
-                            value={item.frequency || "once_daily"}
-                            onWheel={(e) => e.stopPropagation()}
-                            onChange={(e) => {
-                              const next = [...profile.currentMedication];
-                              const selectedFrequency = e.target.value;
-                              next[index] = {
-                                ...next[index],
-                                frequency: selectedFrequency,
-                                timesPerDay: getTimesPerDayForFrequency(selectedFrequency),
-                              };
-                              setProfile((prev) => ({ ...prev, currentMedication: next }));
-                            }}
-                          >
-                            {MEDICATION_FREQUENCY_OPTIONS.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div style={styles.inputRow}>
-                          <input
-                            style={styles.input}
-                            type="number"
-                            min={0}
-                            step={1}
-                            value={
-                              item.timesPerDay ??
-                              getTimesPerDayForFrequency(item.frequency || "once_daily")
-                            }
-                            onChange={(e) => {
-                              const next = [...profile.currentMedication];
-                              const parsed = Number(e.target.value);
-                              next[index] = {
-                                ...next[index],
-                                timesPerDay:
-                                  Number.isFinite(parsed) && parsed >= 0
-                                    ? parsed
-                                    : getTimesPerDayForFrequency(item.frequency || "once_daily"),
-                              };
-                              setProfile((prev) => ({ ...prev, currentMedication: next }));
-                            }}
-                            placeholder="Times per day"
-                          />
-                        </div>
+                      <div style={styles.inputRow}>
+                        <input
+                          style={styles.input}
+                          value={item.dosage}
+                          onChange={(e) => {
+                            const next = [...profile.currentMedication];
+                            next[index] = { ...next[index], dosage: e.target.value };
+                            setProfile((prev) => ({ ...prev, currentMedication: next }));
+                          }}
+                          placeholder="Dosage"
+                        />
                       </div>
-                    ))}
-
-                    <div style={styles.multiActions}>
-                      <button
-                        type="button"
-                        style={styles.addRowBtn}
-                        onClick={() => {
-                          const last = profile.currentMedication[profile.currentMedication.length - 1];
-                          if (!last?.name.trim() || !last?.dosage.trim() || !last?.frequency.trim()) {
-                            addMessage(
-                              "bot",
-                              "⚠️ Please complete name, dosage, and frequency before adding another medication."
-                            );
-                            return;
-                          }
-                          setProfile((prev) => ({
-                            ...prev,
-                            currentMedication: [...prev.currentMedication, createEmptyMedicationEntry()],
-                          }));
-                        }}
-                      >
-                        + Add another
-                      </button>
-                      <button type="button" style={styles.sendButton} onClick={handleMedicationNext}>
-                        ➤
-                      </button>
-                    </div>
-                  </>
-                )}
-
-                {currentQ.inputType === "multi-surgery" && (
-                  <>
-                    <div style={styles.helperText}>Include month and year for each surgery.</div>
-                    {profile.pastSurgeries.map((item, index) => (
-                      <div key={`surg-${index}`} style={styles.multiGroup}>
-                        <div style={styles.multiLabel}>Surgery {index + 1}</div>
-                        <div style={styles.inputRow}>
-                          <input
-                            style={styles.input}
-                            value={item.name}
-                            onChange={(e) => {
-                              const next = [...profile.pastSurgeries];
-                              next[index] = { ...next[index], name: e.target.value };
-                              setProfile((prev) => ({ ...prev, pastSurgeries: next }));
-                            }}
-                            placeholder="Surgery name"
-                          />
-                          {index > 0 && (
-                            <button
-                              type="button"
-                              style={styles.removeBtn}
-                              onClick={() => {
-                                const next = [...profile.pastSurgeries];
-                                next.splice(index, 1);
-                                setProfile((prev) => ({ ...prev, pastSurgeries: next }));
-                              }}
-                            >
-                              X
-                            </button>
-                          )}
-                        </div>
-                        <div style={styles.inputRow}>
-                          <select
-                            style={styles.input}
-                            value={item.month ?? ""}
-                            onWheel={(e) => e.stopPropagation()}
-                            onChange={(e) => {
-                              const month = e.target.value ? Number(e.target.value) : null;
-                              const next = [...profile.pastSurgeries];
-                              next[index] = { ...next[index], month };
-                              setProfile((prev) => ({ ...prev, pastSurgeries: next }));
-                            }}
-                          >
-                            <option value="">Month</option>
-                            {monthOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            style={styles.input}
-                            value={item.year ?? ""}
-                            onWheel={(e) => e.stopPropagation()}
-                            onChange={(e) => {
-                              const year = e.target.value ? Number(e.target.value) : null;
-                              const next = [...profile.pastSurgeries];
-                              next[index] = { ...next[index], year };
-                              setProfile((prev) => ({ ...prev, pastSurgeries: next }));
-                            }}
-                          >
-                            <option value="">Year</option>
-                            {yearOptions.map((year) => (
-                              <option key={year} value={year}>
-                                {year}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                      <div style={styles.inputRow}>
+                        <input
+                          style={styles.input}
+                          value={item.purpose || ""}
+                          onChange={(e) => {
+                            const next = [...profile.currentMedication];
+                            next[index] = { ...next[index], purpose: e.target.value };
+                            setProfile((prev) => ({ ...prev, currentMedication: next }));
+                          }}
+                          placeholder="Purpose (optional)"
+                        />
                       </div>
-                    ))}
-
-                    <div style={styles.multiActions}>
-                      <button
-                        type="button"
-                        style={styles.addRowBtn}
-                        onClick={() => {
-                          const last = profile.pastSurgeries[profile.pastSurgeries.length - 1];
-                          if (!last?.name.trim() || !last?.month || !last?.year) {
-                            addMessage("bot", "⚠️ Please complete the current surgery before adding another.");
-                            return;
+                      <div style={styles.inputRow}>
+                        <select
+                          style={styles.input}
+                          value={item.frequency || "once_daily"}
+                          onWheel={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const next = [...profile.currentMedication];
+                            const selectedFrequency = e.target.value;
+                            next[index] = {
+                              ...next[index],
+                              frequency: selectedFrequency,
+                              timesPerDay: getTimesPerDayForFrequency(selectedFrequency),
+                            };
+                            setProfile((prev) => ({ ...prev, currentMedication: next }));
+                          }}
+                        >
+                          {MEDICATION_FREQUENCY_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={styles.inputRow}>
+                        <input
+                          style={styles.input}
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={
+                            item.timesPerDay ??
+                            getTimesPerDayForFrequency(item.frequency || "once_daily")
                           }
-                          setProfile((prev) => ({
-                            ...prev,
-                            pastSurgeries: [...prev.pastSurgeries, { name: "", month: null, year: null }],
-                          }));
-                        }}
-                      >
-                        + Add another
-                      </button>
-                      <button type="button" style={styles.sendButton} onClick={handleSurgeryNext}>
-                        ➤
-                      </button>
+                          onChange={(e) => {
+                            const next = [...profile.currentMedication];
+                            const parsed = Number(e.target.value);
+                            next[index] = {
+                              ...next[index],
+                              timesPerDay:
+                                Number.isFinite(parsed) && parsed >= 0
+                                  ? parsed
+                                  : getTimesPerDayForFrequency(item.frequency || "once_daily"),
+                            };
+                            setProfile((prev) => ({ ...prev, currentMedication: next }));
+                          }}
+                          placeholder="Times per day"
+                        />
+                      </div>
                     </div>
-                  </>
-                )}
+                  ))}
 
-                {canSkip && (
-                  <button onClick={handleSkip} style={styles.skipBtn}>
-                    Skip for now
-                  </button>
-                )}
-              </div>
-            )}
-
-            {isComplete && (
-              <div style={styles.liquidCard}>
-                <div style={styles.specular} />
-                <div style={styles.innerRim} />
-
-                <div style={styles.sectionTitle}>Save</div>
-                <div style={styles.greetingCard}>
-                  <div style={styles.greetingTitle}>
-                    You are all set, {profile.displayName.trim() || "there"}.
+                  <div style={styles.multiActions}>
+                    <button
+                      type="button"
+                      style={styles.addRowBtn}
+                      onClick={() => {
+                        const last = profile.currentMedication[profile.currentMedication.length - 1];
+                        if (!last?.name.trim() || !last?.dosage.trim() || !last?.frequency.trim()) {
+                          addMessage(
+                            "bot",
+                            "⚠️ Please complete name, dosage, and frequency before adding another medication."
+                          );
+                          return;
+                        }
+                        setProfile((prev) => ({
+                          ...prev,
+                          currentMedication: [...prev.currentMedication, createEmptyMedicationEntry()],
+                        }));
+                      }}
+                    >
+                      + Add another
+                    </button>
+                    <button type="button" style={styles.sendButton} onClick={handleMedicationNext}>
+                      ➤
+                    </button>
                   </div>
-                  <div style={styles.greetingCopy}>
-                    Thanks for completing your health onboarding. You can still go back to the previous question
-                    if you want to adjust anything before saving.
+                </>
+              )}
+
+              {currentQ.inputType === "multi-surgery" && (
+                <>
+                  <div style={styles.helperText}>Include month and year for each surgery.</div>
+                  {profile.pastSurgeries.map((item, index) => (
+                    <div key={`surg-${index}`} style={styles.multiGroup}>
+                      <div style={styles.multiLabel}>Surgery {index + 1}</div>
+                      <div style={styles.inputRow}>
+                        <input
+                          style={styles.input}
+                          value={item.name}
+                          onChange={(e) => {
+                            const next = [...profile.pastSurgeries];
+                            next[index] = { ...next[index], name: e.target.value };
+                            setProfile((prev) => ({ ...prev, pastSurgeries: next }));
+                          }}
+                          placeholder="Surgery name"
+                        />
+                        {index > 0 && (
+                          <button
+                            type="button"
+                            style={styles.removeBtn}
+                            onClick={() => {
+                              const next = [...profile.pastSurgeries];
+                              next.splice(index, 1);
+                              setProfile((prev) => ({ ...prev, pastSurgeries: next }));
+                            }}
+                          >
+                            X
+                          </button>
+                        )}
+                      </div>
+                      <div style={styles.inputRow}>
+                        <select
+                          style={styles.input}
+                          value={item.month ?? ""}
+                          onWheel={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const month = e.target.value ? Number(e.target.value) : null;
+                            const next = [...profile.pastSurgeries];
+                            next[index] = { ...next[index], month };
+                            setProfile((prev) => ({ ...prev, pastSurgeries: next }));
+                          }}
+                        >
+                          <option value="">Month</option>
+                          {monthOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          style={styles.input}
+                          value={item.year ?? ""}
+                          onWheel={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const year = e.target.value ? Number(e.target.value) : null;
+                            const next = [...profile.pastSurgeries];
+                            next[index] = { ...next[index], year };
+                            setProfile((prev) => ({ ...prev, pastSurgeries: next }));
+                          }}
+                        >
+                          <option value="">Year</option>
+                          {yearOptions.map((year) => (
+                            <option key={year} value={year}>
+                              {year}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+
+                  <div style={styles.multiActions}>
+                    <button
+                      type="button"
+                      style={styles.addRowBtn}
+                      onClick={() => {
+                        const last = profile.pastSurgeries[profile.pastSurgeries.length - 1];
+                        if (!last?.name.trim() || !last?.month || !last?.year) {
+                          addMessage("bot", "⚠️ Please complete the current surgery before adding another.");
+                          return;
+                        }
+                        setProfile((prev) => ({
+                          ...prev,
+                          pastSurgeries: [...prev.pastSurgeries, { name: "", month: null, year: null }],
+                        }));
+                      }}
+                    >
+                      + Add another
+                    </button>
+                    <button type="button" style={styles.sendButton} onClick={handleSurgeryNext}>
+                      ➤
+                    </button>
                   </div>
-                </div>
-                {canGoBack && (
-                  <button type="button" onClick={handlePreviousQuestion} style={styles.previousQuestionBtn}>
-                    ← Previous question
-                  </button>
-                )}
+                </>
+              )}
 
-                {saveError && <div style={styles.errorText}>{saveError}</div>}
-
-                <button
-                  onClick={saveToDatabase}
-                  style={{ ...styles.actionButton, opacity: isSaving ? 0.7 : 1 }}
-                  disabled={isSaving || isSaved}
-                >
-                  {isSaved ? "Saved ✅" : isSaving ? "Saving..." : "Save Profile"}
+              {canSkip && (
+                <button onClick={handleSkip} style={styles.skipBtn}>
+                  Skip for now
                 </button>
+              )}
+            </div>
+          )}
+
+          {isComplete && (
+            <div style={styles.liquidCard}>
+              <div style={styles.specular} />
+              <div style={styles.innerRim} />
+
+              <div style={styles.sectionTitle}>Save</div>
+              <div style={styles.greetingCard}>
+                <div style={styles.greetingTitle}>
+                  You are all set, {profile.displayName.trim() || "there"}.
+                </div>
+                <div style={styles.greetingCopy}>
+                  Thanks for completing your health onboarding. You can still go back to the previous question
+                  if you want to adjust anything before saving.
+                </div>
               </div>
-            )}
-          </div>
+              {canGoBack && (
+                <button type="button" onClick={handlePreviousQuestion} style={styles.previousQuestionBtn}>
+                  ← Previous question
+                </button>
+              )}
+
+              {saveError && <div style={styles.errorText}>{saveError}</div>}
+
+              <button
+                onClick={saveToDatabase}
+                style={{ ...styles.actionButton, opacity: isSaving ? 0.7 : 1 }}
+                disabled={isSaving || isSaved}
+              >
+                {isSaved ? "Saved ✅" : isSaving ? "Saving..." : "Save Profile"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
-    
+    </div>
+
   );
 }
 

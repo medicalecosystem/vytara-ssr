@@ -591,8 +591,34 @@ export default function HealthOnboardingScreen() {
     }
   };
 
+  const computeAgeFromDob = (dobISO: string): number | null => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dobISO)) return null;
+    const birthDate = new Date(`${dobISO}T00:00:00`);
+    if (Number.isNaN(birthDate.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age >= 0 && age <= 130 ? age : null;
+  };
+
+  const isPrimaryProfile = !isNewProfileOnboarding || (selectedProfile?.is_primary ?? false);
+
   const handleSingleNext = (answer: string) => {
     if (!validateRequired(currentQ.key, answer)) return;
+
+    // Enforce minimum age of 18 for primary (account holder) profiles
+    if (currentQ.key === 'dateOfBirth' && isPrimaryProfile) {
+      const age = computeAgeFromDob(answer);
+      if (age === null || age < 18) {
+        Alert.alert(
+          'Age Requirement',
+          'You must be at least 18 years old to create an account.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+    }
 
     if (currentQ.key === 'displayName') {
       const trimmedDisplayName = answer.trim();
