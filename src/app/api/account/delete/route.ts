@@ -63,7 +63,7 @@ const createAdminClient = () => {
   );
 };
 
-const runDelete = async <T extends { error: DbErrorLike }>(label: string, operation: Promise<T>) => {
+const runDelete = async <T extends { error: DbErrorLike }>(label: string, operation: PromiseLike<T>) => {
   const { error } = await operation;
   if (error && !isMissingRelationError(error) && !isMissingColumnError(error)) {
     throw new Error(`${label}: ${error.message || 'Delete failed.'}`);
@@ -72,7 +72,7 @@ const runDelete = async <T extends { error: DbErrorLike }>(label: string, operat
 
 const runSelect = async <T>(
   label: string,
-  operation: Promise<{ data: T | null; error: DbErrorLike }>
+  operation: PromiseLike<{ data: T | null; error: DbErrorLike }>
 ): Promise<T | null> => {
   const { data, error } = await operation;
   if (error && !isMissingRelationError(error) && !isMissingColumnError(error)) {
