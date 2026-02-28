@@ -14,6 +14,10 @@ import {
 } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { MotiView } from 'moti';
+import { toast } from '@/lib/toast';
+import { EmptyState, EmptyStatePreset } from '@/components/EmptyState';
 
 export type MedicationLog = {
   medicationId: string;
@@ -181,7 +185,7 @@ export function MedicationsModal({
 
   const handleSave = async () => {
     if (!name.trim() || !dosage.trim() || !frequency.trim()) {
-      Alert.alert('Missing info', 'Please fill Name, Dosage, and Frequency.');
+      toast.warning('Missing info', 'Please fill Name, Dosage, and Frequency.');
       return;
     }
 
@@ -211,7 +215,7 @@ export function MedicationsModal({
       setShowForm(false);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unable to save medication.';
-      Alert.alert('Save failed', message);
+      toast.error('Save failed', message);
     } finally {
       setSaving(false);
     }
@@ -228,7 +232,7 @@ export function MedicationsModal({
             await onDelete(id);
           } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'Unable to delete medication.';
-            Alert.alert('Delete failed', message);
+            toast.error('Delete failed', message);
           }
         },
       },
@@ -289,13 +293,19 @@ export function MedicationsModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <Pressable style={styles.scrim} onPress={onClose} />
-        <KeyboardAvoidingView
-          style={styles.keyboardWrapper}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
+      <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.scrim} onPress={onClose} />
+          <KeyboardAvoidingView
+            style={styles.keyboardWrapper}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <MotiView
+              from={{ translateY: 100, opacity: 0.5 }}
+              animate={{ translateY: 0, opacity: 1 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+            >
+              <View style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Medications</Text>
               <Pressable onPress={onClose} style={styles.closeButton}>
@@ -537,7 +547,7 @@ export function MedicationsModal({
 
                 {activeTab === 'current' ? (
                   activeMedications.length === 0 ? (
-                    <Text style={styles.emptySubtitle}>No active medications at the moment.</Text>
+                    <EmptyStatePreset preset="medications" />
                   ) : (
                     activeMedications.map((med) => {
                       const progress = getTodayProgress(med);
@@ -604,7 +614,7 @@ export function MedicationsModal({
                     })
                   )
                 ) : pastMedications.length === 0 ? (
-                  <Text style={styles.emptySubtitle}>No completed courses yet.</Text>
+                  <EmptyState icon="check-circle-outline" title="No completed courses yet" />
                 ) : (
                   pastMedications.map((med) => (
                     <View key={med.id} style={[styles.medCard, styles.medCardPast]}>
@@ -638,8 +648,10 @@ export function MedicationsModal({
             )}
             </ScrollView>
           </View>
+            </MotiView>
         </KeyboardAvoidingView>
       </View>
+      </BlurView>
     </Modal>
   );
 }
@@ -651,7 +663,7 @@ const styles = StyleSheet.create({
   },
   scrim: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 24, 0.35)',
+    backgroundColor: 'transparent',
   },
   keyboardWrapper: {
     width: '100%',
@@ -759,8 +771,8 @@ const styles = StyleSheet.create({
     borderColor: '#d8e3e6',
     backgroundColor: '#f7fbfb',
     borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 14,
     color: '#1f2f33',
   },

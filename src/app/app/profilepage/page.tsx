@@ -579,7 +579,9 @@ useEffect(() => {
         .maybeSingle();
 
       if (error) {
-        console.log("Error: ", error);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log("Error: ", error);
+        }
         return;
       }
 
@@ -693,7 +695,9 @@ useEffect(() => {
       ]);
 
       if (error){
-        console.log("Error: ", error);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log("Error: ", error);
+        }
       }
       const medicationErrorCode =
         typeof medicationError === "object" &&
@@ -704,7 +708,9 @@ useEffect(() => {
           : "";
 
       if (medicationErrorCode && medicationErrorCode !== "PGRST116") {
-        console.log("Medication fetch error: ", medicationError);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log("Medication fetch error: ", medicationError);
+        }
       }
 
       const medicationListFromTable = Array.isArray(medicationData?.medications)
@@ -780,7 +786,9 @@ useEffect(() => {
         .maybeSingle();
 
       if ( error ) { 
-        console.log("Error: ", error)
+        if (process.env.NODE_ENV !== 'production') {
+          console.log("Error: ", error);
+        }
       }
 
       if (data && data.family_history) {

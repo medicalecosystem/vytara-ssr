@@ -14,6 +14,9 @@ import {
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { MotiView } from 'moti';
+import { EmptyStatePreset } from '@/components/EmptyState';
 
 import {
   COUNTRIES,
@@ -22,6 +25,7 @@ import {
   PHONE_MAX_DIGITS,
   type CountryOption,
 } from '@/lib/countries';
+import { toast } from '@/lib/toast';
 
 export type EmergencyContact = {
   id: string;
@@ -72,14 +76,14 @@ export function EmergencyContactsModal({ visible, contacts, onClose, onAdd, onDe
 
   const handleSave = async () => {
     if (!name.trim() || !relation.trim()) {
-      Alert.alert('Missing info', 'Please enter a valid name and relation.');
+      toast.warning('Missing info', 'Please enter a valid name and relation.');
       return;
     }
     const digitsOnly = phone.replace(/\D/g, '');
     const isIndia = selectedCountry.code === 'IN';
     const minLen = isIndia ? INDIA_PHONE_DIGITS : 10;
     if (digitsOnly.length < minLen || digitsOnly.length > PHONE_MAX_DIGITS) {
-      Alert.alert(
+      toast.warning(
         'Invalid phone',
         isIndia
           ? 'Please enter a valid 10-digit phone number.'
@@ -114,13 +118,19 @@ export function EmergencyContactsModal({ visible, contacts, onClose, onAdd, onDe
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <Pressable style={styles.scrim} onPress={onClose} />
-        <KeyboardAvoidingView
-          style={styles.keyboardWrapper}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
+      <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.scrim} onPress={onClose} />
+          <KeyboardAvoidingView
+            style={styles.keyboardWrapper}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <MotiView
+              from={{ translateY: 100, opacity: 0.5 }}
+              animate={{ translateY: 0, opacity: 1 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+            >
+              <View style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Emergency Contacts</Text>
               <Pressable onPress={onClose} style={styles.closeButton}>
@@ -256,11 +266,7 @@ export function EmergencyContactsModal({ visible, contacts, onClose, onAdd, onDe
               ) : null}
 
               {!contacts.length ? (
-                <View style={styles.emptyState}>
-                  <MaterialCommunityIcons name="account-alert-outline" size={32} color="#c7d3d6" />
-                  <Text style={styles.emptyTitle}>No emergency contacts yet</Text>
-                  <Text style={styles.emptySubtitle}>Add someone you trust for SOS alerts.</Text>
-                </View>
+                <EmptyStatePreset preset="contacts" />
               ) : (
                 contacts.map((contact) => (
                   <View key={contact.id} style={styles.contactCard}>
@@ -278,8 +284,10 @@ export function EmergencyContactsModal({ visible, contacts, onClose, onAdd, onDe
               )}
             </ScrollView>
           </View>
+            </MotiView>
         </KeyboardAvoidingView>
       </View>
+      </BlurView>
     </Modal>
   );
 }
@@ -291,7 +299,7 @@ const styles = StyleSheet.create({
   },
   scrim: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 24, 0.35)',
+    backgroundColor: 'transparent',
   },
   keyboardWrapper: {
     width: '100%',
@@ -388,9 +396,9 @@ const styles = StyleSheet.create({
     minWidth: 70,
     borderWidth: 1,
     borderColor: '#d8e3e6',
-    backgroundColor: '#f0f4f5',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    backgroundColor: '#f7fbfb',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
@@ -407,7 +415,7 @@ const styles = StyleSheet.create({
   },
   countryModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
     justifyContent: 'flex-end',
   },
   countryModalContent: {

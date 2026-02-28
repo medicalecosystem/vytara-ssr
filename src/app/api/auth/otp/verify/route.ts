@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import { createSupabaseJwt } from "@/lib/supabaseJwt";
+import { createRateLimiter, getClientIP } from '@/lib/rateLimit';
 
 export const runtime = "nodejs";
 
@@ -10,6 +11,9 @@ type OtpVerifyPayload = {
   sessionId?: string;
   mode?: "login" | "signup";
 };
+
+const ipLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, maxRequests: 20 });
+const sessionLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 8 });
 
 const AUTH_LOOKUP_MAX_PAGES = Number.parseInt(
   process.env.SUPABASE_AUTH_LOOKUP_MAX_PAGES ?? "8",
@@ -189,6 +193,10 @@ const findAuthUserByProfilePhone = async (
 };
 
 export async function POST(request: Request) {
+  const ip = getClientIP(request as any);
+  const ipBlock = ipLimiter.check(ip);
+  if (ipBlock) return ipBlock;
+
   let payload: OtpVerifyPayload | null = null;
   try {
     payload = (await request.json()) as OtpVerifyPayload;
@@ -201,6 +209,9 @@ export async function POST(request: Request) {
   const otp = payload?.otp?.trim() ?? "";
   const sessionId = payload?.sessionId?.trim() ?? "";
   const mode = payload?.mode;
+
+  const sessionBlock = sessionLimiter.check(sessionId);
+  if (sessionBlock) return sessionBlock;
 
   if (!phone || !/^\+\d{10,15}$/.test(phone)) {
     return NextResponse.json({ message: "Invalid phone number." }, { status: 400 });
@@ -303,7 +314,7 @@ export async function POST(request: Request) {
       }
 
       userId = created.user.id;
-      console.log("✅ Auth user created:", userId);
+      console.log("✅ Auth user created");
 
       // The database triggers handle profile creation automatically:
       //   1. on_auth_user_created_profile → creates a profile (is_primary=true)
@@ -344,7 +355,7 @@ export async function POST(request: Request) {
         const payload = {
           auth_id: userId,
           user_id: userId,
-          name: "Me",
+          name: "Profile",
           avatar_type: "default",
           avatar_color: "#14b8a6",
           is_primary: true,
@@ -370,7 +381,7 @@ export async function POST(request: Request) {
               .from("profiles")
               .insert({
                 user_id: userId,
-                name: "Me",
+                name: "Profile",
                 avatar_type: "default",
                 avatar_color: "#14b8a6",
                 is_primary: true,

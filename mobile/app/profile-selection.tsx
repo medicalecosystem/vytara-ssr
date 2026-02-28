@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     KeyboardAvoidingView,
     Platform,
     Pressable,
@@ -23,6 +22,7 @@ import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { ProfileAvatarSelector } from '@/components/ProfileAvatarSelector';
 import { useProfile } from '@/hooks/useProfile';
 import type { Profile } from '@/repositories/userProfilesRepository';
+import { toast } from '@/lib/toast';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -56,7 +56,7 @@ export default function ProfileSelectionScreen() {
             router.replace('/home');
         } catch (error) {
             console.error('Error selecting profile:', error);
-            Alert.alert('Error', 'Failed to select profile. Please try again.');
+            toast.error('Error', 'Failed to select profile. Please try again.');
         }
     };
 
@@ -69,7 +69,7 @@ export default function ProfileSelectionScreen() {
 
     const handleCreateProfile = async () => {
         if (!newProfileName.trim()) {
-            Alert.alert('Name Required', 'Please enter a child name.');
+            toast.warning('Name Required', 'Please enter a child name.');
             return;
         }
 
@@ -95,7 +95,7 @@ export default function ProfileSelectionScreen() {
             });
         } catch (error) {
             console.error('Error creating profile:', error);
-            Alert.alert('Error', 'Failed to create profile. Please try again.');
+            toast.error('Error', 'Failed to create profile. Please try again.');
         }
     };
 
@@ -146,7 +146,7 @@ export default function ProfileSelectionScreen() {
                                 size="large"
                             />
                             <Text style={styles.profileName} numberOfLines={1}>
-                                {profile.name}
+                                {profile.display_name?.trim() || profile.name}
                             </Text>
                             {profile.is_primary && (
                                 <View style={styles.primaryBadge}>

@@ -461,7 +461,9 @@ function HomePageContent() {
         if (error.code === "PGRST116") {
           setEmergencyContacts([]);
         } else {
-          console.error("Emergency fetch error:", error);
+          if (process.env.NODE_ENV !== 'production') {
+            console.error("Emergency fetch error:", error);
+          }
           setEmergencyContacts([]);
         }
         return;
@@ -498,7 +500,9 @@ function HomePageContent() {
 
       if (error) {
         if (error.code !== "PGRST116") {
-          console.error("Medical team fetch error:", error);
+          if (process.env.NODE_ENV !== 'production') {
+            console.error("Medical team fetch error:", error);
+          }
         }
         setMedicalTeam([]);
         return;
@@ -535,7 +539,9 @@ function HomePageContent() {
 
       if (error) {
         if (error.code !== "PGRST116") {
-          console.error("Medications fetch error:", error);
+          if (process.env.NODE_ENV !== 'production') {
+            console.error("Medications fetch error:", error);
+          }
         }
         setMedications([]);
         return;
@@ -561,7 +567,9 @@ function HomePageContent() {
             { onConflict: "profile_id" }
           );
         if (repairError) {
-          console.error("Medications repair error:", repairError);
+          if (process.env.NODE_ENV !== 'production') {
+            console.error("Medications repair error:", repairError);
+          }
         }
       }
     }
@@ -593,7 +601,9 @@ function HomePageContent() {
 
       if (error) {
         if (error.code !== "PGRST116") {
-          console.error("Appointments fetch error:", error);
+          if (process.env.NODE_ENV !== 'production') {
+            console.error("Appointments fetch error:", error);
+          }
         }
         setAppointments([]);
         return;
@@ -638,7 +648,9 @@ function HomePageContent() {
       );
 
     if (error) {
-      console.error("Save appointment error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Save appointment error:", error);
+      }
       alert("Failed to save appointment");
       return;
     }
@@ -696,7 +708,9 @@ function HomePageContent() {
       );
 
     if (error) {
-      console.error("Delete appointment error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Delete appointment error:", error);
+      }
       alert("Failed to delete appointment");
       return;
     }
@@ -756,7 +770,9 @@ function HomePageContent() {
       );
 
     if (error) {
-      console.error("Add emergency contact error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Add emergency contact error:", error);
+      }
       alert("Failed to add contact. Please try again.");
       return;
     }
@@ -786,7 +802,9 @@ function HomePageContent() {
       );
 
     if (error) {
-      console.error("Delete emergency contact error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Delete emergency contact error:", error);
+      }
       alert("Failed to delete contact. Please try again.");
       return;
     }
@@ -829,7 +847,9 @@ function HomePageContent() {
       );
 
     if (error) {
-      console.error("Add doctor error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Add doctor error:", error);
+      }
       alert("Failed to add doctor. Please try again.");
       return;
     }
@@ -863,7 +883,9 @@ function HomePageContent() {
       );
 
     if (error) {
-      console.error("Update doctor error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Update doctor error:", error);
+      }
       alert("Failed to update doctor. Please try again.");
       return;
     }
@@ -893,7 +915,9 @@ function HomePageContent() {
       );
 
     if (error) {
-      console.error("Delete doctor error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Delete doctor error:", error);
+      }
       alert("Failed to delete doctor. Please try again.");
       return;
     }
@@ -965,7 +989,9 @@ function HomePageContent() {
       setMedications(updatedMedications);
       writeHomeCache(cacheOwnerId, "medications", updatedMedications);
     } catch (error: unknown) {
-      console.error("Add medication error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Add medication error:", error);
+      }
       alert(`Failed to add medication: ${getErrorMessage(error)}`);
     }
   };
@@ -1050,7 +1076,9 @@ function HomePageContent() {
       setMedications(updatedMedications);
       writeHomeCache(cacheOwnerId, "medications", updatedMedications);
     } catch (error: unknown) {
-      console.error("Update medication error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Update medication error:", error);
+      }
       alert(`Failed to update medication: ${getErrorMessage(error)}`);
     }
   };
@@ -1098,7 +1126,9 @@ function HomePageContent() {
       setMedications(updatedMedications);
       writeHomeCache(cacheOwnerId, "medications", updatedMedications);
     } catch (error: unknown) {
-      console.error("Delete medication error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Delete medication error:", error);
+      }
       alert(`Failed to delete medication: ${getErrorMessage(error)}`);
     }
   };
@@ -1146,7 +1176,9 @@ function HomePageContent() {
       setMedications(updatedMedications);
       writeHomeCache(cacheOwnerId, "medications", updatedMedications);
     } catch (error: unknown) {
-      console.error("Failed to log dose:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Failed to log dose:", error);
+      }
       alert(`Failed to log dose: ${getErrorMessage(error)}`);
     }
   };
@@ -1194,7 +1226,9 @@ function HomePageContent() {
         `✅ SOS Alert Sent Successfully!\n\n${data.message}\n\nYour emergency contacts have been notified.`
       );
     } catch (error: unknown) {
-      console.error("SOS error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("SOS error:", error);
+      }
       const message = getErrorMessage(error, "Failed to send SOS alert. Please try again.");
       const errorMessage =
         message === "Please enter a valid number"

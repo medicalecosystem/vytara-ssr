@@ -356,10 +356,12 @@ export async function POST(req: Request) {
     };
 
     if (body.displayName?.trim()) {
+      const trimmedName = body.displayName.trim();
       const { error: profileErr } = await adminClient
         .from("profiles")
         .update({
-          display_name: body.displayName.trim(),
+          name: trimmedName,
+          display_name: trimmedName,
           updated_at: new Date().toISOString(),
         })
         .eq("id", verifiedProfileId);

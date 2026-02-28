@@ -527,6 +527,35 @@ export default function HealthOnboardingScreen() {
     }
   }, [step]);
 
+  const resolveTargetProfileId = () =>
+    (isNewProfileOnboarding && newProfileId) || selectedProfile?.id || '';
+
+  const syncDisplayNameToProfile = async (trimmedName: string) => {
+    const targetProfileId = resolveTargetProfileId();
+    if (!targetProfileId || !trimmedName) return;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        name: trimmedName,
+        display_name: trimmedName,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', targetProfileId);
+
+    if (error) {
+      console.error('Failed to sync display name during onboarding:', error);
+      return;
+    }
+
+    try {
+      await refreshProfiles();
+      await selectProfile(targetProfileId);
+    } catch {
+      // Best effort only. Final save still performs authoritative sync.
+    }
+  };
+
   const setAnswerOnProfile = (key: keyof Profile, raw: string) => {
     const trimmed = raw.trim();
     let value: unknown = trimmed;
@@ -564,6 +593,14 @@ export default function HealthOnboardingScreen() {
 
   const handleSingleNext = (answer: string) => {
     if (!validateRequired(currentQ.key, answer)) return;
+
+    if (currentQ.key === 'displayName') {
+      const trimmedDisplayName = answer.trim();
+      if (trimmedDisplayName && trimmedDisplayName.toLowerCase() !== 'skip') {
+        void syncDisplayNameToProfile(trimmedDisplayName);
+      }
+    }
+
     setAnswerOnProfile(currentQ.key, answer);
     advanceStep();
   };
@@ -751,7 +788,8 @@ export default function HealthOnboardingScreen() {
       setIsSaving(true);
       setSaveError(null);
 
-      if (!selectedProfile) {
+      const targetProfileId = resolveTargetProfileId();
+      if (!targetProfileId) {
         setSaveError('No profile selected. Please select a profile first.');
         return;
       }
@@ -774,7 +812,7 @@ export default function HealthOnboardingScreen() {
       const longTermTreatments = sanitizeTextList(profile.longTermTreatments);
 
       const healthPayload = {
-        profileId: selectedProfile.id, // Include profile ID
+        profileId: targetProfileId,
         dateOfBirth: profile.dateOfBirth,
         bloodGroup: profile.bloodGroup,
         heightCm: profile.heightCm,
@@ -794,12 +832,19 @@ export default function HealthOnboardingScreen() {
         body: healthPayload,
       });
 
-      // Update profile display_name in profiles table (not personal table)
+      // Update profile name and display_name so the user's chosen name appears everywhere
       if (profile.displayName.trim()) {
+        const trimmedName = profile.displayName.trim();
         await supabase
           .from('profiles')
-          .update({ display_name: profile.displayName.trim() })
-          .eq('id', selectedProfile.id);
+          .update({ name: trimmedName, display_name: trimmedName })
+          .eq('id', targetProfileId);
+        await refreshProfiles();
+        try {
+          await selectProfile(targetProfileId);
+        } catch {
+          // Keep navigation flow even if selection sync fails.
+        }
       }
 
       setIsSaved(true);

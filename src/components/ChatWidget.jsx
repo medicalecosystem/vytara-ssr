@@ -1,19 +1,58 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import styles from "./ChatWidget.module.css";
 
 export default function ChatWidget() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [isEmbeddedInIframe, setIsEmbeddedInIframe] = useState(false);
+  const [hiddenByParentModal, setHiddenByParentModal] = useState(false);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
   const endRef = useRef(null);
+  const isEmbeddedLegalModal =
+    pathname?.startsWith("/legal/") && searchParams?.get("view") === "modal";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsEmbeddedInIframe(window.self !== window.top);
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const syncHiddenState = () => {
+      setHiddenByParentModal(document.body.dataset.hideChatWidget === "true");
+    };
+
+    syncHiddenState();
+    const observer = new MutationObserver(syncHiddenState);
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["data-hide-chat-widget"],
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  useEffect(() => {
+    if (hiddenByParentModal || isEmbeddedLegalModal || isEmbeddedInIframe) {
+      setOpen(false);
+    }
+  }, [hiddenByParentModal, isEmbeddedLegalModal, isEmbeddedInIframe]);
+
+  if (hiddenByParentModal || isEmbeddedLegalModal || isEmbeddedInIframe) {
+    return null;
+  }
 
   async function sendMessage() {
     if (!input.trim() || loading) return;

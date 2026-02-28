@@ -7,7 +7,7 @@ import { NextResponse, type NextRequest } from 'next/server';
  */
 const PROTECTED_PATH_PREFIX = '/app';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // Build response first so Supabase can write refreshed cookies to it
   let response = NextResponse.next();
 
@@ -37,7 +37,8 @@ export async function middleware(request: NextRequest) {
 
   if (isProtected && !user) {
     const loginUrl = new URL('/auth/login', request.url);
-    loginUrl.searchParams.set('returnTo', pathname);
+    const safeReturnTo = pathname.startsWith('/app') ? pathname : '/app/homepage';
+    loginUrl.searchParams.set('returnTo', safeReturnTo);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -47,7 +48,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Only run middleware on /app and everything under it.
+     * Only run proxy on /app and everything under it.
      * All other routes (/, /dashboard, /auth/*, /api/*, _next, static) are skipped.
      */
     '/app',

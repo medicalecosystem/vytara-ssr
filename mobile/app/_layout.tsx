@@ -8,6 +8,8 @@ import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import Toast from 'react-native-toast-message';
+import { toastConfig } from '@/lib/toast';
 import { useColorScheme } from '@/components/useColorScheme';
 import { useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
@@ -75,6 +77,13 @@ function RootLayoutNav() {
               />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen
+                name="settings"
+                options={{
+                  headerShown: false,
+                  title: 'Settings',
+                }}
+              />
+              <Stack.Screen
                 name="health-onboarding"
                 options={{
                   headerShown: false,
@@ -87,6 +96,7 @@ function RootLayoutNav() {
         </SafeAreaProvider>
       </ProfileProvider>
     </AuthProvider>
+    <Toast config={toastConfig} />
     </GestureHandlerRootView>
   );
 }
@@ -108,6 +118,7 @@ function AuthGate() {
     const inProfileSelection = segments[0] === 'profile-selection';
     const inManageProfiles = segments[0] === 'manage-profiles';
     const inOnboarding = segments[0] === 'health-onboarding';
+    const inSettings = segments[0] === 'settings';
 
     if (!user && !inAuthGroup) {
       router.replace('/(auth)/login');
@@ -137,7 +148,7 @@ function AuthGate() {
       return;
     }
 
-    if (needsOnboarding && !inOnboarding) {
+    if (needsOnboarding && !inOnboarding && !inSettings) {
       router.replace('/health-onboarding');
       return;
     }

@@ -4,9 +4,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { createRateLimiter, getClientIP } from '@/lib/rateLimit';
 
-const FLASK_API_URL = process.env.NEXT_PUBLIC_CHATBOT_URL || 'http://localhost:8000';
-const DEFAULT_BACKEND_URLS = ['http://127.0.0.1:8000', 'http://localhost:8000'];
+const medicalLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, maxRequests: 15 });
+
+const FLASK_API_URL = process.env.NEXT_PUBLIC_CHATBOT_URL || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000');
+const DEFAULT_BACKEND_URLS = process.env.NODE_ENV === 'production' ? [] : ['http://127.0.0.1:8000', 'http://localhost:8000'];
 const BACKEND_ENV_KEYS = [
   'BACKEND_URL',
   'NEXT_PUBLIC_BACKEND_URL',
@@ -104,6 +107,10 @@ async function callFlask(endpoint: string, method: string, body?: unknown) {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = getClientIP(request);
+    const block = medicalLimiter.check(ip);
+    if (block) return block;
+
     console.log('📥 [Next.js API] POST /api/medical');
 
     if (!(await getAuthenticatedUser(request))) {

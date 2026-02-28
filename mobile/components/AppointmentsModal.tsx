@@ -14,6 +14,10 @@ import {
 } from 'react-native';
 import { Calendar, type DateData } from 'react-native-calendars';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { MotiView } from 'moti';
+import { toast } from '@/lib/toast';
+import { EmptyState, EmptyStatePreset } from '@/components/EmptyState';
 
 export type Appointment = {
   id: string;
@@ -198,7 +202,7 @@ export function AppointmentsModal({
   const openAddModal = (dateOverride?: string) => {
     const baseDate = dateOverride || new Date().toISOString().split('T')[0];
     if (baseDate < todayDate) {
-      Alert.alert('Past date', 'You can only add appointments for future dates.');
+      toast.warning('Past date', 'You can only add appointments for future dates.');
       return;
     }
     setEventForm({
@@ -239,22 +243,27 @@ export function AppointmentsModal({
       return;
     }
     if (!eventForm.title.trim()) {
-      return Alert.alert('Missing title', 'Please enter the event name.');
+      toast.warning('Missing title', 'Please enter the event name.');
+      return;
     }
     if (!eventForm.date || eventForm.date < todayDate) {
-      return Alert.alert('Invalid date', 'Please select a future date for the appointment.');
+      toast.warning('Invalid date', 'Please select a future date for the appointment.');
+      return;
     }
     if (!eventTime.hour || !eventTime.minute || !eventTime.period) {
-      return Alert.alert('Missing time', 'Please select a time for the appointment.');
+      toast.warning('Missing time', 'Please select a time for the appointment.');
+      return;
     }
     if (!eventForm.type) {
-      return Alert.alert('Missing type', 'Please select an appointment type.');
+      toast.warning('Missing type', 'Please select an appointment type.');
+      return;
     }
 
     const appointmentTime = to24HourTime(eventTime.hour, eventTime.minute, eventTime.period);
     const appointmentDateTime = new Date(`${eventForm.date}T${appointmentTime}`);
     if (appointmentDateTime <= new Date()) {
-      return Alert.alert('Invalid time', 'Please select a future date and time for the appointment.');
+      toast.warning('Invalid time', 'Please select a future date and time for the appointment.');
+      return;
     }
 
     const payload: Appointment = {
@@ -272,7 +281,7 @@ export function AppointmentsModal({
       setSelectedEvent(null);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unable to save appointment.';
-      Alert.alert('Save failed', message);
+      toast.error('Save failed', message);
     }
   };
 
@@ -289,7 +298,7 @@ export function AppointmentsModal({
             setSelectedEvent(null);
           } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'Unable to delete appointment.';
-            Alert.alert('Delete failed', message);
+            toast.error('Delete failed', message);
           }
         },
       },
@@ -319,13 +328,19 @@ export function AppointmentsModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <Pressable style={styles.scrim} onPress={onClose} />
-        <KeyboardAvoidingView
-          style={styles.keyboardWrapper}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
+      <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.scrim} onPress={onClose} />
+          <KeyboardAvoidingView
+            style={styles.keyboardWrapper}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <MotiView
+              from={{ translateY: 100, opacity: 0.5 }}
+              animate={{ translateY: 0, opacity: 1 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+            >
+              <View style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Appointments</Text>
               <Pressable onPress={onClose} style={styles.closeButton}>
@@ -388,13 +403,7 @@ export function AppointmentsModal({
               {viewMode === 'list' ? (
                 <>
                   {upcomingAppointments.length === 0 ? (
-                    <View style={styles.emptyState}>
-                      <MaterialCommunityIcons name="calendar-blank" size={32} color="#c7d3d6" />
-                      <Text style={styles.emptyTitle}>No upcoming appointments</Text>
-                      <Text style={styles.emptySubtitle}>
-                        Tap the button below to schedule one.
-                      </Text>
-                    </View>
+                    <EmptyStatePreset preset="appointments" />
                   ) : (
                     upcomingAppointments.map((apt) => (
                       <Pressable
@@ -500,7 +509,7 @@ export function AppointmentsModal({
                     <Text style={styles.pastNote}>Past dates are view-only.</Text>
                   ) : null}
                   {selectedDayAppointments.length === 0 ? (
-                    <Text style={styles.emptySubtitle}>No appointments for this date.</Text>
+                    <EmptyState icon="calendar-blank-outline" title="No appointments for this date" />
                   ) : (
                     selectedDayAppointments.map((apt) => (
                       <Pressable
@@ -526,8 +535,10 @@ export function AppointmentsModal({
               )}
             </ScrollView>
           </View>
+            </MotiView>
         </KeyboardAvoidingView>
       </View>
+      </BlurView>
 
       <Modal
         visible={showEventModal}
@@ -540,7 +551,12 @@ export function AppointmentsModal({
             style={styles.eventKeyboardWrapper}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            <View style={[styles.eventSheet, { maxHeight: eventSheetMaxHeight }]}>
+            <MotiView
+              from={{ translateY: 100, opacity: 0.5 }}
+              animate={{ translateY: 0, opacity: 1 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+            >
+              <View style={[styles.eventSheet, { maxHeight: eventSheetMaxHeight }]}>
               <View style={styles.eventHeader}>
                 <Text style={styles.eventTitle}>
                   {selectedEvent ? 'Edit Appointment' : 'Add Appointment'}
@@ -752,6 +768,7 @@ export function AppointmentsModal({
                 </View>
               </ScrollView>
             </View>
+            </MotiView>
           </KeyboardAvoidingView>
         </View>
       </Modal>
@@ -766,7 +783,7 @@ const styles = StyleSheet.create({
   },
   scrim: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 24, 0.35)',
+    backgroundColor: 'transparent',
   },
   keyboardWrapper: {
     width: '100%',
@@ -991,7 +1008,7 @@ const styles = StyleSheet.create({
   },
   eventOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(13, 19, 20, 0.4)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
     justifyContent: 'flex-end',
   },
   eventKeyboardWrapper: {
@@ -1037,8 +1054,8 @@ const styles = StyleSheet.create({
     borderColor: '#d8e3e6',
     backgroundColor: '#f7fbfb',
     borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 14,
     color: '#1f2f33',
   },
@@ -1074,8 +1091,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#d8e3e6',
     backgroundColor: '#f7fbfb',
-    borderRadius: 12,
-    paddingVertical: 10,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     textAlign: 'center',
     fontSize: 14,
     color: '#1f2f33',

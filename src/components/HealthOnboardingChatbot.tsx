@@ -228,6 +228,37 @@ export default function HealthOnboardingChatbot() {
     };
   }, [isNewProfileOnboarding, newProfileId, refreshProfiles, selectProfile, selectedProfile?.id]);
 
+  const resolveTargetProfileId = () =>
+    (isNewProfileOnboarding && newProfileId) || selectedProfile?.id || "";
+
+  const syncDisplayNameToProfile = async (trimmedName: string) => {
+    const targetProfileId = resolveTargetProfileId();
+    if (!targetProfileId || !trimmedName) return;
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        name: trimmedName,
+        display_name: trimmedName,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", targetProfileId);
+
+    if (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.error("Failed to sync display name during onboarding:", error);
+      }
+      return;
+    }
+
+    try {
+      await refreshProfiles();
+      await selectProfile(targetProfileId);
+    } catch {
+      // Best effort only. Final save still performs authoritative sync.
+    }
+  };
+
   const currentQ = QUESTIONS[step];
   const canSkip = !currentQ.required;
   const canGoBack = step > 0;
@@ -327,6 +358,13 @@ export default function HealthOnboardingChatbot() {
     if (!validateRequired(currentQ.key, answer)) {
       addMessage("bot", "⚠️ This field is required. Please enter a valid answer to continue.");
       return;
+    }
+
+    if (currentQ.key === "displayName") {
+      const trimmedDisplayName = answer.trim();
+      if (trimmedDisplayName && trimmedDisplayName.toLowerCase() !== "skip") {
+        void syncDisplayNameToProfile(trimmedDisplayName);
+      }
     }
 
     setAnswerOnProfile(currentQ.key, answer);
@@ -509,8 +547,7 @@ export default function HealthOnboardingChatbot() {
       setIsSaving(true);
       setSaveError(null);
 
-      const targetProfileId =
-        (isNewProfileOnboarding && newProfileId) || selectedProfile?.id || "";
+      const targetProfileId = resolveTargetProfileId();
 
       if (!targetProfileId) {
         throw new Error("Please select a profile before saving.");
@@ -558,8 +595,9 @@ export default function HealthOnboardingChatbot() {
         throw new Error(data?.error || "Failed to save");
       }
 
-      const profileUpdates: { display_name?: string; gender?: string } = {};
+      const profileUpdates: { name?: string; display_name?: string; gender?: string } = {};
       if (displayName.trim()) {
+        profileUpdates.name = displayName.trim();
         profileUpdates.display_name = displayName.trim();
       }
       if (gender.trim()) {
@@ -579,20 +617,20 @@ export default function HealthOnboardingChatbot() {
       setIsSaved(true);
       addMessage("bot", "💾 Saved successfully!");
       window.setTimeout(() => {
-        if (isNewProfileOnboarding && targetProfileId) {
-          void (async () => {
-            try {
-              await refreshProfiles();
-              await selectProfile(targetProfileId);
-            } catch {
-              // Fallback: continue with redirect even if provider sync fails.
-            } finally {
+        void (async () => {
+          try {
+            await refreshProfiles();
+            await selectProfile(targetProfileId);
+          } catch {
+            // Fallback: continue with redirect even if provider sync fails.
+          } finally {
+            if (isNewProfileOnboarding) {
               router.push("/app/profilepage");
+            } else {
+              router.push("/app/homepage");
             }
-          })();
-          return;
-        }
-        router.push("/app/homepage");
+          }
+        })();
       }, 500);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Something went wrong";

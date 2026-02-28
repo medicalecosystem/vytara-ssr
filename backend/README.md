@@ -38,8 +38,8 @@ Create a `.env` file in the `backend` folder with these credentials:
 OPENAI_API_KEY=sk-your-key-here
 
 # Supabase (Already configured - same database)
-SUPABASE_URL=https://mhlkzulgpeirtjiopzvu.supabase.co
-SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd...
+SUPABASE_URL=your-supabase-url
+SUPABASE_SERVICE_KEY=your-service-role-key
 ```
 
 **Note:** Supabase is already set up with tables and storage. You just need to add the OpenAI API key.

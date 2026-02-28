@@ -4,11 +4,18 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { createRateLimiter, getClientIP } from '@/lib/rateLimit';
 
-const FLASK_API_URL = process.env.NEXT_PUBLIC_CHATBOT_URL || 'http://localhost:5000';
+const chatLimiter = createRateLimiter({ windowMs: 60 * 1000, maxRequests: 20 });
+
+const FLASK_API_URL = process.env.NEXT_PUBLIC_CHATBOT_URL || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5000');
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = getClientIP(request);
+    const block = chatLimiter.check(ip);
+    if (block) return block;
+
     if (!(await getAuthenticatedUser(request))) {
       return NextResponse.json(
         {

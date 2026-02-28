@@ -14,6 +14,7 @@ import {
   useWindowDimensions,
   Platform,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -21,6 +22,7 @@ import * as Sharing from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Pdf from 'react-native-pdf';
 import { Calendar } from 'react-native-calendars';
+import { MotiView } from 'moti';
 import Animated, {
   FadeInDown,
   FadeIn,
@@ -34,9 +36,12 @@ import Animated, {
 
 import { Text } from '@/components/Themed';
 import { Screen } from '@/components/Screen';
+import { SkeletonListItem } from '@/components/Skeleton';
+import { EmptyStatePreset } from '@/components/EmptyState';
 import { useProfile } from '@/hooks/useProfile';
 import { vaultApi, type VaultFile } from '@/api/modules/vault';
 import type { MedicalFolder } from '@/constants/medicalFolders';
+import { toast } from '@/lib/toast';
 
 type CategoryKey = 'all' | MedicalFolder;
 
@@ -186,19 +191,23 @@ const AnimatedButton = ({
   disabled?: boolean;
 }) => {
   const scale = useSharedValue(1);
+  const opacity = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
+      opacity: opacity.value,
       transform: [{ scale: scale.value }],
     };
   });
 
   const handlePressIn = () => {
-    scale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+    scale.value = withSpring(0.97, { damping: 15, stiffness: 300 });
+    opacity.value = withTiming(0.9);
   };
 
   const handlePressOut = () => {
     scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    opacity.value = withTiming(1);
   };
 
   return (
@@ -211,40 +220,6 @@ const AnimatedButton = ({
     >
       {children}
     </AnimatedPressable>
-  );
-};
-
-// Skeleton Loader Component
-const SkeletonItem = ({ index }: { index: number }) => {
-  const opacity = useSharedValue(0.3);
-
-  useEffect(() => {
-    opacity.value = withTiming(0.6, { duration: 1000 }, () => {
-      opacity.value = withTiming(0.3, { duration: 1000 });
-    });
-    const interval = setInterval(() => {
-      opacity.value = withTiming(0.6, { duration: 1000 }, () => {
-        opacity.value = withTiming(0.3, { duration: 1000 });
-      });
-    }, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Animated.View entering={FadeInDown.delay(index * 50).springify()} style={styles.listItem}>
-      <Animated.View style={animatedStyle}>
-        <View style={[styles.listIcon, { backgroundColor: '#e1eaec' }]} />
-        <View style={styles.listText}>
-          <View style={[styles.skeletonLine, { width: '70%', marginBottom: 8 }]} />
-          <View style={[styles.skeletonLine, { width: '40%' }]} />
-        </View>
-        <View style={[styles.moreButton, { backgroundColor: '#e1eaec' }]} />
-      </Animated.View>
-    </Animated.View>
   );
 };
 
@@ -292,9 +267,6 @@ export default function VaultScreen() {
   const centeredModalMaxHeight = Math.min(windowHeight - insets.top - insets.bottom - 32, 640);
   const customDateCardMaxHeight = Math.min(windowHeight - insets.top - insets.bottom - 40, 700);
   const customDateCalendarMaxHeight = Math.min(windowHeight * 0.5, 420);
-
-  // Calculate header height: safe area top + 10px padding + 38px avatar + minimal spacing
-  const headerHeight = insets.top + 0.8;
 
   const fetchCounts = useCallback(async () => {
     if (!storageOwnerId) return;
@@ -431,7 +403,7 @@ export default function VaultScreen() {
     if (!asset) return;
 
     if (!isAllowedUploadType(asset.name, asset.mimeType)) {
-      Alert.alert('Unsupported file', 'Please upload a PDF or image file.');
+      toast.warning('Unsupported file', 'Please upload a PDF or image file.');
       return;
     }
 
@@ -454,7 +426,7 @@ export default function VaultScreen() {
     try {
       const { error } = await vaultApi.uploadFile(storageOwnerId, folder, uploadDraft.file, finalName);
       if (error) {
-        Alert.alert('Upload failed', error.message || 'Unable to upload file.');
+        toast.error('Upload failed', error.message || 'Unable to upload file.');
         return;
       }
 
@@ -462,7 +434,7 @@ export default function VaultScreen() {
       setUploadDraft({ file: null, category: 'reports', fileName: '' });
       await refreshAll();
     } catch (error) {
-      Alert.alert(
+      toast.error(
         'Upload failed',
         error instanceof Error ? error.message : 'Unable to upload file.'
       );
@@ -494,7 +466,7 @@ export default function VaultScreen() {
       60 * 10
     );
     if (error || !data?.signedUrl) {
-      Alert.alert('Download failed', error?.message || 'Unable to download file.');
+      toast.error('Download failed', error?.message || 'Unable to download file.');
       return;
     }
     const sanitizedName = item.name.replace(/[\\/]/g, '_');
@@ -515,7 +487,7 @@ export default function VaultScreen() {
     }
     const baseDir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
     if (!baseDir) {
-      Alert.alert('Download failed', 'No writable directory available.');
+      toast.error('Download failed', 'No writable directory available.');
       return;
     }
     const destination = `${baseDir}${Date.now()}-${finalName}`;
@@ -536,11 +508,11 @@ export default function VaultScreen() {
         await FileSystem.writeAsStringAsync(destUri, base64, {
           encoding: FileSystem.EncodingType.Base64,
         });
-        Alert.alert('Downloaded', 'Saved to the selected folder.');
+        toast.success('Downloaded', 'Saved to the selected folder.');
       } else {
         const canShare = await Sharing.isAvailableAsync();
         if (!canShare) {
-          Alert.alert('Downloaded', `Saved "${finalName}" to your device.`);
+          toast.success('Downloaded', `Saved "${finalName}" to your device.`);
           return;
         }
         await Sharing.shareAsync(download.uri, {
@@ -549,7 +521,7 @@ export default function VaultScreen() {
         });
       }
     } catch (downloadError: any) {
-      Alert.alert('Download failed', downloadError?.message || 'Unable to download file.');
+      toast.error('Download failed', downloadError?.message || 'Unable to download file.');
     }
   };
 
@@ -561,7 +533,7 @@ export default function VaultScreen() {
       return;
     }
     if (rawName.includes('/')) {
-      Alert.alert('Invalid name', "File name can't include slashes.");
+      toast.warning('Invalid name', "File name can't include slashes.");
       return;
     }
     const hasExtension = rawName.includes('.');
@@ -574,7 +546,7 @@ export default function VaultScreen() {
     const toPath = `${storageOwnerId}/${renameFile.folder}/${nextName}`;
     const { error } = await vaultApi.renameFile(fromPath, toPath);
     if (error) {
-      Alert.alert('Rename failed', error.message || 'Unable to rename file.');
+      toast.error('Rename failed', error.message || 'Unable to rename file.');
       return;
     }
     setFiles((prev) =>
@@ -598,7 +570,7 @@ export default function VaultScreen() {
         onPress: async () => {
           const { error } = await vaultApi.deleteFile(`${storageOwnerId}/${item.folder}/${item.name}`);
           if (error) {
-            Alert.alert('Delete failed', error.message || 'Unable to delete file.');
+            toast.error('Delete failed', error.message || 'Unable to delete file.');
             return;
           }
           setFiles((prev) => prev.filter((file) => file.name !== item.name));
@@ -736,9 +708,10 @@ export default function VaultScreen() {
       padded={false}
       scrollable={false}
       safeAreaStyle={styles.safeArea}
+      safeAreaEdges={['left', 'right', 'bottom']}
     >
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingTop: headerHeight }]}
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshAll} />}
       >
@@ -831,48 +804,47 @@ export default function VaultScreen() {
 
         <View style={styles.list}>
           {loading ? (
-            <Animated.View entering={FadeIn} style={styles.emptyState}>
-              {[...Array(3)].map((_, i) => (
-                <SkeletonItem key={i} index={i} />
+            <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <SkeletonListItem key={i} />
               ))}
-            </Animated.View>
+            </View>
           ) : null}
 
           {!loading && visibleFiles.length === 0 ? (
-            <Animated.View entering={FadeInDown.springify()} style={styles.emptyState}>
-              <MaterialCommunityIcons name="file-search-outline" size={28} color="#94a3b8" />
-              <Text style={styles.emptyTitle}>No documents found</Text>
-              <Text style={styles.emptySubtitle}>Try a different keyword or filter.</Text>
-            </Animated.View>
+            <EmptyStatePreset preset="search" />
           ) : null}
 
           {!loading &&
             visibleFiles.map((item, index) => (
-              <AnimatedPressable
+              <Animated.View
                 key={`${item.folder}-${item.name}`}
-                entering={FadeInDown.delay(index * 50).springify()}
-                style={styles.listItem}
-                onPress={() => handlePreview(item)}
+                entering={FadeInDown.delay(Math.min(index * 60, 600)).springify()}
               >
-                <View style={styles.listIcon}>
-                  <MaterialCommunityIcons name={folderIcon[item.folder]} size={22} color="#2f565f" />
-                </View>
-                <View style={styles.listText}>
-                  <Text style={styles.itemTitle}>{item.name}</Text>
-                  <Text style={styles.itemDate}>
-                    {new Date(item.created_at).toLocaleDateString()}
-                  </Text>
-                </View>
-                <AnimatedButton
-                  onPress={(event) => {
-                    event?.stopPropagation?.();
-                    openMenu(item, event);
-                  }}
-                  style={styles.moreButton}
+                <AnimatedPressable
+                  style={({ pressed }) => [styles.listItem, pressed && styles.listItemPressed]}
+                  onPress={() => handlePreview(item)}
                 >
-                  <MaterialCommunityIcons name="dots-vertical" size={18} color="#7c8b90" />
-                </AnimatedButton>
+                  <View style={styles.listIcon}>
+                    <MaterialCommunityIcons name={folderIcon[item.folder]} size={22} color="#2f565f" />
+                  </View>
+                  <View style={styles.listText}>
+                    <Text style={styles.itemTitle}>{item.name}</Text>
+                    <Text style={styles.itemDate}>
+                      {new Date(item.created_at).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <AnimatedButton
+                    onPress={(event) => {
+                      event?.stopPropagation?.();
+                      openMenu(item, event);
+                    }}
+                    style={styles.moreButton}
+                  >
+                    <MaterialCommunityIcons name="dots-vertical" size={18} color="#7c8b90" />
+                  </AnimatedButton>
               </AnimatedPressable>
+              </Animated.View>
             ))}
         </View>
       </ScrollView>
@@ -992,19 +964,25 @@ export default function VaultScreen() {
       </Modal>
 
       <Modal transparent visible={uploadModalOpen} animationType="slide">
+        <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill}>
         <Animated.View entering={FadeIn} style={styles.modalOverlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setUploadModalOpen(false)} />
           <KeyboardAvoidingView
             style={styles.modalKeyboard}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            <Animated.View
-              entering={SlideInDown.springify()}
-              style={[styles.uploadSheet, { maxHeight: centeredModalMaxHeight }]}
+            <MotiView
+              from={{ translateY: 100, opacity: 0.5 }}
+              animate={{ translateY: 0, opacity: 1 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 200 }}
             >
-              <View>
-                <Text style={styles.sheetTitle}>Upload document</Text>
-                <Text style={styles.sheetSubtitle}>{uploadDraft.file?.name ?? 'No file selected'}</Text>
+              <Animated.View
+                entering={SlideInDown.springify()}
+                style={[styles.uploadSheet, { maxHeight: centeredModalMaxHeight }]}
+              >
+                <View>
+                  <Text style={styles.sheetTitle}>Upload document</Text>
+                  <Text style={styles.sheetSubtitle}>{uploadDraft.file?.name ?? 'No file selected'}</Text>
                 <TextInput
                   value={uploadDraft.fileName}
                   onChangeText={(value) => setUploadDraft((prev) => ({ ...prev, fileName: value }))}
@@ -1037,13 +1015,16 @@ export default function VaultScreen() {
                 >
                   <Text style={styles.primaryButtonText}>{uploading ? 'Uploading...' : 'Upload'}</Text>
                 </AnimatedButton>
-              </View>
-            </Animated.View>
+                </View>
+              </Animated.View>
+            </MotiView>
           </KeyboardAvoidingView>
         </Animated.View>
+        </BlurView>
       </Modal>
 
       <Modal transparent visible={Boolean(renameFile)} animationType="fade">
+        <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill}>
         <Animated.View entering={FadeIn} style={styles.centeredOverlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setRenameFile(null)} />
           <KeyboardAvoidingView
@@ -1070,6 +1051,7 @@ export default function VaultScreen() {
             </Animated.View>
           </KeyboardAvoidingView>
         </Animated.View>
+        </BlurView>
       </Modal>
 
       <Modal transparent visible={sortMenuOpen} animationType="fade">
@@ -1335,6 +1317,9 @@ const styles = StyleSheet.create({
   list: {
     gap: 12,
   },
+  listItemPressed: {
+    transform: [{ scale: 0.98 }],
+  },
   listItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1401,16 +1386,16 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    backgroundColor: 'transparent',
     justifyContent: 'flex-end',
   },
   popoverOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.2)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
   },
   centeredOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,

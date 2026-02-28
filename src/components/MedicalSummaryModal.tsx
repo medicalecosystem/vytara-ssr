@@ -30,6 +30,15 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown error';
 }
 
+function sanitizeAndFormat(text: string): string {
+  // Strip all HTML tags first to prevent XSS
+  const stripped = text.replace(/<[^>]*>/g, '');
+  // Then apply safe formatting
+  return stripped
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br/>');
+}
+
 export function MedicalSummaryModal({ 
   isOpen, 
   onClose, 
@@ -45,7 +54,9 @@ export function MedicalSummaryModal({
   const [hasProcessed, setHasProcessed] = useState(false);
   const [userId, setUserId] = useState<string>('');
 
-  console.log('🎭 Modal render - isOpen:', isOpen, 'propUserId:', propUserId, 'stateUserId:', userId);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('🎭 Modal render - isOpen:', isOpen);
+  }
 
   // Use selected profile ID only (no auth user fallback)
   useEffect(() => {
@@ -65,13 +76,17 @@ export function MedicalSummaryModal({
 
   // Auto-trigger when modal opens AND userId is available
   useEffect(() => {
-    console.log('🔄 [Modal] Effect check - isOpen:', isOpen, 'hasProcessed:', hasProcessed, 'userId:', userId);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('🔄 [Modal] Effect check - isOpen:', isOpen, 'hasProcessed:', hasProcessed);
+    }
     
     if (isOpen && !hasProcessed && userId) {
       console.log('🚀 [Modal] Triggering summary generation!');
       handleGenerateSummary();
     } else if (isOpen && !userId) {
-      console.log('ℹ️ [Modal] Modal open but no userId available yet');
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('ℹ️ [Modal] Modal open but no userId available yet');
+      }
       // Don't set error here, let the first useEffect handle it
     }
   }, [isOpen, userId, hasProcessed]);
@@ -97,9 +112,9 @@ export function MedicalSummaryModal({
     setError('');
     
     try {
-      console.log('📋 [Frontend] Processing files...');
-      console.log('📋 [Frontend] Profile ID:', userId);
-      console.log('📋 [Frontend] Folder type:', folderType);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('📋 [Frontend] Processing files...');
+      }
       
       const response = await fetch('/api/medical', {
         method: 'POST',
@@ -145,8 +160,9 @@ export function MedicalSummaryModal({
     setError('');
     
     try {
-      console.log('🤖 [Frontend] Generating summary...');
-      console.log('🤖 [Frontend] Profile ID:', userId);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('🤖 [Frontend] Generating summary...');
+      }
       
       const response = await fetch('/api/medical', {
         method: 'POST',
@@ -294,9 +310,7 @@ export function MedicalSummaryModal({
             <div 
               className="prose prose-sm max-w-none"
               dangerouslySetInnerHTML={{ 
-                __html: summary
-                  .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                  .replace(/\n/g, '<br/>')
+                __html: sanitizeAndFormat(summary)
               }}
             />
           )}

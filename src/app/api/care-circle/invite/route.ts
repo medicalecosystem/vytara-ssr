@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { isValidUUID } from '@/lib/validation';
 
 type InvitePayload = {
   contact?: string;
@@ -75,6 +76,9 @@ export async function POST(request: Request) {
   }
   if (!requestedProfileId) {
     return NextResponse.json({ message: 'profileId is required.' }, { status: 400 });
+  }
+  if (!isValidUUID(requestedProfileId)) {
+    return NextResponse.json({ message: 'Invalid profile ID.' }, { status: 400 });
   }
   if (contact.includes('@')) {
     return NextResponse.json(

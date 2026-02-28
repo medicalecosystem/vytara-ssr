@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
@@ -10,6 +10,9 @@ import {
   rememberDeviceCookieClearOptions,
   rememberDeviceCookieOptions,
 } from "@/lib/rememberDevice";
+import { createRateLimiter, getClientIP } from '@/lib/rateLimit';
+
+const consumeLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, maxRequests: 10 });
 
 export const runtime = "nodejs";
 
@@ -45,7 +48,11 @@ const failedRememberResponse = (status = 401) =>
     { status }
   );
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const ip = getClientIP(request);
+  const block = consumeLimiter.check(ip);
+  if (block) return block;
+
   const payload = (await request
     .json()
     .catch(() => null)) as ConsumeRememberDevicePayload | null;

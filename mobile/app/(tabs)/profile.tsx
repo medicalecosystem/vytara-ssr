@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -9,20 +8,23 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Calendar } from 'react-native-calendars';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
+import { MotiView } from 'moti';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/Themed';
 import { Screen } from '@/components/Screen';
 import { MedicationsModal, type Medication } from '@/components/MedicationsModal';
+import { SkeletonProfileHeader, SkeletonKPIRow, Skeleton, SkeletonListItem } from '@/components/Skeleton';
 import { useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
+import { toast } from '@/lib/toast';
 import { profileRepository } from '@/repositories/profileRepository';
 import { supabase, type User } from '@/lib/supabase';
 
@@ -170,11 +172,7 @@ function AnimatedCard({
   );
 }
 
-// Header height: safe area top + header content (padding + avatar). Match tabs _layout.
-const HEADER_OFFSET = 0;
-
 export default function ProfileScreen() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const isFocused = useIsFocused();
   const { user } = useAuth();
@@ -352,7 +350,7 @@ export default function ProfileScreen() {
 
   const savePersonal = async () => {
     if (!profileId || !userId) {
-      Alert.alert('Error', 'Please select a profile first.');
+      toast.error('Error', 'Please select a profile first.');
       return;
     }
     const dobISO = parseDOBToISO(personalDraft.dob);
@@ -375,7 +373,7 @@ export default function ProfileScreen() {
       .eq('profile_id', profileId);
 
     if (profileError || healthError) {
-      Alert.alert('Error', (profileError ?? healthError)?.message ?? 'Failed to save');
+      toast.error('Error', (profileError ?? healthError)?.message ?? 'Failed to save');
       return;
     }
     setUserName(personalDraft.userName.trim());
@@ -385,12 +383,12 @@ export default function ProfileScreen() {
     setBloodGroup(personalDraft.bloodGroup);
     setAddress(personalDraft.address);
     setPersonalModalOpen(false);
-    Alert.alert('Saved', 'Personal information updated.');
+    toast.success('Saved', 'Personal information updated.');
   };
 
   const saveCurrentMedical = async () => {
     if (!profileId || !userId) {
-      Alert.alert('Error', 'Please select a profile first.');
+      toast.error('Error', 'Please select a profile first.');
       return;
     }
     const existing = await profileRepository.getHealthProfile(profileId);
@@ -412,18 +410,18 @@ export default function ProfileScreen() {
     };
     const { error } = await supabase.from('health').upsert(healthData, { onConflict: 'profile_id' });
     if (error) {
-      Alert.alert('Error', error.message);
+      toast.error('Error', error.message);
       return;
     }
     setCurrentMedicalModalOpen(false);
-    Alert.alert('Saved', 'Current medical status updated.');
+    toast.success('Saved', 'Current medical status updated.');
   };
 
   const addMedication = async (medication: Medication) => {
     if (!user?.id || !profileId) return;
 
     if (!medication.name.trim() || !medication.dosage.trim() || !medication.frequency.trim()) {
-      Alert.alert('Missing info', 'Please fill Name, Dosage, and Frequency.');
+      toast.warning('Missing info', 'Please fill Name, Dosage, and Frequency.');
       return;
     }
 
@@ -459,7 +457,7 @@ export default function ProfileScreen() {
       setCurrentMedications(updatedMedications);
     } catch (error: any) {
       console.error('Add medication error:', error);
-      Alert.alert('Failed to add medication', error?.message || 'Please try again.');
+      toast.error('Save failed', error?.message || 'Please try again.');
     }
   };
 
@@ -467,7 +465,7 @@ export default function ProfileScreen() {
     if (!user?.id || !profileId) return;
 
     if (!medication.name.trim() || !medication.dosage.trim() || !medication.frequency.trim()) {
-      Alert.alert('Missing info', 'Please fill Name, Dosage, and Frequency.');
+      toast.warning('Missing info', 'Please fill Name, Dosage, and Frequency.');
       return;
     }
 
@@ -491,7 +489,7 @@ export default function ProfileScreen() {
       setCurrentMedications(updatedMedications);
     } catch (error: any) {
       console.error('Update medication error:', error);
-      Alert.alert('Failed to update medication', error?.message || 'Please try again.');
+      toast.error('Update failed', error?.message || 'Please try again.');
     }
   };
 
@@ -518,7 +516,7 @@ export default function ProfileScreen() {
       setCurrentMedications(updatedMedications);
     } catch (error: any) {
       console.error('Delete medication error:', error);
-      Alert.alert('Failed to delete medication', error?.message || 'Please try again.');
+      toast.error('Delete failed', error?.message || 'Please try again.');
     }
   };
 
@@ -559,13 +557,13 @@ export default function ProfileScreen() {
       setCurrentMedications(updatedMedications);
     } catch (error: any) {
       console.error('Failed to log dose:', error);
-      Alert.alert('Failed to log dose', error?.message || 'Please try again.');
+      toast.error('Log failed', error?.message || 'Please try again.');
     }
   };
 
   const savePastMedical = async () => {
     if (!profileId || !userId) {
-      Alert.alert('Error', 'Please select a profile first.');
+      toast.error('Error', 'Please select a profile first.');
       return;
     }
     const existing = await profileRepository.getHealthProfile(profileId);
@@ -589,16 +587,16 @@ export default function ProfileScreen() {
     };
     const { error } = await supabase.from('health').upsert(pastData, { onConflict: 'profile_id' });
     if (error) {
-      Alert.alert('Error', error.message);
+      toast.error('Error', error.message);
       return;
     }
     setPastMedicalModalOpen(false);
-    Alert.alert('Saved', 'Past medical history updated.');
+    toast.success('Saved', 'Past medical history updated.');
   };
 
   const saveFamily = async () => {
     if (!profileId || !userId) {
-      Alert.alert('Error', 'Please select a profile first.');
+      toast.error('Error', 'Please select a profile first.');
       return;
     }
     const { error } = await supabase
@@ -612,11 +610,11 @@ export default function ProfileScreen() {
         { onConflict: 'profile_id' }
       );
     if (error) {
-      Alert.alert('Error', error.message);
+      toast.error('Error', error.message);
       return;
     }
     setFamilyModalOpen(false);
-    Alert.alert('Saved', 'Family medical history updated.');
+    toast.success('Saved', 'Family medical history updated.');
   };
 
   const exportProfilePdf = async () => {
@@ -766,19 +764,20 @@ export default function ProfileScreen() {
       if (canShare) {
         await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Export PDF' });
       } else {
-        Alert.alert('Exported', `PDF saved to: ${uri}`);
+        toast.success('Exported', `PDF saved to: ${uri}`);
       }
     } catch (error: any) {
       console.error('Export PDF error:', error);
-      Alert.alert('Export failed', error?.message || 'Unable to export PDF.');
+      toast.error('Export failed', error?.message || 'Unable to export PDF.');
     }
   };
 
-  const contentTopPadding = { paddingTop: insets.top + HEADER_OFFSET };
-
   if (!userId) {
     return (
-      <Screen contentContainerStyle={[styles.screenContent, contentTopPadding]}>
+      <Screen
+        contentContainerStyle={styles.screenContent}
+        safeAreaEdges={['left', 'right', 'bottom']}
+      >
         <View style={styles.centered}>
           <Text style={styles.subtitle}>Sign in to view your profile.</Text>
         </View>
@@ -788,17 +787,30 @@ export default function ProfileScreen() {
 
   if (loading) {
     return (
-      <Screen contentContainerStyle={[styles.screenContent, contentTopPadding, styles.centered]} scrollable={false}>
-        <ActivityIndicator size="large" color="#309898" />
-        <Text style={[styles.subtitle, { marginTop: 12 }]}>Loading profile…</Text>
-      </Screen>
+      <View style={{ flex: 1, backgroundColor: '#eef3f3' }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: 60 }}>
+          <SkeletonProfileHeader />
+          <SkeletonKPIRow />
+          <View style={{ marginTop: 24 }}>
+            <Skeleton width={120} height={16} style={{ marginBottom: 12 }} />
+            <SkeletonListItem />
+            <SkeletonListItem />
+          </View>
+          <View style={{ marginTop: 20 }}>
+            <Skeleton width={140} height={16} style={{ marginBottom: 12 }} />
+            <SkeletonListItem />
+            <SkeletonListItem />
+          </View>
+        </View>
+      </View>
     );
   }
 
   return (
     <Screen
-      contentContainerStyle={[styles.screenContent, contentTopPadding]}
+      contentContainerStyle={styles.screenContent}
       innerStyle={styles.screenInner}
+      safeAreaEdges={['left', 'right', 'bottom']}
     >
       <View style={styles.pageHeaderRow}>
         <Text style={styles.pageTitle}>Profile</Text>
@@ -849,7 +861,7 @@ export default function ProfileScreen() {
               onPress={openPersonalModal}
               style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}
             >
-              <MaterialCommunityIcons name="pencil" size={20} color="#309898" />
+              <MaterialCommunityIcons name="pencil" size={20} color="#0f766e" />
             </Pressable>
           </View>
         </View>
@@ -860,12 +872,12 @@ export default function ProfileScreen() {
         <Animated.View entering={FadeInDown.delay(80).springify()} style={[styles.kpiCard, styles.kpiBlood]}>
           <MaterialCommunityIcons name="water" size={18} color="#b91c1c" />
           <Text style={styles.kpiLabel}>Blood</Text>
-          <Text style={styles.kpiValue}>{bloodGroup || '—'}</Text>
+          <Text style={styles.kpiValue} adjustsFontSizeToFit numberOfLines={1}>{bloodGroup || '—'}</Text>
         </Animated.View>
         <Animated.View entering={FadeInDown.delay(120).springify()} style={[styles.kpiCard, styles.kpiBmi]}>
           <MaterialCommunityIcons name="counter" size={18} color="#1d4ed8" />
           <Text style={styles.kpiLabel}>BMI</Text>
-          <Text style={styles.kpiValue}>
+          <Text style={styles.kpiValue} adjustsFontSizeToFit numberOfLines={1}>
             {bmi ? (
               <>
                 {bmi}
@@ -879,7 +891,7 @@ export default function ProfileScreen() {
         <Animated.View entering={FadeInDown.delay(160).springify()} style={[styles.kpiCard, styles.kpiAge]}>
           <MaterialCommunityIcons name="calendar-check" size={18} color="#6b21a8" />
           <Text style={styles.kpiLabel}>Age</Text>
-          <Text style={styles.kpiValue}>{age || '—'}</Text>
+          <Text style={styles.kpiValue} adjustsFontSizeToFit numberOfLines={1}>{age || '—'}</Text>
         </Animated.View>
       </View>
 
@@ -913,7 +925,7 @@ export default function ProfileScreen() {
             onPress={() => setCurrentMedicalModalOpen(true)}
             style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}
           >
-            <MaterialCommunityIcons name="pencil" size={18} color="#309898" />
+            <MaterialCommunityIcons name="pencil" size={18} color="#0f766e" />
           </Pressable>
         </View>
         <View style={styles.sectionBody}>
@@ -929,7 +941,7 @@ export default function ProfileScreen() {
           ) : (
             currentMedications.map((med, i) => (
               <View key={i} style={styles.medRow}>
-                <MaterialCommunityIcons name="pill" size={16} color="#309898" />
+                <MaterialCommunityIcons name="pill" size={16} color="#0f766e" />
                 <View style={styles.medInfo}>
                   <Text style={styles.medName}>{med.name}</Text>
                   <Text style={styles.medMeta}>Dosage: {med.dosage || '—'} · {med.frequency || '—'}</Text>
@@ -958,7 +970,7 @@ export default function ProfileScreen() {
             onPress={() => setPastMedicalModalOpen(true)}
             style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}
           >
-            <MaterialCommunityIcons name="pencil" size={18} color="#309898" />
+            <MaterialCommunityIcons name="pencil" size={18} color="#0f766e" />
           </Pressable>
         </View>
         <View style={styles.sectionBody}>
@@ -993,7 +1005,7 @@ export default function ProfileScreen() {
             onPress={() => setFamilyModalOpen(true)}
             style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}
           >
-            <MaterialCommunityIcons name="pencil" size={18} color="#309898" />
+            <MaterialCommunityIcons name="pencil" size={18} color="#0f766e" />
           </Pressable>
         </View>
         <View style={styles.sectionBody}>
@@ -1149,7 +1161,7 @@ function PersonalInfoModal({
   const markedDates = useMemo(() => {
     if (!selectedDobIso) return undefined;
     return {
-      [selectedDobIso]: { selected: true, selectedColor: '#309898' },
+      [selectedDobIso]: { selected: true, selectedColor: '#0f766e' },
     } as Record<string, { selected: boolean; selectedColor: string }>;
   }, [selectedDobIso]);
   const calendarCurrent = useMemo(() => {
@@ -1158,15 +1170,21 @@ function PersonalInfoModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
+      <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill}>
       <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Edit Personal Info</Text>
-            <Pressable onPress={onClose} style={styles.modalClose}>
-              <MaterialCommunityIcons name="close" size={24} color="#374151" />
-            </Pressable>
-          </View>
-          <ScrollView style={styles.modalScroll} keyboardShouldPersistTaps="handled">
+        <MotiView
+          from={{ translateY: 100, opacity: 0.5 }}
+          animate={{ translateY: 0, opacity: 1 }}
+          transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+        >
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Personal Info</Text>
+              <Pressable onPress={onClose} style={styles.modalClose}>
+                <MaterialCommunityIcons name="close" size={24} color="#374151" />
+              </Pressable>
+            </View>
+            <ScrollView style={styles.modalScroll} keyboardShouldPersistTaps="handled">
             <InputRow label="Full name" value={draft.userName} onChange={(v) => setDraft((p) => ({ ...p, userName: v }))} placeholder="Full name" />
             <Pressable onPress={() => setDobOpen(true)}>
               <View pointerEvents="none">
@@ -1219,7 +1237,8 @@ function PersonalInfoModal({
               <Text style={styles.modalSaveText}>Save</Text>
             </Pressable>
           </View>
-        </Pressable>
+          </Pressable>
+        </MotiView>
       </Pressable>
       <Modal visible={genderOpen} animationType="fade" transparent>
         <Pressable style={styles.modalOverlay} onPress={() => setGenderOpen(false)}>
@@ -1367,15 +1386,16 @@ function PersonalInfoModal({
                 }}
                 maxDate={new Date().toISOString().split('T')[0]}
                 theme={{
-                  todayTextColor: '#309898',
-                  selectedDayBackgroundColor: '#309898',
-                  arrowColor: '#309898',
+                  todayTextColor: '#0f766e',
+                  selectedDayBackgroundColor: '#0f766e',
+                  arrowColor: '#0f766e',
                 }}
               />
             </View>
           </Pressable>
         </Pressable>
       </Modal>
+      </BlurView>
     </Modal>
   );
 }
@@ -1457,7 +1477,7 @@ function CurrentMedicalModal({
   const saveAddModal = () => {
     const value = addModalValue.trim();
     if (!value) {
-      Alert.alert('Missing info', 'Please enter a value.');
+      toast.warning('Missing info', 'Please enter a value.');
       return;
     }
     if (addTarget === 'condition') {
@@ -1633,7 +1653,7 @@ function PastMedicalModal({
   const saveAddModal = () => {
     const value = addModalValue.trim();
     if (!value) {
-      Alert.alert('Missing info', 'Please enter a value.');
+      toast.warning('Missing info', 'Please enter a value.');
       return;
     }
     if (addTarget === 'previous') {
@@ -1658,7 +1678,7 @@ function PastMedicalModal({
   const saveSurgeryModal = () => {
     const name = surgeryName.trim();
     if (!name) {
-      Alert.alert('Missing info', 'Please enter a surgery name.');
+      toast.warning('Missing info', 'Please enter a surgery name.');
       return;
     }
     setPastSurgeries((prev) => [
@@ -1878,7 +1898,7 @@ function FamilyHistoryModal({
     const disease = newDisease.trim();
     const relation = newRelation.trim();
     if (!disease || !relation) {
-      Alert.alert('Missing info', 'Please enter disease and relation.');
+      toast.warning('Missing info', 'Please enter disease and relation.');
       return;
     }
     setFamilyMedicalHistory((prev) => [...prev, { disease, relation }]);
@@ -2021,11 +2041,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    shadowColor: '#1f2937',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowColor: '#1b2b2f',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
   },
   cardPressed: {
     opacity: 0.98,
@@ -2135,7 +2155,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   exportTopButtonPressed: { opacity: 0.85 },
-  exportTopText: { fontSize: 11, color: '#111827', fontWeight: '600' },
+  exportTopText: { fontSize: 12, color: '#111827', fontWeight: '600' },
   kpiRow: {
     flexDirection: 'row',
     gap: 10,
@@ -2146,6 +2166,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 16,
     borderWidth: 1,
+    alignItems: 'flex-start',
+    gap: 4,
   },
   kpiBlood: { backgroundColor: '#fef2f2', borderColor: '#fecaca' },
   kpiBmi: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
@@ -2307,14 +2329,14 @@ const styles = StyleSheet.create({
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'transparent',
     justifyContent: 'flex-end',
   },
   modalCard: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '90%',
+    maxHeight: '92%',
     paddingBottom: 32,
   },
   modalHeader: {
@@ -2335,7 +2357,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   modalScroll: {
-    maxHeight: 400,
+    flexShrink: 1,
     paddingHorizontal: 20,
     paddingTop: 16,
   },
@@ -2357,25 +2379,25 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 12,
-    backgroundColor: '#309898',
+    backgroundColor: '#0f766e',
   },
   modalSaveText: { color: '#fff', fontWeight: '700' },
   inputRow: { marginBottom: 14 },
   inputLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#309898',
+    color: '#0f766e',
     marginBottom: 6,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#a7f3f0',
-    borderRadius: 12,
+    borderColor: '#d8e3e6',
+    borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
     fontSize: 15,
     color: '#111827',
-    backgroundColor: '#fff',
+    backgroundColor: '#f7fbfb',
   },
   inputMultiline: {
     minHeight: 72,
@@ -2395,11 +2417,11 @@ const styles = StyleSheet.create({
   selectMenuScroll: { maxHeight: 220 },
   selectInput: {
     borderWidth: 1,
-    borderColor: '#a7f3f0',
-    borderRadius: 12,
+    borderColor: '#d8e3e6',
+    borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: '#fff',
+    paddingVertical: 12,
+    backgroundColor: '#f7fbfb',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -2454,7 +2476,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: '#309898',
+    backgroundColor: '#0f766e',
   },
   manageButtonPressed: { opacity: 0.85 },
   manageButtonText: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
@@ -2493,7 +2515,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
     alignSelf: 'flex-start',
   },
-  chipSelected: { backgroundColor: '#309898' },
+  chipSelected: { backgroundColor: '#0f766e' },
   chipText: { fontSize: 13, color: '#374151' },
   chipTextSelected: { fontSize: 13, color: '#fff', fontWeight: '600' },
   familyEditRow: {

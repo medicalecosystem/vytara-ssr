@@ -71,6 +71,7 @@ export default function Navbar() {
   const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const isOnboarding = pathname === '/app/health-onboarding';
+  const isSettingsPage = pathname === '/app/settings';
   const effectiveCollapsed = isOnboarding ? false : collapsed;
   const { profiles, selectedProfile, selectProfile, refreshProfiles, userId, isLoading } = useAppProfile();
 
@@ -124,9 +125,26 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     setMobileMenuOpen(false);
+    clearSensitiveStorage();
     clearSupabaseAuthCookies();
     await supabase.auth.signOut({ scope: "local" });
     router.push('/auth/login');
+  };
+
+  const clearSensitiveStorage = () => {
+    if (typeof window === "undefined") return;
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i);
+        if (key?.startsWith("vytara:")) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+    } catch {
+      // Storage may be unavailable
+    }
   };
 
   const clearSupabaseAuthCookies = () => {
@@ -475,6 +493,20 @@ export default function Navbar() {
               </button>
               <button
                 onClick={() => {
+                  setMobileMenuOpen(false);
+                  router.push('/app/settings');
+                }}
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+                  isSettingsPage
+                    ? 'bg-teal-500/25 text-white'
+                    : 'text-teal-100/90 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <Settings2 className="h-4 w-4" />
+                Settings
+              </button>
+              <button
+                onClick={() => {
                   void handleLogout();
                 }}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-200/90 transition hover:bg-white/10 hover:text-red-100"
@@ -564,6 +596,19 @@ export default function Navbar() {
             >
               <UserRoundCog className="w-4 h-4" />
               {!effectiveCollapsed && 'Switch Profile'}
+            </button>
+
+            <button
+              onClick={() => router.push('/app/settings')}
+              title={effectiveCollapsed ? 'Settings' : undefined}
+              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
+                isSettingsPage
+                  ? 'bg-teal-500/20 text-white shadow-sm'
+                  : 'text-teal-100/90 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <Settings2 className="w-4 h-4" />
+              {!effectiveCollapsed && 'Settings'}
             </button>
 
             <button

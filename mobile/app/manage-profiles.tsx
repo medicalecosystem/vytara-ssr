@@ -21,6 +21,7 @@ import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { ProfileAvatarSelector } from '@/components/ProfileAvatarSelector';
 import { useProfile } from '@/hooks/useProfile';
 import type { Profile } from '@/repositories/userProfilesRepository';
+import { toast } from '@/lib/toast';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -49,7 +50,7 @@ export default function ManageProfilesScreen() {
 
     const handleSaveEdit = async () => {
         if (!editingProfile || !editName.trim()) {
-            Alert.alert('Name Required', 'Please enter a child name.');
+            toast.warning('Name Required', 'Please enter a child name.');
             return;
         }
 
@@ -61,22 +62,22 @@ export default function ManageProfilesScreen() {
             });
 
             setEditingProfile(null);
-            Alert.alert('Success', 'Child profile updated successfully.');
+            toast.success('Success', 'Child profile updated successfully.');
         } catch (error) {
             console.error('Error updating profile:', error);
-            Alert.alert('Error', 'Failed to update child profile. Please try again.');
+            toast.error('Error', 'Failed to update child profile. Please try again.');
         }
     };
 
     const handleDeleteProfile = (profile: Profile) => {
         if (profile.is_primary) {
-            Alert.alert('Cannot Delete', 'You cannot delete the parent profile.');
+            toast.warning('Cannot Delete', 'You cannot delete the parent profile.');
             return;
         }
 
         Alert.alert(
             'Delete Child Profile',
-            `Are you sure you want to delete "${profile.name}"? All medical data associated with this child profile will be permanently deleted.`,
+            `Are you sure you want to delete "${profile.display_name?.trim() || profile.name}"? All medical data associated with this child profile will be permanently deleted.`,
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -85,10 +86,10 @@ export default function ManageProfilesScreen() {
                     onPress: async () => {
                         try {
                             await deleteProfile(profile.id);
-                            Alert.alert('Deleted', 'Child profile deleted successfully.');
+                            toast.success('Deleted', 'Child profile deleted successfully.');
                         } catch (error) {
                             console.error('Error deleting profile:', error);
-                            Alert.alert('Error', 'Failed to delete child profile. Please try again.');
+                            toast.error('Error', 'Failed to delete child profile. Please try again.');
                         }
                     },
                 },
@@ -123,7 +124,7 @@ export default function ManageProfilesScreen() {
                             <View style={styles.profileDetails}>
                                 <View style={styles.nameRow}>
                                     <Text style={[styles.profileName, isDark && styles.profileNameDark]}>
-                                        {profile.name}
+                                        {profile.display_name?.trim() || profile.name}
                                     </Text>
                                     {profile.is_primary && (
                                         <View style={styles.primaryBadge}>

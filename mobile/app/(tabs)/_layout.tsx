@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -48,18 +49,25 @@ export default function TabLayout() {
   const theme = colorScheme ?? 'light';
   const backgroundColor = Colors[theme].background;
   const tabBarBackground = '#1f2f33';
+  const appHeaderHeight = insets.top + 54;
 
   return (
     <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#eef7f7',
+        tabBarActiveTintColor: '#14b8a6',
         tabBarInactiveTintColor: '#8fa1a6',
         headerShown: true,
-        headerTransparent: true,
+        headerTransparent: false,
+        headerStatusBarHeight: 0,
         headerShadowVisible: false,
         headerStyle: {
-          backgroundColor: 'transparent',
+          backgroundColor: '#2f565f',
+          height: appHeaderHeight,
+          borderBottomWidth: 0,
+          elevation: 0,
+          shadowOpacity: 0,
+          shadowColor: 'transparent',
         },
         header: () => (
           <AppHeader
@@ -68,6 +76,7 @@ export default function TabLayout() {
             signOut={signOut}
             notifications={notifications}
             router={router}
+            headerHeight={appHeaderHeight}
           />
         ),
         sceneStyle: {
@@ -76,9 +85,10 @@ export default function TabLayout() {
         tabBarStyle: {
           height: tabBarHeight,
           paddingBottom: Math.max(insets.bottom, 8),
-          paddingTop: 6,
-          backgroundColor: tabBarBackground,
-          borderTopColor: '#1a2629',
+          paddingTop: 8,
+          backgroundColor: '#1a2e32',
+          borderTopWidth: 1,
+          borderTopColor: 'rgba(255, 255, 255, 0.06)',
         },
       }}>
       <Tabs.Screen
@@ -135,14 +145,18 @@ function AppHeader({
   signOut,
   notifications,
   router,
+  headerHeight,
 }: {
   user: User | null;
   selectedProfile: { id: string; name: string; display_name?: string | null } | null;
   signOut: () => Promise<void>;
   notifications: NotificationsState;
   router: ReturnType<typeof useRouter>;
+  headerHeight: number;
 }) {
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
+  const menuWidth = Math.min(Math.round(screenWidth * 0.58), 240);
   const [displayName, setDisplayName] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
   const [notificationVisible, setNotificationVisible] = useState(false);
@@ -280,11 +294,11 @@ function AppHeader({
 
   return (
     <>
-      <View style={styles.headerFrame}>
+      <View style={[styles.headerFrame, { height: headerHeight }]}>
         <LinearGradient
-          colors={['#2f565f', '#6aa6a8']}
-          start={{ x: 0.15, y: 0 }}
-          end={{ x: 0.85, y: 1 }}
+          colors={['#2f565f', '#4d8289']}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
           style={[styles.header, { paddingTop: insets.top + 4 }]}
         >
           <View style={styles.headerRow}>
@@ -307,7 +321,7 @@ function AppHeader({
 
       <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
         <Pressable style={styles.menuOverlay} onPress={() => setMenuVisible(false)}>
-          <Pressable style={[styles.menuCard, { top: insets.top + 58 }]} onPress={() => { }}>
+          <Pressable style={[styles.menuCard, { top: insets.top + 58, width: menuWidth }]} onPress={() => { }}>
             <View style={styles.menuHeader}>
               <View style={styles.menuAvatar}>
                 <Text style={styles.menuAvatarText}>{initials}</Text>
@@ -329,6 +343,16 @@ function AppHeader({
             >
               <MaterialCommunityIcons name="account-switch" size={18} color="#309898" />
               <Text style={styles.menuItemText}>Switch Profile</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+              onPress={() => {
+                setMenuVisible(false);
+                router.push('/settings');
+              }}
+            >
+              <MaterialCommunityIcons name="cog-outline" size={18} color="#309898" />
+              <Text style={styles.menuItemText}>Settings</Text>
             </Pressable>
             <Pressable
               style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
@@ -378,11 +402,11 @@ function AppHeader({
 const styles = StyleSheet.create({
   headerFrame: {
     width: '100%',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
     overflow: 'hidden',
+    marginBottom: -2,
   },
   header: {
+    flex: 1,
     paddingHorizontal: 28,
     paddingBottom: 0,
   },

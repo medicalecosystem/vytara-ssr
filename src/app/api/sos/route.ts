@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import twilio from 'twilio';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { createRateLimiter, getClientIP } from '@/lib/rateLimit';
+
+const sosLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, maxRequests: 5 });
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID_SOS;
 const authToken = process.env.TWILIO_AUTH_TOKEN_SOS;
@@ -40,6 +43,10 @@ const getFailedResultDetail = (result: PromiseSettledResult<SendSmsResult>) => {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = getClientIP(request);
+    const block = sosLimiter.check(ip);
+    if (block) return block;
+
     if (!(await getAuthenticatedUser(request))) {
       return NextResponse.json(
         { error: 'Unauthorized', message: 'Unauthorized' },
@@ -48,12 +55,20 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { emergencyContacts, userName } = body;
+    const rawUserName = typeof body.userName === 'string' ? body.userName.trim().slice(0, 100) : '';
+    const { emergencyContacts } = body;
+    const userName = rawUserName;
 
-    // Validate required fields
     if (!emergencyContacts || !Array.isArray(emergencyContacts) || emergencyContacts.length === 0) {
       return NextResponse.json(
         { error: 'No emergency contacts found' },
+        { status: 400 }
+      );
+    }
+
+    if (emergencyContacts.length > 10) {
+      return NextResponse.json(
+        { error: 'Too many emergency contacts.' },
         { status: 400 }
       );
     }

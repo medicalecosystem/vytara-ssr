@@ -13,6 +13,10 @@ import {
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { MotiView } from 'moti';
+import { toast } from '@/lib/toast';
+import { EmptyStatePreset } from '@/components/EmptyState';
 
 export type Doctor = {
   id: string;
@@ -73,7 +77,7 @@ export function MedicalTeamModal({
 
   const handleSave = async () => {
     if (!name.trim() || !number.trim() || !speciality.trim()) {
-      Alert.alert('Missing info', 'Please fill all fields.');
+      toast.warning('Missing info', 'Please fill all fields.');
       return;
     }
 
@@ -110,13 +114,19 @@ export function MedicalTeamModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <Pressable style={styles.scrim} onPress={onClose} />
-        <KeyboardAvoidingView
-          style={styles.keyboardWrapper}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
+      <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.scrim} onPress={onClose} />
+          <KeyboardAvoidingView
+            style={styles.keyboardWrapper}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <MotiView
+              from={{ translateY: 100, opacity: 0.5 }}
+              animate={{ translateY: 0, opacity: 1 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+            >
+              <View style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Medical Team</Text>
               <Pressable onPress={onClose} style={styles.closeButton}>
@@ -200,11 +210,7 @@ export function MedicalTeamModal({
             ) : null}
 
               {!doctors.length ? (
-                <View style={styles.emptyState}>
-                  <MaterialCommunityIcons name="account-heart-outline" size={32} color="#c7d3d6" />
-                  <Text style={styles.emptyTitle}>No doctors added</Text>
-                  <Text style={styles.emptySubtitle}>Add your medical team for quick access.</Text>
-                </View>
+                <EmptyStatePreset preset="doctors" />
               ) : (
                 doctors.map((doctor) => (
                   <View key={doctor.id} style={styles.doctorCard}>
@@ -227,8 +233,10 @@ export function MedicalTeamModal({
               )}
             </ScrollView>
           </View>
+            </MotiView>
         </KeyboardAvoidingView>
       </View>
+      </BlurView>
     </Modal>
   );
 }
@@ -240,7 +248,7 @@ const styles = StyleSheet.create({
   },
   scrim: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 24, 0.35)',
+    backgroundColor: 'transparent',
   },
   keyboardWrapper: {
     width: '100%',
@@ -321,8 +329,8 @@ const styles = StyleSheet.create({
     borderColor: '#d8e3e6',
     backgroundColor: '#f7fbfb',
     borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 14,
     color: '#1f2f33',
   },

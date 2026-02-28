@@ -68,7 +68,8 @@ export default function SignupScreen() {
   const [rememberDevice, setRememberDevice] = useState(false);
   const otpRefs = useRef<Array<TextInput | null>>([]);
   const isCompactScreen = screenWidth < 380;
-  const logoSize = screenWidth < 360 ? 210 : screenWidth < 420 ? 250 : 280;
+  const logoSize = Math.min(Math.round(screenWidth * 0.65), 280);
+  const glowSize = Math.round(logoSize * 0.93);
   const countryPickerHeight = Math.min(screenHeight * 0.75, 520);
   const countryListMaxHeight = Math.min(screenHeight * 0.55, 420);
 
@@ -289,8 +290,8 @@ export default function SignupScreen() {
           end={{ x: 0.8, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <View style={[styles.glow, styles.glowOne]} />
-        <View style={[styles.glow, styles.glowTwo]} />
+        <View style={[styles.glow, styles.glowOne, { width: glowSize, height: glowSize, borderRadius: glowSize / 2 }]} />
+        <View style={[styles.glow, styles.glowTwo, { width: glowSize, height: glowSize, borderRadius: glowSize / 2 }]} />
       </View>
       <View style={[styles.card, isCompactScreen && styles.cardCompact]}>
         <LinearGradient
@@ -542,12 +543,12 @@ const styles = StyleSheet.create({
   },
   countryCode: {
     minWidth: 70,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#e5e7eb',
     backgroundColor: '#f3f4f6',
     paddingHorizontal: 12,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -613,13 +614,13 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
   input: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#e5e7eb',
     backgroundColor: '#f9fafb',
     color: '#0f172a',
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
   },
   phoneInput: {
     flex: 1,
@@ -632,11 +633,11 @@ const styles = StyleSheet.create({
   otpInput: {
     flex: 1,
     minHeight: 52,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#e5e7eb',
     backgroundColor: '#f9fafb',
     color: '#0f172a',
-    borderRadius: 12,
+    borderRadius: 14,
     fontSize: 20,
     fontWeight: '700',
   },

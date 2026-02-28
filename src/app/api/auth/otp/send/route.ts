@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
+import { createRateLimiter, getClientIP } from '@/lib/rateLimit';
 
 export const runtime = "nodejs";
 
@@ -7,6 +8,9 @@ type OtpSendPayload = {
   phone?: string;
   mode?: "login" | "signup";
 };
+
+const ipLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, maxRequests: 10 });
+const phoneLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, maxRequests: 5 });
 
 const AUTH_LOOKUP_MAX_PAGES = Number.parseInt(
   process.env.SUPABASE_AUTH_LOOKUP_MAX_PAGES ?? "8",
@@ -186,6 +190,10 @@ const findUserIdByProfilePhone = async (
 };
 
 export async function POST(request: Request) {
+  const ip = getClientIP(request as any);
+  const ipBlock = ipLimiter.check(ip);
+  if (ipBlock) return ipBlock;
+
   let payload: OtpSendPayload | null = null;
   try {
     payload = (await request.json()) as OtpSendPayload;
@@ -200,6 +208,9 @@ export async function POST(request: Request) {
   if (!phone || !/^\+\d{10,15}$/.test(phone)) {
     return NextResponse.json({ message: "Invalid phone number." }, { status: 400 });
   }
+
+  const phoneBlock = phoneLimiter.check(phone);
+  if (phoneBlock) return phoneBlock;
 
   if (mode !== "login" && mode !== "signup") {
     return NextResponse.json({ message: "Invalid mode." }, { status: 400 });
@@ -234,14 +245,14 @@ export async function POST(request: Request) {
 
   if (mode === "login" && !existingUserId) {
     return NextResponse.json(
-      { message: "User not found. Please create an account first." },
+      { message: "No account found with this number." },
       { status: 404 }
     );
   }
 
   if (mode === "signup" && existingUserId) {
     return NextResponse.json(
-      { message: "Account already exists. Please sign in." },
+      { message: "This number is already registered." },
       { status: 409 }
     );
   }

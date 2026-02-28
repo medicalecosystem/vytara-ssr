@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -11,13 +12,16 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MotiView } from 'moti';
 
 import { useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
 import { Screen } from '@/components/Screen';
+import { toast } from '@/lib/toast';
 import { AppointmentsModal, type Appointment } from '@/components/AppointmentsModal';
 import {
   EmergencyContactsModal,
@@ -53,13 +57,11 @@ const quickActions = [
   },
 ] as const;
 
-const HEADER_HEIGHT = -15;
 const createMedicationId = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 export default function HomeScreen() {
-  const { width } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
+  const { width, height: windowHeight } = useWindowDimensions();
   const { user } = useAuth();
   const { selectedProfile } = useProfile();
   const profileId = selectedProfile?.id ?? '';
@@ -272,7 +274,7 @@ export default function HomeScreen() {
 
     if (error) {
       console.error('Save appointment error:', error);
-      Alert.alert('Unable to save', 'Failed to save appointment. Please try again.');
+      toast.error('Unable to save', 'Failed to save appointment. Please try again.');
       return;
     }
 
@@ -293,7 +295,7 @@ export default function HomeScreen() {
 
     if (error) {
       console.error('Delete appointment error:', error);
-      Alert.alert('Unable to delete', 'Failed to delete appointment. Please try again.');
+      toast.error('Unable to delete', 'Failed to delete appointment. Please try again.');
       return;
     }
 
@@ -304,7 +306,7 @@ export default function HomeScreen() {
     if (!user?.id || !profileId) return;
 
     if (!contact.name.trim() || !contact.phone.trim() || !contact.relation.trim()) {
-      Alert.alert('Missing info', 'Please enter a valid name, phone, and relation.');
+      toast.warning('Missing info', 'Please enter a valid name, phone, and relation.');
       return;
     }
 
@@ -319,7 +321,7 @@ export default function HomeScreen() {
 
     if (error) {
       console.error('Add emergency contact error:', error);
-      Alert.alert('Unable to save', 'Failed to add contact. Please try again.');
+      toast.error('Unable to save', 'Failed to add contact. Please try again.');
       return;
     }
 
@@ -340,7 +342,7 @@ export default function HomeScreen() {
 
     if (error) {
       console.error('Delete emergency contact error:', error);
-      Alert.alert('Unable to delete', 'Failed to delete contact. Please try again.');
+      toast.error('Unable to delete', 'Failed to delete contact. Please try again.');
       return;
     }
 
@@ -351,7 +353,7 @@ export default function HomeScreen() {
     if (!user?.id || !profileId) return;
 
     if (!doctor.name.trim() || !doctor.number.trim() || !doctor.speciality.trim()) {
-      Alert.alert('Missing info', 'Please fill all fields.');
+      toast.warning('Missing info', 'Please fill all fields.');
       return;
     }
 
@@ -366,7 +368,7 @@ export default function HomeScreen() {
 
     if (error) {
       console.error('Add doctor error:', error);
-      Alert.alert('Unable to save', 'Failed to add doctor. Please try again.');
+      toast.error('Unable to save', 'Failed to add doctor. Please try again.');
       return;
     }
 
@@ -387,7 +389,7 @@ export default function HomeScreen() {
 
     if (error) {
       console.error('Update doctor error:', error);
-      Alert.alert('Unable to save', 'Failed to update doctor. Please try again.');
+      toast.error('Unable to save', 'Failed to update doctor. Please try again.');
       return;
     }
 
@@ -408,7 +410,7 @@ export default function HomeScreen() {
 
     if (error) {
       console.error('Delete doctor error:', error);
-      Alert.alert('Unable to delete', 'Failed to delete doctor. Please try again.');
+      toast.error('Unable to delete', 'Failed to delete doctor. Please try again.');
       return;
     }
 
@@ -419,7 +421,7 @@ export default function HomeScreen() {
     if (!user?.id || !profileId) return;
 
     if (!medication.name.trim() || !medication.dosage.trim() || !medication.frequency.trim()) {
-      Alert.alert('Missing info', 'Please fill Name, Dosage, and Frequency.');
+      toast.warning('Missing info', 'Please fill Name, Dosage, and Frequency.');
       return;
     }
 
@@ -455,7 +457,7 @@ export default function HomeScreen() {
       setMedications(updatedMedications);
     } catch (error: any) {
       console.error('Add medication error:', error);
-      Alert.alert('Failed to add medication', error?.message || 'Please try again.');
+      toast.error('Save failed', error?.message || 'Please try again.');
     }
   };
 
@@ -463,7 +465,7 @@ export default function HomeScreen() {
     if (!user?.id || !profileId) return;
 
     if (!medication.name.trim() || !medication.dosage.trim() || !medication.frequency.trim()) {
-      Alert.alert('Missing info', 'Please fill Name, Dosage, and Frequency.');
+      toast.warning('Missing info', 'Please fill Name, Dosage, and Frequency.');
       return;
     }
 
@@ -487,7 +489,7 @@ export default function HomeScreen() {
       setMedications(updatedMedications);
     } catch (error: any) {
       console.error('Update medication error:', error);
-      Alert.alert('Failed to update medication', error?.message || 'Please try again.');
+      toast.error('Update failed', error?.message || 'Please try again.');
     }
   };
 
@@ -514,7 +516,7 @@ export default function HomeScreen() {
       setMedications(updatedMedications);
     } catch (error: any) {
       console.error('Delete medication error:', error);
-      Alert.alert('Failed to delete medication', error?.message || 'Please try again.');
+      toast.error('Delete failed', error?.message || 'Please try again.');
     }
   };
 
@@ -555,7 +557,7 @@ export default function HomeScreen() {
       setMedications(updatedMedications);
     } catch (error: any) {
       console.error('Failed to log dose:', error);
-      Alert.alert('Failed to log dose', error?.message || 'Please try again.');
+      toast.error('Log failed', error?.message || 'Please try again.');
     }
   };
 
@@ -563,10 +565,7 @@ export default function HomeScreen() {
     if (isSendingSOS) return;
 
     if (!emergencyContacts.length) {
-      Alert.alert(
-        'No Emergency Contacts',
-        "Please set up emergency contacts first before using SOS.\n\nTap 'Emergency Contacts' on the home screen to add them."
-      );
+      toast.warning('No profile', "Please set up emergency contacts first before using SOS.\n\nTap 'Emergency Contacts' on the home screen to add them.");
       return;
     }
 
@@ -592,17 +591,14 @@ export default function HomeScreen() {
                   },
                 });
 
-                Alert.alert(
-                  'SOS Alert Sent',
-                  `SOS alert sent successfully.\n\n${data?.message ?? ''}\n\nYour emergency contacts have been notified.`
-                );
+                toast.success('SOS Alert Sent', `SOS alert sent successfully.\n\n${data?.message ?? ''}\n\nYour emergency contacts have been notified.`);
               } catch (err: any) {
                 console.error('SOS error:', err);
                 if (
                   err?.message?.includes('EXPO_PUBLIC_API_URL') ||
                   err?.message?.includes('Missing')
                 ) {
-                  Alert.alert(
+                  toast.error(
                     'Configuration Error',
                     'Missing API URL. Please set EXPO_PUBLIC_API_URL in mobile/.env and restart the app.'
                   );
@@ -611,7 +607,7 @@ export default function HomeScreen() {
                     err?.message === 'Please enter a valid number'
                       ? 'Please enter a valid number'
                       : err?.message || 'Failed to send SOS alert. Please try again.';
-                  Alert.alert('SOS Failed', errorMessage);
+                  toast.error('SOS Failed', errorMessage);
                 }
               } finally {
                 setIsSendingSOS(false);
@@ -698,7 +694,7 @@ export default function HomeScreen() {
 
   const openSummaryModal = () => {
     if (!profileId) {
-      Alert.alert('No profile selected', 'Please select a profile first.');
+      toast.warning('No profile', 'Please select a profile first.');
       return;
     }
 
@@ -730,7 +726,7 @@ export default function HomeScreen() {
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unable to share summary.';
-      Alert.alert('Share failed', message);
+      toast.error('Share failed', message);
     } finally {
       setIsSharingSummary(false);
     }
@@ -741,9 +737,10 @@ export default function HomeScreen() {
       innerStyle={styles.screenInner}
       contentContainerStyle={styles.screenContent}
       safeAreaStyle={styles.safeArea}
+      safeAreaEdges={['left', 'right', 'bottom']}
       padded={false}
     >
-      <View style={[styles.headerCard, { marginTop: insets.top + HEADER_HEIGHT }]}>
+      <View style={styles.headerCard}>
         <LinearGradient
           colors={['#2f565f', '#6aa6a8']}
           start={{ x: 0.15, y: 0 }}
@@ -783,34 +780,35 @@ export default function HomeScreen() {
       </View>
 
       <View style={[styles.cardsGrid, { paddingHorizontal: horizontalPadding }]}>
-        {quickActions.map((action) => (
-          <Pressable
-            key={action.key}
-            onPress={() => {
-              if (action.key === 'appointments') {
-                setIsAppointmentsOpen(true);
-              }
-              if (action.key === 'emergency') {
-                setIsEmergencyContactsOpen(true);
-              }
-              if (action.key === 'medical') {
-                setIsMedicalTeamOpen(true);
-              }
-              if (action.key === 'medications') {
-                setIsMedicationsOpen(true);
-              }
-            }}
-            style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-          >
-            <View style={styles.cardHeader}>
-              <View style={styles.cardIcon}>
-                <MaterialCommunityIcons name={action.icon} size={20} color="#466a70" />
+        {quickActions.map((action, index) => (
+          <Animated.View key={action.key} style={{ width: '47%' }} entering={FadeInDown.delay(index * 80).springify()}>
+            <Pressable
+              onPress={() => {
+                if (action.key === 'appointments') {
+                  setIsAppointmentsOpen(true);
+                }
+                if (action.key === 'emergency') {
+                  setIsEmergencyContactsOpen(true);
+                }
+                if (action.key === 'medical') {
+                  setIsMedicalTeamOpen(true);
+                }
+                if (action.key === 'medications') {
+                  setIsMedicationsOpen(true);
+                }
+              }}
+              style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+            >
+              <View style={styles.cardHeader}>
+                <View style={styles.cardIcon}>
+                  <MaterialCommunityIcons name={action.icon} size={20} color="#466a70" />
+                </View>
               </View>
-            </View>
-            <Text style={styles.cardTitle}>{action.title}</Text>
-            <View style={styles.cardDivider} />
-            <Text style={styles.cardLink}>View details</Text>
-          </Pressable>
+              <Text style={styles.cardTitle}>{action.title}</Text>
+              <View style={styles.cardDivider} />
+              <Text style={styles.cardLink}>View details</Text>
+            </Pressable>
+          </Animated.View>
         ))}
       </View>
 
@@ -855,14 +853,20 @@ export default function HomeScreen() {
         transparent
         onRequestClose={closeSummaryModal}
       >
-        <View style={styles.summaryBackdrop}>
-          <View style={styles.summaryModalCard}>
-            <View style={styles.summaryHeader}>
-              <Text style={styles.summaryTitle}>Medical Report Summary</Text>
-              <Pressable onPress={closeSummaryModal} style={({ pressed }) => [pressed && styles.buttonPressed]}>
-                <MaterialCommunityIcons name="close" size={22} color="#304c51" />
-              </Pressable>
-            </View>
+        <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill}>
+        <Pressable style={styles.summaryBackdrop} onPress={closeSummaryModal}>
+          <MotiView
+            from={{ translateY: 100, opacity: 0.5 }}
+            animate={{ translateY: 0, opacity: 1 }}
+            transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+          >
+            <View style={[styles.summaryModalCard, { maxHeight: Math.min(windowHeight - 48, 680) }]}>
+              <View style={styles.summaryHeader}>
+                <Text style={styles.summaryTitle}>Medical Report Summary</Text>
+                <Pressable onPress={closeSummaryModal} style={({ pressed }) => [pressed && styles.buttonPressed]}>
+                  <MaterialCommunityIcons name="close" size={22} color="#304c51" />
+                </Pressable>
+              </View>
 
             {summaryReportCount > 0 && (
               <Text style={styles.summaryMeta}>
@@ -938,8 +942,10 @@ export default function HomeScreen() {
                 </Pressable>
               </View>
             )}
-          </View>
-        </View>
+            </View>
+          </MotiView>
+        </Pressable>
+        </BlurView>
       </Modal>
     </Screen>
   );
@@ -964,17 +970,19 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
     overflow: 'hidden',
-    marginTop: 0,
+    marginTop: -2,
+    borderTopWidth: 2,
+    borderTopColor: '#2f565f',
     shadowColor: '#22484e',
     shadowOpacity: 0.25,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 12 },
-    elevation: 10,
+    elevation: Platform.OS === 'android' ? 0 : 10,
   },
   headerGradient: {
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 20,
+    paddingTop: 16,
+    paddingBottom: 24,
     gap: 12,
   },
   greeting: {
@@ -1024,14 +1032,14 @@ const styles = StyleSheet.create({
   },
   buttonPressed: {
     opacity: 0.9,
-    transform: [{ scale: 0.98 }],
+    transform: [{ scale: 0.97 }],
   },
   buttonDisabled: {
     opacity: 0.7,
   },
   summaryBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     paddingHorizontal: 16,
     paddingVertical: 24,
@@ -1041,7 +1049,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f7fbfb',
     borderWidth: 1,
     borderColor: '#d4e0e3',
-    maxHeight: '85%',
     overflow: 'hidden',
   },
   summaryHeader: {
@@ -1099,7 +1106,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   summaryScrollView: {
-    maxHeight: 500,
+    flexShrink: 1,
   },
   summaryScrollContent: {
     paddingHorizontal: 18,
@@ -1133,29 +1140,28 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   cardsGrid: {
-    marginTop: 45,
+    marginTop: 28,
     flexDirection: 'row',
     flexWrap: 'wrap',
     columnGap: 16,
     rowGap: 16,
   },
   card: {
-    width: '47%',
     minHeight: 160,
-    borderRadius: 22,
+    borderRadius: 20,
     padding: 16,
     backgroundColor: '#fdfefe',
     borderWidth: 1,
     borderColor: '#dbe3e6',
-    shadowColor: '#98a7aa',
-    shadowOpacity: 0.18,
+    shadowColor: '#1b2b2f',
+    shadowOpacity: 0.1,
     shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 4 },
     elevation: 4,
     justifyContent: 'space-between',
   },
   cardPressed: {
-    transform: [{ translateY: 1 }],
+    transform: [{ scale: 0.98 }],
   },
   cardHeader: {
     flexDirection: 'row',

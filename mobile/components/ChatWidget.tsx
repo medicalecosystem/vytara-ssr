@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
-  FlatList,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FlashList } from '@shopify/flash-list';
 
 import { apiRequest } from '@/api/client';
 import { TypingIndicator } from './TypingIndicator';
@@ -54,7 +54,7 @@ export function ChatWidget() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme() ?? 'light';
   const isDark = colorScheme === 'dark';
-  const listRef = useRef<FlatList<Message>>(null);
+  const listRef = useRef<FlashList<Message>>(null);
 
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -301,7 +301,7 @@ export function ChatWidget() {
             </View>
 
             {/* Messages — flex:1 fills the space between header and input */}
-            <FlatList<Message>
+            <FlashList<Message>
               ref={listRef}
               data={messages}
               keyExtractor={item => item.id}
@@ -311,7 +311,7 @@ export function ChatWidget() {
               ListFooterComponent={loading ? <TypingBubble isDark={isDark} /> : null}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
-              style={styles.messagesWrap}
+              estimatedItemSize={80}
             />
 
             {/* Input bar — sits below the FlatList, above keyboard */}

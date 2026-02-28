@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { isValidFileName } from '@/lib/validation';
 
 const CARE_CIRCLE_FOLDERS = ['reports', 'prescriptions', 'insurance', 'bills'] as const;
 type CareCircleFolder = (typeof CARE_CIRCLE_FOLDERS)[number];
@@ -25,14 +26,6 @@ const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRo
 };
 
 const canReadMedicalData = (role: CareCircleRole) => role === 'family';
-const isValidStorageFileName = (value: string | null | undefined) => {
-  if (!value) return false;
-  const trimmed = value.trim();
-  if (!trimmed) return false;
-  if (trimmed.includes('/') || trimmed.includes('\\')) return false;
-  if (trimmed === '.' || trimmed === '..') return false;
-  return true;
-};
 
 export async function GET(request: Request) {
   try {
@@ -50,11 +43,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: 'Missing required parameters.' }, { status: 400 });
     }
 
+    if (!isValidFileName(name)) {
+      return NextResponse.json({ error: 'Invalid file name.' }, { status: 400 });
+    }
+
     if (!CARE_CIRCLE_FOLDERS.includes(folder)) {
       return NextResponse.json({ message: 'Invalid folder.' }, { status: 400 });
-    }
-    if (!isValidStorageFileName(name)) {
-      return NextResponse.json({ message: 'Invalid file name.' }, { status: 400 });
     }
 
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {

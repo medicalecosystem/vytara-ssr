@@ -37,8 +37,11 @@ import Animated, {
 
 import { Text } from '@/components/Themed';
 import { Screen } from '@/components/Screen';
+import { SkeletonListItem } from '@/components/Skeleton';
+import { EmptyStatePreset, EmptyState } from '@/components/EmptyState';
 import { useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
+import { toast } from '@/lib/toast';
 import {
   careCircleApi,
   type CareCircleRole,
@@ -449,38 +452,11 @@ const AnimatedButton = ({
 };
 
 // Skeleton Loader Component
-const SkeletonMemberCard = ({ index }: { index: number }) => {
-  const opacity = useSharedValue(0.3);
-
-  useEffect(() => {
-    opacity.value = withTiming(0.6, { duration: 1000 }, () => {
-      opacity.value = withTiming(0.3, { duration: 1000 });
-    });
-    const interval = setInterval(() => {
-      opacity.value = withTiming(0.6, { duration: 1000 }, () => {
-        opacity.value = withTiming(0.3, { duration: 1000 });
-      });
-    }, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Animated.View entering={FadeInDown.delay(index * 50).springify()} style={styles.memberCard}>
-      <Animated.View style={animatedStyle}>
-        <View style={[styles.memberAvatar, { backgroundColor: '#e1eaec' }]} />
-        <View style={styles.memberInfo}>
-          <View style={[styles.skeletonLine, { width: '60%', marginBottom: 8 }]} />
-          <View style={[styles.skeletonLine, { width: '40%' }]} />
-        </View>
-        <View style={[styles.removeButton, { backgroundColor: '#e1eaec', borderColor: '#e1eaec' }]} />
-      </Animated.View>
-    </Animated.View>
-  );
-};
+const SkeletonMemberCard = ({ index }: { index: number }) => (
+  <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
+    <SkeletonListItem />
+  </Animated.View>
+);
 
 export default function CareCircleScreen() {
   const { user } = useAuth();
@@ -564,7 +540,6 @@ export default function CareCircleScreen() {
   const [vaultPreviewLoading, setVaultPreviewLoading] = useState(false);
   const [vaultPreviewError, setVaultPreviewError] = useState<string | null>(null);
 
-  const headerHeight = insets.top + 2;
   const modalMaxHeight = Math.max(360, Math.min(height * 0.9, 760));
   const inlineEditorScrollMaxHeight = Math.max(220, Math.min(height * 0.62, 520));
   const countryPickerHeight = Math.min(height * 0.75, 520);
@@ -641,7 +616,7 @@ export default function CareCircleScreen() {
         // Don't show alert for missing API URL - just show empty state
       } else {
         const errorMessage = err?.message || 'Failed to load care circle links.';
-        Alert.alert('Error', errorMessage);
+        toast.error('Error', errorMessage);
       }
     } finally {
       if (showSpinner) setLoading(false);
@@ -751,7 +726,7 @@ export default function CareCircleScreen() {
   const handleViewMemberEmergencyCard = useCallback(
     async (member: CareCircleLink) => {
       if (!member.memberId || !member.memberProfileId) {
-        Alert.alert('Unavailable', 'Unable to open this emergency card right now.');
+        toast.info('Unavailable', 'Unable to open this emergency card right now.');
         return;
       }
       setIsEmergencyOpen(true);
@@ -768,22 +743,22 @@ export default function CareCircleScreen() {
 
   const handleInvite = async () => {
     if (!profileId) {
-      Alert.alert('Profile Required', 'Please select a profile before inviting members.');
+      toast.warning('Profile Required', 'Please select a profile before inviting members.');
       return;
     }
     if (!isSelectedProfilePrimary) {
-      Alert.alert('Primary Profile Required', 'Only the primary profile can send care circle invites.');
+      toast.warning('Primary Profile Required', 'Only the primary profile can send care circle invites.');
       return;
     }
     const digitsOnly = inviteContact.replace(/\D/g, '');
     if (!digitsOnly) {
-      Alert.alert('Invalid Input', 'Please enter a phone number.');
+      toast.warning('Invalid Input', 'Please enter a phone number.');
       return;
     }
     const isIndia = inviteCountry.code === 'IN';
     const minLen = isIndia ? INDIA_PHONE_DIGITS : 10;
     if (digitsOnly.length < minLen || digitsOnly.length > PHONE_MAX_DIGITS) {
-      Alert.alert(
+      toast.warning(
         'Invalid phone',
         isIndia
           ? 'Please enter a valid 10-digit phone number.'
@@ -796,7 +771,7 @@ export default function CareCircleScreen() {
     setInviting(true);
     try {
       await careCircleApi.inviteByContact(fullContact, profileId);
-      Alert.alert('Success', 'Invitation sent successfully!');
+      toast.success('Success', 'Invitation sent successfully!');
       setInviteModalOpen(false);
       setInviteContact('');
       setInviteCountry(DEFAULT_COUNTRY);
@@ -804,7 +779,7 @@ export default function CareCircleScreen() {
     } catch (err: any) {
       console.error('Failed to send invitation:', err);
       const errorMessage = err?.message || 'Unable to send invitation. Please check your API configuration.';
-      Alert.alert('Invite Failed', errorMessage);
+      toast.error('Invite Failed', errorMessage);
     } finally {
       setInviting(false);
     }
@@ -821,7 +796,7 @@ export default function CareCircleScreen() {
           style: 'destructive',
           onPress: async () => {
             if (!user?.id) {
-              Alert.alert('Error', 'Please sign in again to remove members.');
+              toast.error('Error', 'Please sign in again to remove members.');
               return;
             }
             try {
@@ -837,7 +812,7 @@ export default function CareCircleScreen() {
             } catch (err: any) {
               console.error('Failed to remove member:', err);
               const errorMessage = err?.message || 'Unable to remove this member right now.';
-              Alert.alert('Remove Failed', errorMessage);
+              toast.error('Remove Failed', errorMessage);
             }
           },
         },
@@ -847,7 +822,7 @@ export default function CareCircleScreen() {
 
   const handleAccept = async (linkId: string) => {
     if (!user?.id) {
-      Alert.alert('Error', 'Please sign in again to accept requests.');
+      toast.error('Error', 'Please sign in again to accept requests.');
       return;
     }
     setPendingActionId(linkId);
@@ -857,7 +832,7 @@ export default function CareCircleScreen() {
       await fetchLinks(false);
     } catch (err: any) {
       console.error('Failed to accept request:', err);
-      Alert.alert('Accept Failed', err?.message || 'Unable to accept this request right now.');
+      toast.error('Accept Failed', err?.message || 'Unable to accept this request right now.');
     } finally {
       setPendingActionId(null);
       setPendingActionType(null);
@@ -866,7 +841,7 @@ export default function CareCircleScreen() {
 
   const handleDecline = async (linkId: string) => {
     if (!user?.id) {
-      Alert.alert('Error', 'Please sign in again to decline requests.');
+      toast.error('Error', 'Please sign in again to decline requests.');
       return;
     }
     setPendingActionId(linkId);
@@ -876,7 +851,7 @@ export default function CareCircleScreen() {
       await fetchLinks(false);
     } catch (err: any) {
       console.error('Failed to decline request:', err);
-      Alert.alert('Decline Failed', err?.message || 'Unable to decline this request right now.');
+      toast.error('Decline Failed', err?.message || 'Unable to decline this request right now.');
     } finally {
       setPendingActionId(null);
       setPendingActionType(null);
@@ -1055,7 +1030,7 @@ export default function CareCircleScreen() {
     const asset = result.assets?.[0];
     if (!asset) return;
     if (!isAllowedVaultUploadType(asset.name, asset.mimeType)) {
-      Alert.alert('Unsupported file', 'Please upload a PDF or image file.');
+      toast.warning('Unsupported file', 'Please upload a PDF or image file.');
       return;
     }
     setVaultUploadFile({
@@ -1157,7 +1132,7 @@ export default function CareCircleScreen() {
       sanitized.includes('.') || !currentExtension ? sanitized : `${sanitized}.${currentExtension}`;
 
     if (!isValidVaultFileName(nextName)) {
-      Alert.alert('Invalid name', "File name can't include slashes.");
+      toast.warning('Invalid name', "File name can't include slashes.");
       return;
     }
     if (nextName === vaultRenameFile.name) {
@@ -1178,7 +1153,7 @@ export default function CareCircleScreen() {
       closeVaultRenameModal();
       await fetchVaultFiles(selectedMember.id, vaultCategory);
     } catch (error: any) {
-      Alert.alert('Rename failed', error?.message || 'Unable to rename file.');
+      toast.error('Rename failed', error?.message || 'Unable to rename file.');
     } finally {
       setVaultRenamingKey(null);
     }
@@ -1213,7 +1188,7 @@ export default function CareCircleScreen() {
               );
               await fetchVaultFiles(selectedMember.id, vaultCategory);
             } catch (error: any) {
-              Alert.alert('Delete failed', error?.message || 'Unable to delete file.');
+              toast.error('Delete failed', error?.message || 'Unable to delete file.');
             } finally {
               setVaultDeletingKey(null);
             }
@@ -1443,7 +1418,7 @@ export default function CareCircleScreen() {
             try {
               await handleDeleteMemberAppointment(appointment.id);
             } catch (error: any) {
-              Alert.alert('Delete failed', error?.message || 'Unable to delete appointment.');
+              toast.error('Delete failed', error?.message || 'Unable to delete appointment.');
             }
           },
         },
@@ -1680,7 +1655,7 @@ export default function CareCircleScreen() {
             try {
               await handleDeleteMemberMedication(medication.id);
             } catch (error: any) {
-              Alert.alert('Delete failed', error?.message || 'Unable to delete medication.');
+              toast.error('Delete failed', error?.message || 'Unable to delete medication.');
             }
           },
         },
@@ -1878,9 +1853,10 @@ export default function CareCircleScreen() {
       padded={false}
       scrollable={false}
       safeAreaStyle={styles.safeArea}
+      safeAreaEdges={['left', 'right', 'bottom']}
     >
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingTop: headerHeight }]}
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshAll} />}
       >
@@ -1982,11 +1958,7 @@ export default function CareCircleScreen() {
               ))}
             </Animated.View>
           ) : currentMembers.length === 0 ? (
-            <Animated.View entering={FadeInDown.springify()} style={styles.emptyState}>
-              <MaterialCommunityIcons name="account-group-outline" size={28} color="#94a3b8" />
-              <Text style={styles.emptyText}>No members yet</Text>
-              <Text style={styles.emptySubtext}>Invite someone to get started</Text>
-            </Animated.View>
+            <EmptyStatePreset preset="members" />
           ) : (
             <View style={styles.memberList}>
               {currentMembers.map((member) => {
@@ -2106,21 +2078,11 @@ export default function CareCircleScreen() {
               </Pressable>
             </View>
             {currentPending.length === 0 ? (
-              <View style={styles.pendingEmpty}>
-                <MaterialCommunityIcons
-                  name={circleView === 'my-circle' ? 'send-outline' : 'inbox-outline'}
-                  size={32}
-                  color="#94a3b8"
-                />
-                <Text style={styles.emptyText}>
-                  {circleView === 'my-circle' ? 'No pending invites' : 'No pending requests'}
-                </Text>
-                <Text style={styles.emptySubtext}>
-                  {circleView === 'my-circle'
-                    ? 'Invites you send will appear here until they respond.'
-                    : 'Requests from others will show here.'}
-                </Text>
-              </View>
+              circleView === 'my-circle' ? (
+                <EmptyState icon="email-outline" title="No pending invites" subtitle="Invitations you send will appear here" />
+              ) : (
+                <EmptyState icon="email-check-outline" title="No pending requests" subtitle="Requests to join your circle will appear here" />
+              )
             ) : (
               <ScrollView
                 style={[
@@ -3044,10 +3006,7 @@ export default function CareCircleScreen() {
                       )}
                     </View>
                     {!memberDetails?.appointments?.length ? (
-                      <View style={styles.emptyState}>
-                        <MaterialCommunityIcons name="calendar-blank-outline" size={28} color="#94a3b8" />
-                        <Text style={styles.emptyText}>No appointments</Text>
-                      </View>
+                      <EmptyStatePreset preset="appointments" />
                     ) : (
                       memberDetails.appointments.map((appt) => {
                         const detailFields = getAppointmentTypeFields(appt.type || '');
@@ -3117,10 +3076,7 @@ export default function CareCircleScreen() {
                       )}
                     </View>
                     {!memberDetails?.medications?.length ? (
-                      <View style={styles.emptyState}>
-                        <MaterialCommunityIcons name="pill" size={28} color="#94a3b8" />
-                        <Text style={styles.emptyText}>No medications</Text>
-                      </View>
+                      <EmptyStatePreset preset="medications" />
                     ) : (
                       memberDetails.medications.map((med) => (
                         <View key={med.id} style={styles.formSection}>
@@ -3233,10 +3189,7 @@ export default function CareCircleScreen() {
                         <Text style={styles.emergencyErrorText}>{vaultError}</Text>
                       </View>
                     ) : !filteredVaultFiles.length ? (
-                      <View style={styles.emptyState}>
-                        <MaterialCommunityIcons name="folder-open-outline" size={28} color="#94a3b8" />
-                        <Text style={styles.emptyText}>No files</Text>
-                      </View>
+                      <EmptyStatePreset preset="files" />
                     ) : (
                       filteredVaultFiles.map((file) => {
                         const fileKey = vaultFileKey(file);
@@ -4135,16 +4088,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 14,
     backgroundColor: '#ffffff',
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: '#e1eaec',
     borderRadius: 20,
     paddingHorizontal: 18,
     paddingVertical: 16,
     shadowColor: '#1b2b2f',
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.1,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    elevation: 4,
   },
   memberAvatar: {
     width: 56,
@@ -4197,8 +4150,8 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   removeButtonPressed: {
-    transform: [{ scale: 0.96 }],
-    opacity: 0.8,
+    opacity: 0.9,
+    transform: [{ scale: 0.97 }],
   },
   removeButtonText: {
     fontSize: 13,
@@ -4238,8 +4191,8 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   acceptButtonPressed: {
-    transform: [{ scale: 0.96 }],
     opacity: 0.9,
+    transform: [{ scale: 0.97 }],
   },
   acceptButtonText: {
     fontSize: 13,
@@ -4256,8 +4209,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   declineButtonPressed: {
-    transform: [{ scale: 0.96 }],
-    opacity: 0.8,
+    opacity: 0.9,
+    transform: [{ scale: 0.97 }],
   },
   declineButtonText: {
     fontSize: 13,
@@ -4289,12 +4242,12 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
     justifyContent: 'flex-end',
   },
   modalOverlayCentered: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
@@ -4333,12 +4286,12 @@ const styles = StyleSheet.create({
   },
   inviteCountryCode: {
     minWidth: 70,
-    borderWidth: 1.5,
-    borderColor: '#d7e0e4',
-    backgroundColor: '#f0f4f5',
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#d8e3e6',
+    backgroundColor: '#f7fbfb',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -4354,7 +4307,7 @@ const styles = StyleSheet.create({
   },
   countryModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
     justifyContent: 'flex-end',
   },
   countryModalContent: {
@@ -4401,7 +4354,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e5e7eb',
   },
   countryItemPressed: {
-    backgroundColor: '#f0fdfa',
+    transform: [{ scale: 0.98 }],
   },
   countryItemText: {
     fontSize: 16,
@@ -4554,14 +4507,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
   sheetInput: {
-    borderWidth: 1.5,
-    borderColor: '#d7e0e4',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#d8e3e6',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 16,
     color: '#0f1a1c',
-    backgroundColor: '#fafcfc',
+    backgroundColor: '#f7fbfb',
     shadowColor: '#1b2b2f',
     shadowOpacity: 0.04,
     shadowRadius: 8,
@@ -4643,15 +4596,15 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 44,
     borderWidth: 1,
-    borderColor: '#d7e0e4',
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
+    borderColor: '#d8e3e6',
+    borderRadius: 14,
+    backgroundColor: '#f7fbfb',
     textAlign: 'center',
     fontSize: 15,
     fontWeight: '700',
     color: '#0f172a',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   timeColon: {
     fontSize: 20,
@@ -4748,7 +4701,7 @@ const styles = StyleSheet.create({
   },
   inlineEditorOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.38)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
     justifyContent: 'center',
     paddingHorizontal: 12,
     zIndex: 30,
@@ -5215,20 +5168,20 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   vaultSearchInput: {
-    borderWidth: 1.5,
-    borderColor: '#d7e0e4',
-    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#d8e3e6',
+    borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingVertical: 12,
     fontSize: 14,
     color: '#0f172a',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f7fbfb',
   },
   vaultFileCard: {
     gap: 8,
   },
   vaultFileCardPressed: {
-    opacity: 0.88,
+    transform: [{ scale: 0.98 }],
   },
   vaultFileHeader: {
     flexDirection: 'row',
