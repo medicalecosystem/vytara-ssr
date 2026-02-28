@@ -34,6 +34,15 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        source: "/legal/:path*",
+        headers: [
+          {
+            key: "X-Frame-Options",
+            value: "SAMEORIGIN",
+          },
+        ],
+      },
     ];
   },
 };
