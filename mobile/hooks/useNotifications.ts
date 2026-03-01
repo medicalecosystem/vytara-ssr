@@ -2,15 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system/legacy';
 
-import { careCircleApi } from '@/api/modules/carecircle';
+import { careCircleApi, type SharedActivityLogRow } from '@/api/modules/carecircle';
 import type { Appointment } from '@/components/AppointmentsModal';
 import { supabase } from '@/lib/supabase';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ACCEPTANCE_WINDOW_DAYS = 30;
 const NOTIFICATION_REFRESH_MS = 60_000;
+const LOGS_PAGE_SIZE = 20;
 const seenNotificationsKey = (userId: string, profileId?: string) =>
   `vytara:seen-notifications:${userId}:${profileId ?? 'account'}`;
+const seenLogsKey = (userId: string, profileId?: string) =>
+  `vytara:seen-logs:${userId}:${profileId ?? 'account'}`;
 const seenNotificationsFile = (userId: string, profileId?: string) =>
   FileSystem.documentDirectory
     ? `${FileSystem.documentDirectory}vytara-notifications-${userId}-${profileId ?? 'account'}.json`
@@ -33,6 +36,11 @@ export type UpcomingAppointment = {
   appointment: Appointment;
   dateTime: Date;
   diffMs: number;
+};
+
+export type FamilyActivityNotification = {
+  id: string;
+  log: SharedActivityLogRow;
 };
 
 const notificationIdForAppointment = (id: string) => `appointment:${id}`;
@@ -92,15 +100,27 @@ const writeSeenToFile = async (userId: string, payload: string, profileId?: stri
   }
 };
 
+const notificationIdForFamilyActivity = (logId: string) => `family-activity:${logId}`;
+
 export function useNotifications(userId?: string, profileId?: string) {
   const [now, setNow] = useState(() => new Date());
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [careCircleInvites, setCareCircleInvites] = useState<CareCircleInvite[]>([]);
   const [careCircleAcceptances, setCareCircleAcceptances] = useState<CareCircleAcceptance[]>([]);
+  const [familyActivityLogs, setFamilyActivityLogs] = useState<SharedActivityLogRow[]>([]);
+  const [activityLogs, setActivityLogs] = useState<SharedActivityLogRow[]>([]);
+  const [logsOffset, setLogsOffset] = useState(0);
+  const [logsHasMore, setLogsHasMore] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsLoadingMore, setLogsLoadingMore] = useState(false);
+  const [logsError, setLogsError] = useState<string | null>(null);
+  const [seenLogIds, setSeenLogIds] = useState<Set<string>>(() => new Set());
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState<Set<string>>(() => new Set());
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
   const [seenNotificationIds, setSeenNotificationIds] = useState<Set<string>>(() => new Set());
   const [hasHydratedSeen, setHasHydratedSeen] = useState(false);
+  const [hasHydratedSeenLogs, setHasHydratedSeenLogs] = useState(false);
   const lastRemotePersist = useRef<string>('');
   const realtimeDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -121,23 +141,21 @@ export function useNotifications(userId?: string, profileId?: string) {
     try {
       const stored = await SecureStore.getItemAsync(seenNotificationsKey(userId, profileId));
       if (stored) {
-        const parsed = JSON.parse(stored) as string[];
-        localIds = new Set(parsed);
+        localIds = new Set(JSON.parse(stored) as string[]);
         foundLocal = true;
       }
     } catch {
-      // Fall back to file storage below.
+      /* fall back */
     }
 
     if (!foundLocal) {
       const fileStored = await readSeenFromFile(userId, profileId);
       if (fileStored) {
         try {
-          const parsed = JSON.parse(fileStored) as string[];
-          localIds = new Set(parsed);
+          localIds = new Set(JSON.parse(fileStored) as string[]);
           foundLocal = true;
         } catch {
-          // Fall back to web storage below.
+          /* fall back */
         }
       }
     }
@@ -148,17 +166,15 @@ export function useNotifications(userId?: string, profileId?: string) {
         const stored = webStorage.getItem(seenNotificationsKey(userId, profileId));
         if (stored) {
           try {
-            const parsed = JSON.parse(stored) as string[];
-            localIds = new Set(parsed);
-            foundLocal = true;
+            localIds = new Set(JSON.parse(stored) as string[]);
           } catch {
-            // Ignore parse errors.
+            /* ignore */
           }
         }
       }
     }
 
-    let mergedIds = new Set(localIds);
+    const mergedIds = new Set(localIds);
     try {
       const { data } = await supabase.auth.getUser();
       const metadata = data?.user?.user_metadata as { notification_seen_ids?: unknown } | undefined;
@@ -169,11 +185,28 @@ export function useNotifications(userId?: string, profileId?: string) {
         });
       }
     } catch {
-      // Ignore remote fetch failures.
+      /* ignore */
     }
 
     setSeenNotificationIds(mergedIds);
     setHasHydratedSeen(true);
+  }, [userId, profileId]);
+
+  const loadSeenLogs = useCallback(async () => {
+    if (!userId || !profileId) {
+      setSeenLogIds(new Set());
+      setHasHydratedSeenLogs(false);
+      return;
+    }
+    try {
+      const stored = await SecureStore.getItemAsync(seenLogsKey(userId, profileId));
+      if (stored) {
+        setSeenLogIds(new Set(JSON.parse(stored) as string[]));
+      }
+    } catch {
+      /* ignore */
+    }
+    setHasHydratedSeenLogs(true);
   }, [userId, profileId]);
 
   const persistSeenNotifications = useCallback(
@@ -185,7 +218,7 @@ export function useNotifications(userId?: string, profileId?: string) {
       try {
         await SecureStore.setItemAsync(seenNotificationsKey(userId, profileId), payload);
       } catch {
-        // Ignore and still fall back to file/web storage.
+        /* ignore */
       }
       await writeSeenToFile(userId, payload, profileId);
       if (webStorage) {
@@ -196,29 +229,43 @@ export function useNotifications(userId?: string, profileId?: string) {
         try {
           await supabase.auth.updateUser({ data: { notification_seen_ids: arrayPayload } });
         } catch {
-          // Ignore remote persistence failures.
+          /* ignore */
         }
       }
     },
     [userId, profileId]
   );
 
+  const persistSeenLogs = useCallback(
+    async (nextIds: Set<string>) => {
+      if (!userId || !profileId) return;
+      const payload = JSON.stringify(Array.from(nextIds));
+      try {
+        await SecureStore.setItemAsync(seenLogsKey(userId, profileId), payload);
+      } catch {
+        /* ignore */
+      }
+    },
+    [userId, profileId]
+  );
+
   useEffect(() => {
-    let isActive = true;
-    const load = async () => {
-      await loadSeenNotifications();
-      if (!isActive) return;
-    };
-    void load();
-    return () => {
-      isActive = false;
-    };
+    void loadSeenNotifications();
   }, [loadSeenNotifications]);
+
+  useEffect(() => {
+    void loadSeenLogs();
+  }, [loadSeenLogs]);
 
   useEffect(() => {
     if (!hasHydratedSeen) return;
     void persistSeenNotifications(seenNotificationIds);
   }, [persistSeenNotifications, seenNotificationIds, hasHydratedSeen]);
+
+  useEffect(() => {
+    if (!hasHydratedSeenLogs) return;
+    void persistSeenLogs(seenLogIds);
+  }, [persistSeenLogs, seenLogIds, hasHydratedSeenLogs]);
 
   const fetchNotifications = useCallback(async () => {
     if (!userId || !profileId) return;
@@ -229,6 +276,7 @@ export function useNotifications(userId?: string, profileId?: string) {
     let nextAppointments: Appointment[] | null = null;
     let nextInvites: CareCircleInvite[] | null = null;
     let nextAcceptances: CareCircleAcceptance[] | null = null;
+    let nextFamilyActivity: SharedActivityLogRow[] | null = null;
 
     const { data, error } = await supabase
       .from('user_appointments')
@@ -249,23 +297,23 @@ export function useNotifications(userId?: string, profileId?: string) {
 
     try {
       const links = await careCircleApi.getLinks(profileId);
-        nextInvites =
-          links.incoming
-            ?.filter((link) => link.status === 'pending')
-            .map((link) => ({
-              id: link.id,
-              displayName: link.displayName,
-              createdAt: link.createdAt,
-              updatedAt: link.updatedAt,
-            })) ?? [];
-        nextAcceptances =
-          links.outgoing
-            ?.filter((link) => link.status === 'accepted')
-            .map((link) => ({
-              id: link.id,
-              displayName: link.displayName,
-              acceptedAt: link.updatedAt || link.createdAt,
-            })) ?? [];
+      nextInvites =
+        links.incoming
+          ?.filter((link) => link.status === 'pending')
+          .map((link) => ({
+            id: link.id,
+            displayName: link.displayName,
+            createdAt: link.createdAt,
+            updatedAt: link.updatedAt,
+          })) ?? [];
+      nextAcceptances =
+        links.outgoing
+          ?.filter((link) => link.status === 'accepted')
+          .map((link) => ({
+            id: link.id,
+            displayName: link.displayName,
+            acceptedAt: link.updatedAt || link.createdAt,
+          })) ?? [];
     } catch (err: any) {
       const message = err?.message ?? '';
       if (message.includes('EXPO_PUBLIC_API_URL') || message.includes('Missing')) {
@@ -277,30 +325,101 @@ export function useNotifications(userId?: string, profileId?: string) {
       }
     }
 
+    try {
+      const activityData = await careCircleApi.getActivity(40, 24);
+      nextFamilyActivity = Array.isArray(activityData.logs) ? activityData.logs : [];
+    } catch {
+      nextFamilyActivity = [];
+    }
+
     if (nextAppointments) setAppointments(nextAppointments);
     if (nextInvites) setCareCircleInvites(nextInvites);
     if (nextAcceptances) setCareCircleAcceptances(nextAcceptances);
+    if (nextFamilyActivity) setFamilyActivityLogs(nextFamilyActivity);
     setNotificationsError(hadError ? 'Some notifications could not be refreshed.' : null);
     setNotificationsLoading(false);
   }, [userId, profileId]);
+
+  const fetchActivityLogs = useCallback(async () => {
+    if (!profileId) {
+      setActivityLogs([]);
+      setLogsOffset(0);
+      setLogsHasMore(false);
+      return;
+    }
+    setLogsLoading(true);
+    setLogsError(null);
+    try {
+      const { data: rows, error: logsErr } = await supabase
+        .from('profile_activity_logs')
+        .select('id, profile_id, source, domain, action, actor_user_id, actor_display_name, entity_id, entity_label, metadata, created_at')
+        .eq('profile_id', profileId)
+        .eq('source', 'care_circle')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(0, LOGS_PAGE_SIZE);
+      if (logsErr) throw logsErr;
+      const allRows = (rows ?? []) as SharedActivityLogRow[];
+      const hasMore = allRows.length > LOGS_PAGE_SIZE;
+      const nextRows = hasMore ? allRows.slice(0, LOGS_PAGE_SIZE) : allRows;
+      setActivityLogs(nextRows);
+      setLogsOffset(nextRows.length);
+      setLogsHasMore(hasMore);
+    } catch {
+      setActivityLogs([]);
+      setLogsOffset(0);
+      setLogsHasMore(false);
+      setLogsError('Unable to load logs.');
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [profileId]);
+
+  const loadMoreLogs = useCallback(async () => {
+    if (!profileId || logsLoadingMore || !logsHasMore) return;
+    setLogsLoadingMore(true);
+    try {
+      const { data: rows, error: logsErr } = await supabase
+        .from('profile_activity_logs')
+        .select('id, profile_id, source, domain, action, actor_user_id, actor_display_name, entity_id, entity_label, metadata, created_at')
+        .eq('profile_id', profileId)
+        .eq('source', 'care_circle')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(logsOffset, logsOffset + LOGS_PAGE_SIZE);
+      if (logsErr) throw logsErr;
+      const allRows = (rows ?? []) as SharedActivityLogRow[];
+      const hasMore = allRows.length > LOGS_PAGE_SIZE;
+      const nextRows = hasMore ? allRows.slice(0, LOGS_PAGE_SIZE) : allRows;
+      setActivityLogs((prev) => [...prev, ...nextRows]);
+      setLogsOffset((prev) => prev + nextRows.length);
+      setLogsHasMore(hasMore);
+    } catch {
+      setLogsError('Unable to load more logs.');
+    } finally {
+      setLogsLoadingMore(false);
+    }
+  }, [profileId, logsLoadingMore, logsHasMore, logsOffset]);
 
   useEffect(() => {
     if (!userId || !profileId) {
       setAppointments([]);
       setCareCircleInvites([]);
       setCareCircleAcceptances([]);
+      setFamilyActivityLogs([]);
       setNotificationsLoading(false);
       setNotificationsError(null);
       return;
     }
 
     void fetchNotifications();
+    void fetchActivityLogs();
     const interval = setInterval(fetchNotifications, NOTIFICATION_REFRESH_MS);
 
     return () => {
       clearInterval(interval);
     };
-  }, [userId, fetchNotifications]);
+  }, [userId, profileId, fetchNotifications, fetchActivityLogs]);
 
   useEffect(() => {
     if (!userId || !profileId) return;
@@ -341,6 +460,22 @@ export function useNotifications(userId?: string, profileId?: string) {
     };
   }, [userId, profileId, fetchNotifications]);
 
+  const dismissNotification = useCallback(
+    async (notificationId: string) => {
+      setDismissedNotificationIds((prev) => {
+        const next = new Set(prev);
+        next.add(notificationId);
+        return next;
+      });
+      try {
+        await careCircleApi.updateNotificationStates([notificationId], { dismissed: true });
+      } catch {
+        /* non-blocking */
+      }
+    },
+    []
+  );
+
   const upcomingAppointments = useMemo(
     () => getUpcomingAppointments(appointments, now),
     [appointments, now]
@@ -362,13 +497,55 @@ export function useNotifications(userId?: string, profileId?: string) {
       .sort((a, b) => new Date(b.acceptedAt).getTime() - new Date(a.acceptedAt).getTime());
   }, [careCircleAcceptances]);
 
+  const visibleFamilyActivity = useMemo(() => {
+    return familyActivityLogs.filter(
+      (log) => !dismissedNotificationIds.has(notificationIdForFamilyActivity(log.id))
+    );
+  }, [familyActivityLogs, dismissedNotificationIds]);
+
+  useEffect(() => {
+    if (!userId) return;
+    let isActive = true;
+
+    const syncDismissed = async () => {
+      const allIds = [
+        ...upcomingAppointments.map(({ appointment }) => notificationIdForAppointment(appointment.id)),
+        ...pendingInvites.map((inv) => notificationIdForInvite(inv.id)),
+        ...acceptedInvites.map((inv) => notificationIdForAcceptance(inv.id)),
+        ...familyActivityLogs.map((log) => notificationIdForFamilyActivity(log.id)),
+      ];
+      if (allIds.length === 0) return;
+      try {
+        const result = await careCircleApi.getNotificationStates(allIds);
+        if (!isActive) return;
+        const dismissed = new Set<string>();
+        (result.states ?? []).forEach((state) => {
+          if (state.dismissed_at) dismissed.add(state.notification_id);
+        });
+        if (dismissed.size > 0) {
+          setDismissedNotificationIds((prev) => {
+            const next = new Set(prev);
+            dismissed.forEach((id) => next.add(id));
+            return next;
+          });
+        }
+      } catch {
+        /* non-blocking */
+      }
+    };
+
+    void syncDismissed();
+    return () => { isActive = false; };
+  }, [userId, upcomingAppointments, pendingInvites, acceptedInvites, familyActivityLogs]);
+
   const notificationIds = useMemo(() => {
     return [
       ...upcomingAppointments.map(({ appointment }) => notificationIdForAppointment(appointment.id)),
       ...pendingInvites.map((invite) => notificationIdForInvite(invite.id)),
       ...acceptedInvites.map((invite) => notificationIdForAcceptance(invite.id)),
+      ...visibleFamilyActivity.map((log) => notificationIdForFamilyActivity(log.id)),
     ];
-  }, [upcomingAppointments, pendingInvites, acceptedInvites]);
+  }, [upcomingAppointments, pendingInvites, acceptedInvites, visibleFamilyActivity]);
 
   useEffect(() => {
     if (!hasHydratedSeen) return;
@@ -396,44 +573,82 @@ export function useNotifications(userId?: string, profileId?: string) {
   const unreadAppointments = useMemo(
     () =>
       upcomingAppointments.filter(
-        ({ appointment }) => !seenNotificationIds.has(notificationIdForAppointment(appointment.id))
+        ({ appointment }) =>
+          !seenNotificationIds.has(notificationIdForAppointment(appointment.id)) &&
+          !dismissedNotificationIds.has(notificationIdForAppointment(appointment.id))
       ),
-    [upcomingAppointments, seenNotificationIds]
+    [upcomingAppointments, seenNotificationIds, dismissedNotificationIds]
   );
 
   const readAppointments = useMemo(
     () =>
-      upcomingAppointments.filter(({ appointment }) =>
-        seenNotificationIds.has(notificationIdForAppointment(appointment.id))
+      upcomingAppointments.filter(
+        ({ appointment }) =>
+          seenNotificationIds.has(notificationIdForAppointment(appointment.id)) &&
+          !dismissedNotificationIds.has(notificationIdForAppointment(appointment.id))
       ),
-    [upcomingAppointments, seenNotificationIds]
+    [upcomingAppointments, seenNotificationIds, dismissedNotificationIds]
   );
 
   const unreadInvites = useMemo(
-    () => pendingInvites.filter((invite) => !seenNotificationIds.has(notificationIdForInvite(invite.id))),
-    [pendingInvites, seenNotificationIds]
+    () =>
+      pendingInvites.filter(
+        (invite) =>
+          !seenNotificationIds.has(notificationIdForInvite(invite.id)) &&
+          !dismissedNotificationIds.has(notificationIdForInvite(invite.id))
+      ),
+    [pendingInvites, seenNotificationIds, dismissedNotificationIds]
   );
 
   const readInvites = useMemo(
-    () => pendingInvites.filter((invite) => seenNotificationIds.has(notificationIdForInvite(invite.id))),
-    [pendingInvites, seenNotificationIds]
+    () =>
+      pendingInvites.filter(
+        (invite) =>
+          seenNotificationIds.has(notificationIdForInvite(invite.id)) &&
+          !dismissedNotificationIds.has(notificationIdForInvite(invite.id))
+      ),
+    [pendingInvites, seenNotificationIds, dismissedNotificationIds]
   );
 
   const unreadAcceptances = useMemo(
     () =>
       acceptedInvites.filter(
-        (invite) => !seenNotificationIds.has(notificationIdForAcceptance(invite.id))
+        (invite) =>
+          !seenNotificationIds.has(notificationIdForAcceptance(invite.id)) &&
+          !dismissedNotificationIds.has(notificationIdForAcceptance(invite.id))
       ),
-    [acceptedInvites, seenNotificationIds]
+    [acceptedInvites, seenNotificationIds, dismissedNotificationIds]
   );
 
   const readAcceptances = useMemo(
     () =>
-      acceptedInvites.filter((invite) =>
-        seenNotificationIds.has(notificationIdForAcceptance(invite.id))
+      acceptedInvites.filter(
+        (invite) =>
+          seenNotificationIds.has(notificationIdForAcceptance(invite.id)) &&
+          !dismissedNotificationIds.has(notificationIdForAcceptance(invite.id))
       ),
-    [acceptedInvites, seenNotificationIds]
+    [acceptedInvites, seenNotificationIds, dismissedNotificationIds]
   );
+
+  const unreadFamilyActivity = useMemo(
+    () =>
+      visibleFamilyActivity.filter(
+        (log) => !seenNotificationIds.has(notificationIdForFamilyActivity(log.id))
+      ),
+    [visibleFamilyActivity, seenNotificationIds]
+  );
+
+  const readFamilyActivity = useMemo(
+    () =>
+      visibleFamilyActivity.filter((log) =>
+        seenNotificationIds.has(notificationIdForFamilyActivity(log.id))
+      ),
+    [visibleFamilyActivity, seenNotificationIds]
+  );
+
+  const unreadLogsCount = useMemo(() => {
+    return activityLogs.reduce((count, log) => (seenLogIds.has(log.id) ? count : count + 1), 0);
+  }, [activityLogs, seenLogIds]);
 
   const markAllSeen = useCallback(() => {
     if (notificationIds.length === 0) return;
@@ -445,6 +660,22 @@ export function useNotifications(userId?: string, profileId?: string) {
     });
   }, [notificationIds, persistSeenNotifications]);
 
+  const markLogsSeen = useCallback(() => {
+    if (activityLogs.length === 0) return;
+    setSeenLogIds((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      activityLogs.forEach((log) => {
+        if (!next.has(log.id)) {
+          next.add(log.id);
+          changed = true;
+        }
+      });
+      if (changed) void persistSeenLogs(next);
+      return changed ? next : prev;
+    });
+  }, [activityLogs, persistSeenLogs]);
+
   return {
     now,
     notificationsLoading,
@@ -455,8 +686,20 @@ export function useNotifications(userId?: string, profileId?: string) {
     readInvites,
     unreadAcceptances,
     readAcceptances,
+    unreadFamilyActivity,
+    readFamilyActivity,
     hasUnseenNotifications,
     hasHydratedSeen,
     markAllSeen,
+    dismissNotification,
+    activityLogs,
+    logsLoading,
+    logsLoadingMore,
+    logsHasMore,
+    logsError,
+    loadMoreLogs,
+    unreadLogsCount,
+    markLogsSeen,
+    hasHydratedSeenLogs,
   };
 }

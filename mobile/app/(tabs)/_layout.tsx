@@ -9,8 +9,11 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { ChatWidget } from '@/components/ChatWidget';
 
 import Colors from '@/constants/Colors';
 import { NotificationPanel } from '@/components/NotificationPanel';
@@ -23,6 +26,7 @@ import {
   type CareCircleInvite,
   type UpcomingAppointment,
 } from '@/hooks/useNotifications';
+import type { SharedActivityLogRow } from '@/api/modules/carecircle';
 import { type User } from '@/lib/supabase';
 
 // You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
@@ -45,17 +49,25 @@ export default function TabLayout() {
   const theme = colorScheme ?? 'light';
   const backgroundColor = Colors[theme].background;
   const tabBarBackground = '#1f2f33';
+  const appHeaderHeight = insets.top + 54;
 
   return (
+    <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#eef7f7',
+        tabBarActiveTintColor: '#14b8a6',
         tabBarInactiveTintColor: '#8fa1a6',
         headerShown: true,
-        headerTransparent: true,
+        headerTransparent: false,
+        headerStatusBarHeight: 0,
         headerShadowVisible: false,
         headerStyle: {
-          backgroundColor: 'transparent',
+          backgroundColor: '#2f565f',
+          height: appHeaderHeight,
+          borderBottomWidth: 0,
+          elevation: 0,
+          shadowOpacity: 0,
+          shadowColor: 'transparent',
         },
         header: () => (
           <AppHeader
@@ -64,6 +76,7 @@ export default function TabLayout() {
             signOut={signOut}
             notifications={notifications}
             router={router}
+            headerHeight={appHeaderHeight}
           />
         ),
         sceneStyle: {
@@ -72,9 +85,10 @@ export default function TabLayout() {
         tabBarStyle: {
           height: tabBarHeight,
           paddingBottom: Math.max(insets.bottom, 8),
-          paddingTop: 6,
-          backgroundColor: tabBarBackground,
-          borderTopColor: '#1a2629',
+          paddingTop: 8,
+          backgroundColor: '#1a2e32',
+          borderTopWidth: 1,
+          borderTopColor: 'rgba(255, 255, 255, 0.06)',
         },
       }}>
       <Tabs.Screen
@@ -118,6 +132,8 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    <ChatWidget />
+    </View>
   );
 }
 
@@ -129,14 +145,18 @@ function AppHeader({
   signOut,
   notifications,
   router,
+  headerHeight,
 }: {
   user: User | null;
   selectedProfile: { id: string; name: string; display_name?: string | null } | null;
   signOut: () => Promise<void>;
   notifications: NotificationsState;
   router: ReturnType<typeof useRouter>;
+  headerHeight: number;
 }) {
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
+  const menuWidth = Math.min(Math.round(screenWidth * 0.58), 240);
   const [displayName, setDisplayName] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
   const [notificationVisible, setNotificationVisible] = useState(false);
@@ -150,9 +170,21 @@ function AppHeader({
     readInvites,
     unreadAcceptances,
     readAcceptances,
+    unreadFamilyActivity,
+    readFamilyActivity,
     hasUnseenNotifications,
     hasHydratedSeen,
     markAllSeen,
+    dismissNotification,
+    activityLogs,
+    logsLoading,
+    logsLoadingMore,
+    logsHasMore,
+    logsError,
+    loadMoreLogs,
+    unreadLogsCount,
+    markLogsSeen,
+    hasHydratedSeenLogs,
   } = notifications;
   const [sessionUnreadAppointments, setSessionUnreadAppointments] = useState<UpcomingAppointment[] | null>(
     null
@@ -161,6 +193,7 @@ function AppHeader({
   const [sessionUnreadAcceptances, setSessionUnreadAcceptances] = useState<CareCircleAcceptance[] | null>(
     null
   );
+  const [sessionUnreadFamilyActivity, setSessionUnreadFamilyActivity] = useState<SharedActivityLogRow[] | null>(null);
   const sessionSnapshotDone = useRef(false);
 
   useEffect(() => {
@@ -189,6 +222,7 @@ function AppHeader({
       setSessionUnreadAppointments(null);
       setSessionUnreadInvites(null);
       setSessionUnreadAcceptances(null);
+      setSessionUnreadFamilyActivity(null);
       return;
     }
     if (sessionSnapshotDone.current) return;
@@ -198,6 +232,7 @@ function AppHeader({
     setSessionUnreadAppointments(unreadAppointments);
     setSessionUnreadInvites(unreadInvites);
     setSessionUnreadAcceptances(unreadAcceptances);
+    setSessionUnreadFamilyActivity(unreadFamilyActivity);
     markAllSeen();
   }, [
     notificationVisible,
@@ -206,6 +241,7 @@ function AppHeader({
     unreadAppointments,
     unreadInvites,
     unreadAcceptances,
+    unreadFamilyActivity,
     markAllSeen,
   ]);
 
@@ -215,6 +251,9 @@ function AppHeader({
   const unreadInvitesDisplay = hasHydratedSeen ? sessionUnreadInvites ?? unreadInvites : [];
   const unreadAcceptancesDisplay = hasHydratedSeen
     ? sessionUnreadAcceptances ?? unreadAcceptances
+    : [];
+  const unreadFamilyActivityDisplay = hasHydratedSeen
+    ? sessionUnreadFamilyActivity ?? unreadFamilyActivity
     : [];
   const sessionUnreadAppointmentIds = useMemo(() => {
     if (!sessionUnreadAppointments) return null;
@@ -228,6 +267,10 @@ function AppHeader({
     if (!sessionUnreadAcceptances) return null;
     return new Set(sessionUnreadAcceptances.map((invite) => invite.id));
   }, [sessionUnreadAcceptances]);
+  const sessionUnreadFamilyActivityIds = useMemo(() => {
+    if (!sessionUnreadFamilyActivity) return null;
+    return new Set(sessionUnreadFamilyActivity.map((log) => log.id));
+  }, [sessionUnreadFamilyActivity]);
   const readAppointmentsDisplay = useMemo(() => {
     if (!hasHydratedSeen) return [];
     if (!sessionUnreadAppointmentIds) return readAppointments;
@@ -243,14 +286,19 @@ function AppHeader({
     if (!sessionUnreadAcceptanceIds) return readAcceptances;
     return readAcceptances.filter((invite) => !sessionUnreadAcceptanceIds.has(invite.id));
   }, [readAcceptances, sessionUnreadAcceptanceIds, hasHydratedSeen]);
+  const readFamilyActivityDisplay = useMemo(() => {
+    if (!hasHydratedSeen) return [];
+    if (!sessionUnreadFamilyActivityIds) return readFamilyActivity;
+    return readFamilyActivity.filter((log) => !sessionUnreadFamilyActivityIds.has(log.id));
+  }, [readFamilyActivity, sessionUnreadFamilyActivityIds, hasHydratedSeen]);
 
   return (
     <>
-      <View style={styles.headerFrame}>
+      <View style={[styles.headerFrame, { height: headerHeight }]}>
         <LinearGradient
-          colors={['#2f565f', '#6aa6a8']}
-          start={{ x: 0.15, y: 0 }}
-          end={{ x: 0.85, y: 1 }}
+          colors={['#2f565f', '#4d8289']}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
           style={[styles.header, { paddingTop: insets.top + 4 }]}
         >
           <View style={styles.headerRow}>
@@ -273,7 +321,7 @@ function AppHeader({
 
       <Modal visible={menuVisible} transparent animationType="fade" onRequestClose={() => setMenuVisible(false)}>
         <Pressable style={styles.menuOverlay} onPress={() => setMenuVisible(false)}>
-          <Pressable style={[styles.menuCard, { top: insets.top + 58 }]} onPress={() => { }}>
+          <Pressable style={[styles.menuCard, { top: insets.top + 58, width: menuWidth }]} onPress={() => { }}>
             <View style={styles.menuHeader}>
               <View style={styles.menuAvatar}>
                 <Text style={styles.menuAvatarText}>{initials}</Text>
@@ -295,6 +343,16 @@ function AppHeader({
             >
               <MaterialCommunityIcons name="account-switch" size={18} color="#309898" />
               <Text style={styles.menuItemText}>Switch Profile</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+              onPress={() => {
+                setMenuVisible(false);
+                router.push('/settings');
+              }}
+            >
+              <MaterialCommunityIcons name="cog-outline" size={18} color="#309898" />
+              <Text style={styles.menuItemText}>Settings</Text>
             </Pressable>
             <Pressable
               style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
@@ -321,9 +379,21 @@ function AppHeader({
         readInvites={readInvitesDisplay}
         unreadAcceptances={unreadAcceptancesDisplay}
         readAcceptances={readAcceptancesDisplay}
+        unreadFamilyActivity={unreadFamilyActivityDisplay}
+        readFamilyActivity={readFamilyActivityDisplay}
         notificationsLoading={notificationsLoading}
         notificationsError={notificationsError}
         isHydrated={hasHydratedSeen}
+        dismissNotification={dismissNotification}
+        activityLogs={activityLogs}
+        logsLoading={logsLoading}
+        logsLoadingMore={logsLoadingMore}
+        logsHasMore={logsHasMore}
+        logsError={logsError}
+        loadMoreLogs={loadMoreLogs}
+        unreadLogsCount={unreadLogsCount}
+        markLogsSeen={markLogsSeen}
+        hasHydratedSeenLogs={hasHydratedSeenLogs}
       />
     </>
   );
@@ -332,11 +402,11 @@ function AppHeader({
 const styles = StyleSheet.create({
   headerFrame: {
     width: '100%',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
     overflow: 'hidden',
+    marginBottom: -2,
   },
   header: {
+    flex: 1,
     paddingHorizontal: 28,
     paddingBottom: 0,
   },

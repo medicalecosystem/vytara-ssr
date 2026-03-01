@@ -26,6 +26,21 @@ type RememberedAccount = {
 
 const REMEMBERED_ACCOUNT_KEY = "vytara_remembered_account";
 
+const getRequestErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) {
+    const normalizedMessage = error.message.toLowerCase();
+    if (
+      normalizedMessage.includes("failed to fetch") ||
+      normalizedMessage.includes("networkerror") ||
+      normalizedMessage.includes("load failed")
+    ) {
+      return fallback;
+    }
+    return error.message;
+  }
+  return fallback;
+};
+
 export default function SignupPage() {
   const router = useRouter();
 
@@ -105,15 +120,25 @@ export default function SignupPage() {
       return;
     }
 
-    setLoading(true);
-
-    const response = await fetch("/api/auth/otp/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: fullPhone, mode: "signup" }),
-    });
-
-    setLoading(false);
+    let response: Response;
+    try {
+      setLoading(true);
+      response = await fetch("/api/auth/otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: fullPhone, mode: "signup" }),
+      });
+    } catch (requestError: unknown) {
+      setErrorMsg(
+        getRequestErrorMessage(
+          requestError,
+          "Unable to reach the server. Please check your connection and try again."
+        )
+      );
+      return;
+    } finally {
+      setLoading(false);
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
@@ -149,20 +174,30 @@ export default function SignupPage() {
       return;
     }
 
-    setLoading(true);
-
-    const response = await fetch("/api/auth/otp/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        phone: fullPhone,
-        otp,
-        sessionId: otpSessionId,
-        mode: "signup",
-      }),
-    });
-
-    setLoading(false);
+    let response: Response;
+    try {
+      setLoading(true);
+      response = await fetch("/api/auth/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: fullPhone,
+          otp,
+          sessionId: otpSessionId,
+          mode: "signup",
+        }),
+      });
+    } catch (requestError: unknown) {
+      setErrorMsg(
+        getRequestErrorMessage(
+          requestError,
+          "Unable to reach the server. Please check your connection and try again."
+        )
+      );
+      return;
+    } finally {
+      setLoading(false);
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
@@ -246,7 +281,7 @@ export default function SignupPage() {
 
       <div className="relative z-10 w-full max-w-md px-4">
         <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl overflow-hidden border border-white/20">
-          <div className="h-2" style={{ background: 'linear-gradient(90deg, var(--theme-primary), var(--theme-secondary))' }} />
+          <div className="h-2 bg-gradient-to-r from-[#14b8a6] to-[#134E4A]" />
 
           <div className="p-8">
             <div className="flex justify-center mb-6">
@@ -260,7 +295,7 @@ export default function SignupPage() {
               />
             </div>
 
-            <h1 className="text-center text-3xl font-bold mb-1" style={{ color: 'var(--theme-primary)' }}>
+            <h1 className="text-center text-[#14b8a6] text-3xl font-bold mb-1">
               Sign up with Phone
             </h1>
 
@@ -346,8 +381,7 @@ export default function SignupPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full text-white py-3.5 rounded-xl font-bold shadow-lg hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70"
-                  style={{ background: 'linear-gradient(135deg, var(--theme-primary), var(--theme-secondary))' }}
+                  className="w-full bg-gradient-to-br from-[#14b8a6] to-[#0f766e] text-white py-3.5 rounded-xl font-bold shadow-lg shadow-teal-900/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70"
                 >
                     {loading ? "Sending OTP..." : "Request OTP"}
                   </button>
@@ -356,10 +390,9 @@ export default function SignupPage() {
                     <p className="text-sm text-gray-500">
                       Already have an account?{" "}
                       <button
-                        className="font-bold hover:underline"
+                        className="text-[#14b8a6] font-bold hover:underline"
                         type="button"
                         onClick={() => router.push("/auth/login")}
-                        style={{ color: 'var(--theme-primary)' }}
                       >
                         Sign In
                       </button>
@@ -425,8 +458,7 @@ export default function SignupPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full text-white py-3.5 rounded-xl font-bold shadow-lg hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70"
-                    style={{ background: 'linear-gradient(135deg, var(--theme-primary), var(--theme-secondary))' }}
+                    className="w-full bg-gradient-to-br from-[#14b8a6] to-[#0f766e] text-white py-3.5 rounded-xl font-bold shadow-lg shadow-teal-900/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70"
                   >
                     {loading ? "Verifying..." : "Verify & Continue"}
                   </button>
@@ -439,8 +471,7 @@ export default function SignupPage() {
                     <button
                       type="button"
                       onClick={sendOtp}
-                      className="mt-3 text-xs font-semibold hover:underline block mx-auto"
-                      style={{ color: 'var(--theme-primary)' }}
+                      className="mt-3 text-xs text-[#14b8a6] font-semibold hover:underline block mx-auto"
                     >
                       Resend OTP
                     </button>

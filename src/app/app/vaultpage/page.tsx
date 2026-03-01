@@ -58,6 +58,29 @@ const writeVaultCache = <T,>(ownerId: string, key: string, value: T) => {
   window.localStorage.setItem(vaultCacheKey(ownerId, key), JSON.stringify(entry));
 };
 
+type ProfileActivityPayload = {
+  profileId: string;
+  domain: 'vault' | 'medication' | 'appointment';
+  action: 'upload' | 'rename' | 'delete' | 'add' | 'update';
+  entity?: {
+    id?: string | null;
+    label?: string | null;
+  };
+  metadata?: Record<string, unknown>;
+};
+
+const logProfileActivity = async (payload: ProfileActivityPayload) => {
+  try {
+    await fetch('/api/profile/activity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // Non-blocking log write.
+  }
+};
+
 export default function VaultPage() {
   const { selectedProfile } = useAppProfile();
   const storageOwnerId = selectedProfile?.id ?? '';
@@ -278,11 +301,12 @@ export default function VaultPage() {
     const fallbackBase = stripExtension(uploadData.file.name) || 'untitled';
     const finalBase = baseFromInput || fallbackBase;
     const finalName = originalExt ? `${finalBase}.${originalExt}` : finalBase;
+    const targetFolder = folderMap[uploadData.category];
 
     try {
       const { error } = await uploadMedicalFile(
         storageOwnerId,
-        folderMap[uploadData.category],
+        targetFolder,
         uploadData.file,
         finalName
       );
@@ -296,6 +320,17 @@ export default function VaultPage() {
         }));
         return;
       }
+
+      await logProfileActivity({
+        profileId: storageOwnerId,
+        domain: 'vault',
+        action: 'upload',
+        entity: { label: finalName },
+        metadata: {
+          folder: targetFolder,
+          fileName: finalName,
+        },
+      });
 
       // Upload successful
       setShowUploadModal(false);
@@ -329,6 +364,17 @@ export default function VaultPage() {
       return;
     }
 
+    await logProfileActivity({
+      profileId: storageOwnerId,
+      domain: 'vault',
+      action: 'delete',
+      entity: { label: file.name },
+      metadata: {
+        folder: file.folder,
+        fileName: file.name,
+      },
+    });
+
     setFiles((prev) => prev.filter((f) => f.name !== file.name));
     fetchCounts(storageOwnerId);
   };
@@ -358,6 +404,18 @@ export default function VaultPage() {
       alert(error.message || 'Failed to rename file.');
       return;
     }
+
+    await logProfileActivity({
+      profileId: storageOwnerId,
+      domain: 'vault',
+      action: 'rename',
+      entity: { label: nextName },
+      metadata: {
+        folder: file.folder,
+        fromName: file.name,
+        toName: nextName,
+      },
+    });
 
     setFiles((prev) =>
       prev.map((f) => (f.name === file.name ? { ...f, name: nextName } : f))
@@ -543,8 +601,7 @@ export default function VaultPage() {
             
             <button
               onClick={() => setShowUploadModal(true)}
-              className="inline-flex items-center gap-2 px-5 py-2.5 text-white rounded-xl font-medium shadow-lg hover:shadow-lg hover:scale-[1.02] transition-all duration-200"
-              style={{ background: 'linear-gradient(90deg, var(--theme-primary), var(--theme-secondary))' }}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-xl font-medium shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40 hover:scale-[1.02] transition-all duration-200"
               data-testid="upload-document-btn"
             >
               <Plus size={18} />
@@ -719,8 +776,7 @@ export default function VaultPage() {
                                   setDateFilter('custom');
                                   setFilterMenuOpen(false);
                                 }}
-                                className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition"
-                                style={{ backgroundColor: 'var(--theme-button-primary)' }}
+                                className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 transition"
                               >
                                 Apply
                               </button>
@@ -792,7 +848,7 @@ export default function VaultPage() {
                     <p className="text-slate-500 text-sm mb-6">Upload your first medical document to get started</p>
                     <button
                       onClick={() => setShowUploadModal(true)}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 text-white rounded-xl font-medium hover:shadow-lg transition" style={{ background: 'linear-gradient(90deg, var(--theme-primary), var(--theme-secondary))' }}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-teal-600 text-white rounded-xl font-medium hover:bg-teal-700 transition"
                     >
                       <Plus size={18} />
                       Upload Document
@@ -1033,7 +1089,7 @@ export default function VaultPage() {
             </button>
 
             <div className="text-center mb-6">
-              <div className="w-14 h-14 mx-auto rounded-2xl flex items-center justify-center shadow-lg mb-4" style={{ background: 'linear-gradient(135deg, var(--theme-primary), var(--theme-secondary))', boxShadow: '0 10px 30px -10px color-mix(in srgb, var(--theme-primary) 30%, rgba(0,0,0,0))' }}>
+              <div className="w-14 h-14 mx-auto bg-gradient-to-br from-teal-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg shadow-teal-500/30 mb-4">
                 <Upload size={24} className="text-white" />
               </div>
               <h3 className="text-xl font-bold text-slate-800">Upload Document</h3>
@@ -1128,8 +1184,7 @@ export default function VaultPage() {
               <button
                 type="submit"
                 disabled={uploadData.uploading || !uploadData.file}
-                className="w-full py-3.5 text-white rounded-xl font-semibold shadow-lg hover:scale-[1.01] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                style={{ background: 'linear-gradient(90deg, var(--theme-primary), var(--theme-secondary))' }}
+                className="w-full py-3.5 bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-xl font-semibold shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40 hover:scale-[1.01] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
                 {uploadData.uploading ? 'Uploading...' : 'Upload Document'}
               </button>

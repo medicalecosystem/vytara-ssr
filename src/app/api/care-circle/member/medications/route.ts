@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
-import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { getAuthenticatedUser } from '@/lib/auth';
+import { logCareCircleActivity } from '@/lib/careCircleActivityLogs';
 
 type CareCircleRole = 'family' | 'friend';
 
@@ -36,16 +36,28 @@ type AuthorizedMedicationAccess = {
   adminClient: SupabaseClient;
   ownerProfileId: string;
   ownerUserId: string;
+  actorUserId: string;
 };
 
 type MedicationUpsertPayload = {
   linkId?: string;
+  actorProfileId?: string;
   medication?: Record<string, unknown>;
 };
 
 type MedicationDeletePayload = {
   linkId?: string;
+  actorProfileId?: string;
   medicationId?: string;
+};
+
+type ActivityMetadataValue = string | number | boolean | null;
+
+type ActivityMetadataChange = {
+  field: string;
+  label: string;
+  before: ActivityMetadataValue;
+  after: ActivityMetadataValue;
 };
 
 const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRole => {
@@ -58,6 +70,51 @@ const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRo
 };
 
 const canManageMedicalData = (role: CareCircleRole) => role === 'family';
+
+const isMissingAuthColumnError = (error: { code?: string; message?: string } | null) =>
+  error?.code === 'PGRST204' || error?.message?.toLowerCase().includes('auth_id');
+
+const normalizeActorProfileId = (value: unknown) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+};
+
+const resolveActorProfileId = async (
+  adminClient: SupabaseClient,
+  actorUserId: string,
+  requestedActorProfileId: string | null
+) => {
+  if (!requestedActorProfileId) return null;
+
+  const byAuth = await adminClient
+    .from('profiles')
+    .select('id')
+    .eq('id', requestedActorProfileId)
+    .eq('auth_id', actorUserId)
+    .maybeSingle();
+
+  if (!byAuth.error && byAuth.data?.id) {
+    return byAuth.data.id;
+  }
+
+  if (byAuth.error && !isMissingAuthColumnError(byAuth.error) && byAuth.error.code !== 'PGRST116') {
+    return null;
+  }
+
+  const byUser = await adminClient
+    .from('profiles')
+    .select('id')
+    .eq('id', requestedActorProfileId)
+    .eq('user_id', actorUserId)
+    .maybeSingle();
+
+  if (byUser.error || !byUser.data?.id) {
+    return null;
+  }
+
+  return byUser.data.id;
+};
 
 const formatDateOnly = (value: Date) =>
   `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(
@@ -81,6 +138,70 @@ const normalizeTimesPerDay = (value: unknown): number | undefined => {
   const numeric = typeof value === 'number' ? value : Number(String(value).trim());
   if (!Number.isFinite(numeric) || numeric < 0) return undefined;
   return Math.floor(numeric);
+};
+
+const normalizeActivityMetadataValue = (value: unknown): ActivityMetadataValue => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'boolean') return value;
+  return null;
+};
+
+const appendChange = (
+  changes: ActivityMetadataChange[],
+  field: string,
+  label: string,
+  before: unknown,
+  after: unknown
+) => {
+  const normalizedBefore = normalizeActivityMetadataValue(before);
+  const normalizedAfter = normalizeActivityMetadataValue(after);
+  if (normalizedBefore === normalizedAfter) return;
+  changes.push({
+    field,
+    label,
+    before: normalizedBefore,
+    after: normalizedAfter,
+  });
+};
+
+const buildMedicationChanges = (
+  previousMedication: MedicationRecord,
+  nextMedication: MedicationRecord
+): ActivityMetadataChange[] => {
+  const changes: ActivityMetadataChange[] = [];
+  appendChange(changes, 'name', 'Name', previousMedication.name, nextMedication.name);
+  appendChange(changes, 'dosage', 'Dosage', previousMedication.dosage, nextMedication.dosage);
+  appendChange(
+    changes,
+    'frequency',
+    'Frequency',
+    previousMedication.frequency,
+    nextMedication.frequency
+  );
+  appendChange(changes, 'purpose', 'Purpose', previousMedication.purpose, nextMedication.purpose);
+  appendChange(
+    changes,
+    'timesPerDay',
+    'Times per day',
+    previousMedication.timesPerDay,
+    nextMedication.timesPerDay
+  );
+  appendChange(
+    changes,
+    'startDate',
+    'Start date',
+    previousMedication.startDate,
+    nextMedication.startDate
+  );
+  appendChange(changes, 'endDate', 'End date', previousMedication.endDate, nextMedication.endDate);
+  return changes;
 };
 
 const normalizeMedicationLog = (value: unknown): MedicationLog | null => {
@@ -163,65 +284,6 @@ const createAdminClient = () => {
   );
 };
 
-const getAuthenticatedUser = async (request: Request): Promise<User | null> => {
-  const authHeader = request.headers.get('authorization');
-
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.replace('Bearer ', '');
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      }
-    );
-
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser(token);
-
-    if (!error && user) {
-      return user;
-    }
-
-    return null;
-  }
-
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
-          });
-        },
-      },
-    }
-  );
-
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (!error && user) {
-    return user;
-  }
-
-  return null;
-};
-
 const getAuthorizedMedicationAccess = async (
   request: Request,
   linkId: string
@@ -289,6 +351,7 @@ const getAuthorizedMedicationAccess = async (
       adminClient,
       ownerProfileId: link.profile_id,
       ownerUserId: link.requester_id,
+      actorUserId: user.id,
     },
     response: null,
   };
@@ -341,6 +404,7 @@ export async function POST(request: Request) {
     }
 
     const linkId = payload.linkId?.trim();
+    const requestedActorProfileId = normalizeActorProfileId(payload.actorProfileId);
     const input = payload.medication;
     if (!linkId || !input || typeof input !== 'object') {
       return NextResponse.json({ message: 'linkId and medication are required.' }, { status: 400 });
@@ -377,6 +441,11 @@ export async function POST(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const context = await loadMedicationContext(access);
     if (context.error) {
@@ -406,6 +475,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: saveError.message }, { status: 500 });
     }
 
+    await logCareCircleActivity({
+      adminClient: access.adminClient,
+      profileId: access.ownerProfileId,
+      actorUserId: access.actorUserId,
+      actorProfileId,
+      domain: 'medication',
+      action: 'add',
+      entity: {
+        id: nextMedication.id,
+        label: nextMedication.name,
+      },
+      metadata: {
+        name: nextMedication.name,
+        dosage: nextMedication.dosage,
+        frequency: nextMedication.frequency,
+        timesPerDay: nextMedication.timesPerDay ?? null,
+        startDate: nextMedication.startDate ?? null,
+        endDate: nextMedication.endDate ?? null,
+      },
+    });
+
     return NextResponse.json({
       medication: nextMedication,
       medications: nextMedications,
@@ -426,6 +516,7 @@ export async function PATCH(request: Request) {
     }
 
     const linkId = payload.linkId?.trim();
+    const requestedActorProfileId = normalizeActorProfileId(payload.actorProfileId);
     const input = payload.medication;
     if (!linkId || !input || typeof input !== 'object') {
       return NextResponse.json({ message: 'linkId and medication are required.' }, { status: 400 });
@@ -444,6 +535,11 @@ export async function PATCH(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const context = await loadMedicationContext(access);
     if (context.error) {
@@ -519,6 +615,31 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ message: saveError.message }, { status: 500 });
     }
 
+    const medicationChanges = buildMedicationChanges(existing, updatedMedication);
+
+    await logCareCircleActivity({
+      adminClient: access.adminClient,
+      profileId: access.ownerProfileId,
+      actorUserId: access.actorUserId,
+      actorProfileId,
+      domain: 'medication',
+      action: 'update',
+      entity: {
+        id: updatedMedication.id,
+        label: updatedMedication.name,
+      },
+      metadata: {
+        name: updatedMedication.name,
+        dosage: updatedMedication.dosage,
+        frequency: updatedMedication.frequency,
+        timesPerDay: updatedMedication.timesPerDay ?? null,
+        startDate: updatedMedication.startDate ?? null,
+        endDate: updatedMedication.endDate ?? null,
+        changes: medicationChanges,
+        changeCount: medicationChanges.length,
+      },
+    });
+
     return NextResponse.json({
       medication: updatedMedication,
       medications: nextMedications,
@@ -539,6 +660,7 @@ export async function DELETE(request: Request) {
     }
 
     const linkId = payload.linkId?.trim();
+    const requestedActorProfileId = normalizeActorProfileId(payload.actorProfileId);
     const medicationId = payload.medicationId?.trim();
     if (!linkId || !medicationId) {
       return NextResponse.json({ message: 'linkId and medicationId are required.' }, { status: 400 });
@@ -548,12 +670,18 @@ export async function DELETE(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const context = await loadMedicationContext(access);
     if (context.error) {
       return NextResponse.json({ message: context.error.message }, { status: 500 });
     }
 
+    const deletedMedication = context.medications.find((entry) => entry.id === medicationId);
     const nextMedications = context.medications.filter((entry) => entry.id !== medicationId);
     if (nextMedications.length === context.medications.length) {
       return NextResponse.json({ message: 'Medication not found.' }, { status: 404 });
@@ -563,6 +691,25 @@ export async function DELETE(request: Request) {
     if (saveError) {
       return NextResponse.json({ message: saveError.message }, { status: 500 });
     }
+
+    await logCareCircleActivity({
+      adminClient: access.adminClient,
+      profileId: access.ownerProfileId,
+      actorUserId: access.actorUserId,
+      actorProfileId,
+      domain: 'medication',
+      action: 'delete',
+      entity: {
+        id: medicationId,
+        label: deletedMedication?.name ?? null,
+      },
+      metadata: {
+        name: deletedMedication?.name ?? null,
+        dosage: deletedMedication?.dosage ?? null,
+        frequency: deletedMedication?.frequency ?? null,
+        startDate: deletedMedication?.startDate ?? null,
+      },
+    });
 
     return NextResponse.json({ deleted: true, medications: nextMedications });
   } catch (error) {

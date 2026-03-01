@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/createClient";
 import { AppointmentsModal } from "@/components/AppointmentsModal";
 import { EmergencyContactsModal, type EmergencyContact } from "@/components/EmergencyContactsModal";
@@ -29,11 +30,50 @@ type Appointment = {
   time: string;
   title: string;
   type: string;
+  [key: string]: string;
 };
 
 type CacheEntry<T> = {
   ts: number;
   value: T;
+};
+
+type ProfileActivityPayload = {
+  profileId: string;
+  domain: "vault" | "medication" | "appointment";
+  action: "upload" | "rename" | "delete" | "add" | "update";
+  entity?: {
+    id?: string | null;
+    label?: string | null;
+  };
+  metadata?: Record<string, unknown>;
+};
+
+type ActivityMetadataValue = string | number | boolean | null;
+
+type ActivityMetadataChange = {
+  field: string;
+  label: string;
+  before: ActivityMetadataValue;
+  after: ActivityMetadataValue;
+};
+
+type RawMedicationLog = {
+  medicationId?: unknown;
+  timestamp?: unknown;
+  taken?: unknown;
+};
+
+type RawMedication = {
+  id?: unknown;
+  name?: unknown;
+  dosage?: unknown;
+  purpose?: unknown;
+  frequency?: unknown;
+  timesPerDay?: unknown;
+  startDate?: unknown;
+  endDate?: unknown;
+  logs?: unknown;
 };
 
 const HOME_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -59,11 +99,243 @@ const writeHomeCache = <T,>(cacheOwnerId: string, key: string, value: T) => {
   window.localStorage.setItem(homeCacheKey(cacheOwnerId, key), JSON.stringify(entry));
 };
 
+const medicationFrequencyTimes: Record<string, number> = {
+  once_daily: 1,
+  twice_daily: 2,
+  three_times_daily: 3,
+  four_times_daily: 4,
+  every_4_hours: 6,
+  every_6_hours: 4,
+  every_8_hours: 3,
+  every_12_hours: 2,
+  as_needed: 0,
+  with_meals: 3,
+  before_bed: 1,
+};
+
+const APPOINTMENT_ACTIVITY_FIELD_LABELS: Record<string, string> = {
+  title: "Title",
+  type: "Type",
+  date: "Date",
+  time: "Time",
+  doctorName: "Doctor name",
+  specialty: "Specialty",
+  hospitalName: "Hospital or clinic",
+  reason: "Reason",
+  testName: "Test name",
+  labName: "Lab name",
+  instructions: "Instructions",
+  department: "Department",
+  therapyType: "Therapy type",
+  therapistName: "Therapist name",
+  location: "Location",
+  previousDoctor: "Previous doctor",
+  previousVisitReason: "Previous visit reason",
+  description: "Description",
+  contactPerson: "Contact person",
+};
+
+const MEDICATION_ACTIVITY_FIELD_LABELS: Record<string, string> = {
+  name: "Name",
+  dosage: "Dosage",
+  purpose: "Purpose",
+  frequency: "Frequency",
+  timesPerDay: "Times per day",
+  startDate: "Start date",
+  endDate: "End date",
+};
+
+const normalizeActivityMetadataValue = (value: unknown): ActivityMetadataValue => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "boolean") return value;
+  return null;
+};
+
+const toTitleCase = (value: string) =>
+  value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const getAppointmentActivityFieldLabel = (field: string) => {
+  if (APPOINTMENT_ACTIVITY_FIELD_LABELS[field]) {
+    return APPOINTMENT_ACTIVITY_FIELD_LABELS[field];
+  }
+  const normalized = field
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  return toTitleCase(normalized || field);
+};
+
+const buildAppointmentActivityChanges = (
+  previousAppointment: Appointment,
+  nextAppointment: Appointment
+): ActivityMetadataChange[] => {
+  const keys = Array.from(
+    new Set([...Object.keys(previousAppointment), ...Object.keys(nextAppointment)])
+  ).filter((key) => key !== "id");
+  const prioritized = ["title", "type", "date", "time"];
+  const orderedKeys = [
+    ...prioritized.filter((key) => keys.includes(key)),
+    ...keys.filter((key) => !prioritized.includes(key)).sort(),
+  ];
+  return orderedKeys
+    .map((key) => {
+      const before = normalizeActivityMetadataValue(previousAppointment[key]);
+      const after = normalizeActivityMetadataValue(nextAppointment[key]);
+      if (before === after) return null;
+      return {
+        field: key,
+        label: getAppointmentActivityFieldLabel(key),
+        before,
+        after,
+      };
+    })
+    .filter((entry): entry is ActivityMetadataChange => entry !== null);
+};
+
+const getMedicationActivityFieldLabel = (field: string) => {
+  if (MEDICATION_ACTIVITY_FIELD_LABELS[field]) {
+    return MEDICATION_ACTIVITY_FIELD_LABELS[field];
+  }
+  const normalized = field
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  return toTitleCase(normalized || field);
+};
+
+const buildMedicationActivityChanges = (
+  previousMedication: Medication,
+  nextMedication: Medication
+): ActivityMetadataChange[] => {
+  const fields = [
+    "name",
+    "dosage",
+    "purpose",
+    "frequency",
+    "timesPerDay",
+    "startDate",
+    "endDate",
+  ] as const;
+  return fields.reduce<ActivityMetadataChange[]>((changes, field) => {
+      const before = normalizeActivityMetadataValue(previousMedication[field] ?? null);
+      const after = normalizeActivityMetadataValue(nextMedication[field] ?? null);
+      if (before === after) return changes;
+      changes.push({
+        field,
+        label: getMedicationActivityFieldLabel(field),
+        before,
+        after,
+      });
+      return changes;
+    }, []);
+};
+
+const resolveTimesPerDay = (frequency: string, value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return Math.floor(value);
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return Math.floor(parsed);
+    }
+  }
+  return medicationFrequencyTimes[frequency] ?? 1;
+};
+
+const normalizeMedicationList = (value: unknown): Medication[] => {
+  if (!Array.isArray(value)) return [];
+  const todayDate = new Date().toISOString().split("T")[0];
+  return value
+    .map((entry) => {
+      const med = (entry || {}) as RawMedication;
+      const id =
+        typeof med.id === "string" && med.id.trim() ? med.id.trim() : crypto.randomUUID();
+      const frequency = typeof med.frequency === "string" ? med.frequency.trim() : "";
+      const rawLogs = Array.isArray(med.logs) ? (med.logs as RawMedicationLog[]) : [];
+      const logs = rawLogs
+        .map((log) => ({
+          medicationId:
+            typeof log.medicationId === "string" && log.medicationId.trim()
+              ? log.medicationId.trim()
+              : id,
+          timestamp: typeof log.timestamp === "string" ? log.timestamp.trim() : "",
+          taken: typeof log.taken === "boolean" ? log.taken : null,
+        }))
+        .filter(
+          (log): log is { medicationId: string; timestamp: string; taken: boolean } =>
+            Boolean(log.timestamp) && log.taken !== null
+        );
+
+      return {
+        id,
+        name: typeof med.name === "string" ? med.name.trim() : "",
+        dosage: typeof med.dosage === "string" ? med.dosage.trim() : "",
+        purpose: typeof med.purpose === "string" ? med.purpose.trim() : "",
+        frequency,
+        timesPerDay: resolveTimesPerDay(frequency, med.timesPerDay),
+        startDate:
+          typeof med.startDate === "string" && med.startDate.trim()
+            ? med.startDate.trim()
+            : todayDate,
+        endDate:
+          typeof med.endDate === "string" && med.endDate.trim() ? med.endDate.trim() : undefined,
+        logs,
+      };
+    })
+    .filter((med) => med.name && med.dosage && med.frequency);
+};
+
+const getErrorMessage = (error: unknown, fallback = "Please try again.") => {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
+const logProfileActivity = async (payload: ProfileActivityPayload) => {
+  try {
+    await fetch("/api/profile/activity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // Non-blocking log write.
+  }
+};
+
 /* =======================
    PAGE COMPONENT
 ======================= */
 
 export default function HomePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center text-slate-600">
+          Loading...
+        </div>
+      }
+    >
+      <HomePageContent />
+    </Suspense>
+  );
+}
+
+function HomePageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const openParam = searchParams.get("open");
   const { selectedProfile } = useAppProfile();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [activeSection, setActiveSection] = useState<string | null>(null);
@@ -79,6 +351,25 @@ export default function HomePage() {
   const [greeting, setGreeting] = useState("Good Morning");
   const profileId = selectedProfile?.id ?? "";
   const cacheOwnerId = profileId || userId;
+
+  useEffect(() => {
+    if (!openParam) return;
+
+    const sectionMap: Record<string, string> = {
+      calendar: "calendar",
+      emergency: "emergency",
+      doctors: "doctors",
+      medications: "medications",
+    };
+    const targetSection = sectionMap[openParam];
+
+    if (targetSection) {
+      setIsNotificationsOpen(false);
+      setActiveSection(targetSection);
+    }
+
+    router.replace("/app/homepage", { scroll: false });
+  }, [openParam, router]);
 
   useEffect(() => {
     const updateGreeting = () => {
@@ -170,7 +461,9 @@ export default function HomePage() {
         if (error.code === "PGRST116") {
           setEmergencyContacts([]);
         } else {
-          console.error("Emergency fetch error:", error);
+          if (process.env.NODE_ENV !== 'production') {
+            console.error("Emergency fetch error:", error);
+          }
           setEmergencyContacts([]);
         }
         return;
@@ -207,7 +500,9 @@ export default function HomePage() {
 
       if (error) {
         if (error.code !== "PGRST116") {
-          console.error("Medical team fetch error:", error);
+          if (process.env.NODE_ENV !== 'production') {
+            console.error("Medical team fetch error:", error);
+          }
         }
         setMedicalTeam([]);
         return;
@@ -233,7 +528,7 @@ export default function HomePage() {
     async function fetchMedications() {
       const cachedMeds = readHomeCache<Medication[]>(cacheOwnerId, "medications");
       if (cachedMeds) {
-        setMedications(cachedMeds);
+        setMedications(normalizeMedicationList(cachedMeds));
       }
 
       const { data, error } = await supabase
@@ -244,14 +539,39 @@ export default function HomePage() {
 
       if (error) {
         if (error.code !== "PGRST116") {
-          console.error("Medications fetch error:", error);
+          if (process.env.NODE_ENV !== 'production') {
+            console.error("Medications fetch error:", error);
+          }
         }
         setMedications([]);
         return;
       }
 
-      setMedications(data?.medications || []);
-      writeHomeCache(cacheOwnerId, "medications", data?.medications || []);
+      const rawMedicationList = data?.medications || [];
+      const normalizedMedications = normalizeMedicationList(rawMedicationList);
+      setMedications(normalizedMedications);
+      writeHomeCache(cacheOwnerId, "medications", normalizedMedications);
+
+      const shouldRepair =
+        JSON.stringify(rawMedicationList || []) !== JSON.stringify(normalizedMedications);
+      if (shouldRepair) {
+        const { error: repairError } = await supabase
+          .from("user_medications")
+          .upsert(
+            {
+              profile_id: profileId,
+              user_id: userId,
+              medications: normalizedMedications,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "profile_id" }
+          );
+        if (repairError) {
+          if (process.env.NODE_ENV !== 'production') {
+            console.error("Medications repair error:", repairError);
+          }
+        }
+      }
     }
 
     fetchMedications();
@@ -281,7 +601,9 @@ export default function HomePage() {
 
       if (error) {
         if (error.code !== "PGRST116") {
-          console.error("Appointments fetch error:", error);
+          if (process.env.NODE_ENV !== 'production') {
+            console.error("Appointments fetch error:", error);
+          }
         }
         setAppointments([]);
         return;
@@ -301,11 +623,11 @@ export default function HomePage() {
   const handleAddAppointment = async (appointment: Appointment) => {
     if (!userId || !profileId) return;
 
+    const existingAppointment = appointments.find((a) => a.id === appointment.id) ?? null;
     let updatedAppointments: Appointment[];
+    const isUpdate = Boolean(existingAppointment);
 
-    const existingIndex = appointments.findIndex((a) => a.id === appointment.id);
-    
-    if (existingIndex !== -1) {
+    if (isUpdate) {
       updatedAppointments = appointments.map((a) =>
         a.id === appointment.id ? appointment : a
       );
@@ -326,10 +648,39 @@ export default function HomePage() {
       );
 
     if (error) {
-      console.error("Save appointment error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Save appointment error:", error);
+      }
       alert("Failed to save appointment");
       return;
     }
+
+    const appointmentChanges =
+      isUpdate && existingAppointment
+        ? buildAppointmentActivityChanges(existingAppointment, appointment)
+        : [];
+    const metadata: Record<string, unknown> = {
+      id: appointment.id,
+      title: appointment.title || null,
+      type: appointment.type || null,
+      date: appointment.date || null,
+      time: appointment.time || null,
+    };
+    if (isUpdate) {
+      metadata.changes = appointmentChanges;
+      metadata.changeCount = appointmentChanges.length;
+    }
+
+    void logProfileActivity({
+      profileId,
+      domain: "appointment",
+      action: isUpdate ? "update" : "add",
+      entity: {
+        id: appointment.id,
+        label: appointment.title || appointment.type || "Appointment",
+      },
+      metadata,
+    });
 
     setAppointments(updatedAppointments);
     writeHomeCache(cacheOwnerId, "appointments", updatedAppointments);
@@ -341,6 +692,7 @@ export default function HomePage() {
     const confirmed = confirm("Delete this appointment?");
     if (!confirmed) return;
 
+    const deletedAppointment = appointments.find((a) => a.id === id) ?? null;
     const updatedAppointments = appointments.filter((a) => a.id !== id);
 
     const { error } = await supabase
@@ -356,10 +708,29 @@ export default function HomePage() {
       );
 
     if (error) {
-      console.error("Delete appointment error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Delete appointment error:", error);
+      }
       alert("Failed to delete appointment");
       return;
     }
+
+    void logProfileActivity({
+      profileId,
+      domain: "appointment",
+      action: "delete",
+      entity: {
+        id,
+        label: deletedAppointment?.title || deletedAppointment?.type || "Appointment",
+      },
+      metadata: {
+        id,
+        title: deletedAppointment?.title || null,
+        type: deletedAppointment?.type || null,
+        date: deletedAppointment?.date || null,
+        time: deletedAppointment?.time || null,
+      },
+    });
 
     setAppointments(updatedAppointments);
     writeHomeCache(cacheOwnerId, "appointments", updatedAppointments);
@@ -399,7 +770,9 @@ export default function HomePage() {
       );
 
     if (error) {
-      console.error("Add emergency contact error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Add emergency contact error:", error);
+      }
       alert("Failed to add contact. Please try again.");
       return;
     }
@@ -429,7 +802,9 @@ export default function HomePage() {
       );
 
     if (error) {
-      console.error("Delete emergency contact error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Delete emergency contact error:", error);
+      }
       alert("Failed to delete contact. Please try again.");
       return;
     }
@@ -472,7 +847,9 @@ export default function HomePage() {
       );
 
     if (error) {
-      console.error("Add doctor error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Add doctor error:", error);
+      }
       alert("Failed to add doctor. Please try again.");
       return;
     }
@@ -506,7 +883,9 @@ export default function HomePage() {
       );
 
     if (error) {
-      console.error("Update doctor error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Update doctor error:", error);
+      }
       alert("Failed to update doctor. Please try again.");
       return;
     }
@@ -536,7 +915,9 @@ export default function HomePage() {
       );
 
     if (error) {
-      console.error("Delete doctor error:", error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Delete doctor error:", error);
+      }
       alert("Failed to delete doctor. Please try again.");
       return;
     }
@@ -588,11 +969,30 @@ export default function HomePage() {
 
       if (error) throw error;
 
+      void logProfileActivity({
+        profileId,
+        domain: "medication",
+        action: "add",
+        entity: {
+          id: newMedication.id,
+          label: newMedication.name,
+        },
+        metadata: {
+          id: newMedication.id,
+          name: newMedication.name,
+          dosage: newMedication.dosage,
+          frequency: newMedication.frequency,
+          startDate: newMedication.startDate ?? null,
+        },
+      });
+
       setMedications(updatedMedications);
       writeHomeCache(cacheOwnerId, "medications", updatedMedications);
-    } catch (error: any) {
-      console.error("Add medication error:", error);
-      alert(`Failed to add medication: ${error.message || "Please try again."}`);
+    } catch (error: unknown) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Add medication error:", error);
+      }
+      alert(`Failed to add medication: ${getErrorMessage(error)}`);
     }
   };
 
@@ -604,8 +1004,30 @@ export default function HomePage() {
       return;
     }
 
+    const existingMedication = medications.find((m) => m.id === medication.id) ?? null;
+    const medicationId = medication.id || existingMedication?.id || "";
+    if (!medicationId) {
+      alert("Medication ID is missing. Please reopen and try again.");
+      return;
+    }
+    const normalizedMedication: Medication = {
+      ...medication,
+      id: medicationId,
+      name: medication.name.trim(),
+      dosage: medication.dosage.trim(),
+      purpose: (medication.purpose || "").trim(),
+      frequency: medication.frequency.trim(),
+      timesPerDay:
+        typeof medication.timesPerDay === "number" && medication.timesPerDay >= 0
+          ? medication.timesPerDay
+          : resolveTimesPerDay(medication.frequency.trim(), medication.timesPerDay),
+      startDate: medication.startDate || undefined,
+      endDate: medication.endDate || undefined,
+      logs: Array.isArray(medication.logs) ? medication.logs : existingMedication?.logs || [],
+    };
+
     const updatedMedications = medications.map((m) =>
-      m.id === medication.id ? medication : m
+      m.id === medicationId ? normalizedMedication : m
     );
 
     try {
@@ -625,11 +1047,39 @@ export default function HomePage() {
 
       if (error) throw error;
 
+      const medicationChanges = existingMedication
+        ? buildMedicationActivityChanges(existingMedication, normalizedMedication)
+        : [];
+
+      void logProfileActivity({
+        profileId,
+        domain: "medication",
+        action: "update",
+        entity: {
+          id: normalizedMedication.id,
+          label: normalizedMedication.name,
+        },
+        metadata: {
+          id: normalizedMedication.id,
+          name: normalizedMedication.name,
+          dosage: normalizedMedication.dosage,
+          purpose: normalizedMedication.purpose ?? null,
+          frequency: normalizedMedication.frequency,
+          timesPerDay: normalizedMedication.timesPerDay ?? null,
+          startDate: normalizedMedication.startDate ?? null,
+          endDate: normalizedMedication.endDate ?? null,
+          changes: medicationChanges,
+          changeCount: medicationChanges.length,
+        },
+      });
+
       setMedications(updatedMedications);
       writeHomeCache(cacheOwnerId, "medications", updatedMedications);
-    } catch (error: any) {
-      console.error("Update medication error:", error);
-      alert(`Failed to update medication: ${error.message || "Please try again."}`);
+    } catch (error: unknown) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Update medication error:", error);
+      }
+      alert(`Failed to update medication: ${getErrorMessage(error)}`);
     }
   };
 
@@ -639,6 +1089,7 @@ export default function HomePage() {
     const confirmed = confirm("Delete this medication?");
     if (!confirmed) return;
 
+    const deletedMedication = medications.find((m) => m.id === id) ?? null;
     const updatedMedications = medications.filter((m) => m.id !== id);
 
     try {
@@ -658,11 +1109,27 @@ export default function HomePage() {
 
       if (error) throw error;
 
+      void logProfileActivity({
+        profileId,
+        domain: "medication",
+        action: "delete",
+        entity: {
+          id,
+          label: deletedMedication?.name ?? "Medication",
+        },
+        metadata: {
+          id,
+          name: deletedMedication?.name ?? null,
+        },
+      });
+
       setMedications(updatedMedications);
       writeHomeCache(cacheOwnerId, "medications", updatedMedications);
-    } catch (error: any) {
-      console.error("Delete medication error:", error);
-      alert(`Failed to delete medication: ${error.message || "Please try again."}`);
+    } catch (error: unknown) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Delete medication error:", error);
+      }
+      alert(`Failed to delete medication: ${getErrorMessage(error)}`);
     }
   };
 
@@ -708,9 +1175,11 @@ export default function HomePage() {
 
       setMedications(updatedMedications);
       writeHomeCache(cacheOwnerId, "medications", updatedMedications);
-    } catch (error: any) {
-      console.error("Failed to log dose:", error);
-      alert(`Failed to log dose: ${error.message || "Please try again."}`);
+    } catch (error: unknown) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("Failed to log dose:", error);
+      }
+      alert(`Failed to log dose: ${getErrorMessage(error)}`);
     }
   };
 
@@ -756,12 +1225,15 @@ export default function HomePage() {
       alert(
         `✅ SOS Alert Sent Successfully!\n\n${data.message}\n\nYour emergency contacts have been notified.`
       );
-    } catch (error: any) {
-      console.error("SOS error:", error);
+    } catch (error: unknown) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("SOS error:", error);
+      }
+      const message = getErrorMessage(error, "Failed to send SOS alert. Please try again.");
       const errorMessage =
-        error.message === "Please enter a valid number"
+        message === "Please enter a valid number"
           ? "Please enter a valid number"
-          : error.message || "Failed to send SOS alert. Please try again.";
+          : message;
       alert(`❌ ${errorMessage}`);
     } finally {
       setIsSendingSOS(false);
@@ -780,7 +1252,7 @@ export default function HomePage() {
           {/* Left Column */}
           <div className="space-y-8">
             <div>
-              <span className="inline-block text-white px-4 py-1 rounded-full text-sm font-semibold mb-6" style={{ backgroundColor: 'var(--theme-primary)' }}>
+              <span className="inline-block bg-teal-500 text-white px-4 py-1 rounded-full text-sm font-semibold mb-6">
                 Health Companion
               </span>
 
@@ -866,17 +1338,17 @@ export default function HomePage() {
           </Modal>
         )}
 
-        {activeSection && (
-          <Modal onClose={() => setActiveSection(null)}>
-            {activeSection === "calendar" && (
-              <AppointmentsModal
-                appointments={appointments}
-                onClose={() => setActiveSection(null)}
-                onAddAppointment={handleAddAppointment}
-                onDeleteAppointment={handleDeleteAppointment}
-              />
-            )}
+        {activeSection === "calendar" && (
+          <AppointmentsModal
+            appointments={appointments}
+            onClose={() => setActiveSection(null)}
+            onAddAppointment={handleAddAppointment}
+            onDeleteAppointment={handleDeleteAppointment}
+          />
+        )}
 
+        {activeSection && activeSection !== "calendar" && (
+          <Modal onClose={() => setActiveSection(null)}>
             {activeSection === "emergency" && (
               <EmergencyContactsModal
                 data={emergencyContacts}
@@ -978,7 +1450,15 @@ function Modal({
    CARD COMPONENT
 ======================= */
 
-function Card({ title, icon: Icon, onClick }: any) {
+function Card({
+  title,
+  icon: Icon,
+  onClick,
+}: {
+  title: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  onClick: () => void;
+}) {
   return (
     <div
       onClick={onClick}

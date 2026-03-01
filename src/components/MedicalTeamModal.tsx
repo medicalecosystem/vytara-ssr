@@ -81,7 +81,7 @@ export function MedicalTeamModal({ data, onAdd, onUpdate, onDelete }: Props) {
             setShowForm((v) => !v);
             if (!showForm) resetForm();
           }}
-          className="mt-6 rounded-xl px-4 py-2 text-sm font-semibold text-white transition" style={{ backgroundColor: 'var(--theme-button-primary)' }}
+          className="mt-6 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
         >
           {showForm ? "Close" : "+ Add Doctor"}
         </button>
@@ -149,7 +149,7 @@ export function MedicalTeamModal({ data, onAdd, onUpdate, onDelete }: Props) {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition" style={{ backgroundColor: 'var(--theme-button-primary)' }}
+                className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-60"
               >
                 {saving
                   ? editingId

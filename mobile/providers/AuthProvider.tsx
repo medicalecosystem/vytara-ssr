@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
+import { clearPersistedAuthOnFreshInstall } from '@/lib/installState';
 import { supabase, type Session, type User } from '@/lib/supabase';
 
 type AuthContextValue = {
@@ -29,6 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let isMounted = true;
 
     const bootstrap = async () => {
+      await clearPersistedAuthOnFreshInstall();
       const {
         data: { session: nextSession },
       } = await supabase.auth.getSession();

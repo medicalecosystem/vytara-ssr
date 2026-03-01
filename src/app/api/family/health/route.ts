@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { isValidUUID } from '@/lib/validation';
 
 type FamilyLink = {
   family_id: string | null;
@@ -54,6 +55,10 @@ export async function GET(request: Request) {
 
     if (!memberId) {
       return NextResponse.json({ message: 'Member ID is required.' }, { status: 400 });
+    }
+
+    if (!isValidUUID(memberId)) {
+      return NextResponse.json({ message: 'Invalid member ID.' }, { status: 400 });
     }
 
     const familyId = await getFamilyId(supabase, session.user.id);

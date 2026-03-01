@@ -8,6 +8,7 @@ import {
     Text,
     View,
     useColorScheme,
+    useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ProfileAvatar } from './ProfileAvatar';
@@ -51,6 +52,11 @@ export function ProfileAvatarSelector({
 }: ProfileAvatarSelectorProps) {
     const colorScheme = useColorScheme();
     const isDark = colorScheme === 'dark';
+    const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+    const isCompact = windowWidth < 360;
+    const modalMaxHeight = Math.min(windowHeight - 24, 760);
+    const avatarOptionWidth = isCompact ? '30%' : '22%';
+    const colorCircleSize = isCompact ? 52 : 60;
 
     const [selectedType, setSelectedType] = useState(initialAvatarType);
     const [selectedColor, setSelectedColor] = useState(initialAvatarColor);
@@ -63,7 +69,13 @@ export function ProfileAvatarSelector({
     return (
         <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
             <View style={styles.modalOverlay}>
-                <View style={[styles.modalContent, isDark && styles.modalContentDark]}>
+                <View
+                    style={[
+                        styles.modalContent,
+                        isDark && styles.modalContentDark,
+                        { maxHeight: modalMaxHeight },
+                    ]}
+                >
                     {/* Header */}
                     <View style={styles.header}>
                         <Text style={[styles.title, isDark && styles.titleDark]}>Choose Avatar</Text>
@@ -96,6 +108,7 @@ export function ProfileAvatarSelector({
                                         key={avatar.type}
                                         style={[
                                             styles.avatarOption,
+                                            { width: avatarOptionWidth },
                                             selectedType === avatar.type && styles.avatarOptionSelected,
                                             isDark && styles.avatarOptionDark,
                                             selectedType === avatar.type && isDark && styles.avatarOptionSelectedDark,
@@ -131,6 +144,7 @@ export function ProfileAvatarSelector({
                                         key={color.hex}
                                         style={[
                                             styles.colorOption,
+                                            { width: colorCircleSize, height: colorCircleSize },
                                             selectedColor === color.hex && styles.colorOptionSelected,
                                         ]}
                                         onPress={() => setSelectedColor(color.hex)}
@@ -138,12 +152,21 @@ export function ProfileAvatarSelector({
                                         <View
                                             style={[
                                                 styles.colorCircle,
+                                                {
+                                                    width: colorCircleSize,
+                                                    height: colorCircleSize,
+                                                    borderRadius: colorCircleSize / 2,
+                                                },
                                                 { backgroundColor: color.hex },
                                                 selectedColor === color.hex && styles.colorCircleSelected,
                                             ]}
                                         >
                                             {selectedColor === color.hex && (
-                                                <MaterialCommunityIcons name="check" size={24} color="#ffffff" />
+                                                <MaterialCommunityIcons
+                                                    name="check"
+                                                    size={isCompact ? 20 : 24}
+                                                    color="#ffffff"
+                                                />
                                             )}
                                         </View>
                                     </Pressable>
@@ -153,7 +176,7 @@ export function ProfileAvatarSelector({
                     </ScrollView>
 
                     {/* Footer Buttons */}
-                    <View style={styles.footer}>
+                    <View style={[styles.footer, isCompact && styles.footerStacked]}>
                         <Pressable
                             style={[styles.button, styles.buttonCancel, isDark && styles.buttonCancelDark]}
                             onPress={onClose}
@@ -182,7 +205,6 @@ const styles = StyleSheet.create({
         borderTopRightRadius: 24,
         paddingTop: 20,
         paddingBottom: 32,
-        maxHeight: '85%',
     },
     modalContentDark: {
         backgroundColor: '#1e293b',
@@ -296,6 +318,9 @@ const styles = StyleSheet.create({
         gap: 12,
         paddingHorizontal: 20,
         marginTop: 20,
+    },
+    footerStacked: {
+        flexDirection: 'column',
     },
     button: {
         flex: 1,

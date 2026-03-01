@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Modal, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { Link, router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -59,6 +70,7 @@ const getRequestErrorMessage = (error: unknown, fallback: string) => {
 };
 
 export default function LoginScreen() {
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [phone, setPhone] = useState('');
   const [selectedCountry, setSelectedCountry] = useState<CountryOption>(DEFAULT_COUNTRY);
   const [countryPickerVisible, setCountryPickerVisible] = useState(false);
@@ -72,6 +84,11 @@ export default function LoginScreen() {
   const [rememberDevice, setRememberDevice] = useState(false);
   const [rememberedAccount, setRememberedAccount] = useState<RememberedAccount | null>(null);
   const otpRefs = useRef<Array<TextInput | null>>([]);
+  const isCompactScreen = screenWidth < 380;
+  const logoSize = Math.min(Math.round(screenWidth * 0.65), 280);
+  const glowSize = Math.round(logoSize * 0.93);
+  const countryPickerHeight = Math.min(screenHeight * 0.75, 520);
+  const countryListMaxHeight = Math.min(screenHeight * 0.55, 420);
 
   const fullPhone = useMemo(() => `${selectedCountry.dialCode}${phone}`, [selectedCountry, phone]);
 
@@ -350,7 +367,7 @@ export default function LoginScreen() {
     <Screen
       maxWidth={520}
       safeAreaStyle={styles.safeArea}
-      contentContainerStyle={styles.screenContent}
+      contentContainerStyle={[styles.screenContent, isCompactScreen && styles.screenContentCompact]}
       padded={false}
     >
       <View pointerEvents="none" style={styles.background}>
@@ -360,10 +377,10 @@ export default function LoginScreen() {
           end={{ x: 0.8, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <View style={[styles.glow, styles.glowOne]} />
-        <View style={[styles.glow, styles.glowTwo]} />
+        <View style={[styles.glow, styles.glowOne, { width: glowSize, height: glowSize, borderRadius: glowSize / 2 }]} />
+        <View style={[styles.glow, styles.glowTwo, { width: glowSize, height: glowSize, borderRadius: glowSize / 2 }]} />
       </View>
-      <View style={styles.card}>
+      <View style={[styles.card, isCompactScreen && styles.cardCompact]}>
         <LinearGradient
           colors={['#14b8a6', '#134e4a']}
           start={{ x: 0, y: 0.5 }}
@@ -371,7 +388,11 @@ export default function LoginScreen() {
           style={styles.cardAccent}
         />
         <View style={styles.logoWrap}>
-          <Image source={LogoImage} style={styles.logo} accessibilityLabel="Vytara logo" />
+          <Image
+            source={LogoImage}
+            style={[styles.logo, { width: logoSize, height: logoSize }]}
+            accessibilityLabel="Vytara logo"
+          />
         </View>
         <Text style={styles.title}>Login with Phone</Text>
         <Text style={styles.subtitle}>
@@ -395,18 +416,18 @@ export default function LoginScreen() {
               </View>
             </View>
 
-            <View style={styles.rememberedActions}>
+            <View style={[styles.rememberedActions, isCompactScreen && styles.rememberedActionsStacked]}>
               <Pressable
                 onPress={removeRememberedAccount}
                 disabled={continueLoading || isSubmitting}
-                style={styles.rememberedRemoveButton}
+                style={[styles.rememberedRemoveButton, isCompactScreen && styles.rememberedActionButtonFull]}
               >
                 <Text style={styles.rememberedRemoveText}>Remove</Text>
               </Pressable>
               <Pressable
                 onPress={handleContinueAs}
                 disabled={continueLoading || isSubmitting}
-                style={styles.rememberedContinueButton}
+                style={[styles.rememberedContinueButton, isCompactScreen && styles.rememberedActionButtonFull]}
               >
                 {continueLoading ? (
                   <ActivityIndicator color="#ffffff" />
@@ -447,14 +468,20 @@ export default function LoginScreen() {
                   style={StyleSheet.absoluteFill}
                   onPress={() => setCountryPickerVisible(false)}
                 />
-                <View style={styles.modalContent} pointerEvents="box-none">
+                <View
+                  style={[
+                    styles.modalContent,
+                    { height: countryPickerHeight, maxHeight: countryPickerHeight },
+                  ]}
+                  pointerEvents="box-none"
+                >
                   <View style={styles.modalHeader}>
                     <Text style={styles.modalTitle}>Select country</Text>
                     <Pressable onPress={() => setCountryPickerVisible(false)} hitSlop={12}>
                       <Text style={styles.modalClose}>Done</Text>
                     </Pressable>
                   </View>
-                  <View style={styles.countryListContainer}>
+                  <View style={[styles.countryListContainer, { maxHeight: countryListMaxHeight }]}>
                     <FlatList
                       data={COUNTRIES}
                       keyExtractor={(item) => item.code}
@@ -567,6 +594,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 32,
   },
+  screenContentCompact: {
+    paddingVertical: 20,
+  },
   background: {
     ...StyleSheet.absoluteFillObject,
   },
@@ -598,6 +628,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 6,
     marginHorizontal: 20,
+  },
+  cardCompact: {
+    padding: 20,
+    marginHorizontal: 14,
+    gap: 12,
   },
   cardAccent: {
     height: 6,
@@ -678,6 +713,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+  rememberedActionsStacked: {
+    flexDirection: 'column',
+  },
+  rememberedActionButtonFull: {
+    width: '100%',
+  },
   rememberedRemoveButton: {
     borderRadius: 10,
     borderWidth: 1,
@@ -714,12 +755,12 @@ const styles = StyleSheet.create({
   },
   countryCode: {
     minWidth: 70,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#e5e7eb',
     backgroundColor: '#f3f4f6',
     paddingHorizontal: 12,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -738,8 +779,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    height: '70%',
-    maxHeight: 500,
     paddingBottom: 34,
     overflow: 'hidden',
   },
@@ -766,7 +805,6 @@ const styles = StyleSheet.create({
   countryListContainer: {
     flex: 1,
     minHeight: 0,
-    maxHeight: 360,
   },
   countryList: {
     flex: 1,
@@ -788,13 +826,13 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
   input: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#e5e7eb',
     backgroundColor: '#f9fafb',
     color: '#0f172a',
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
   },
   phoneInput: {
     flex: 1,
@@ -807,11 +845,11 @@ const styles = StyleSheet.create({
   otpInput: {
     flex: 1,
     minHeight: 52,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#e5e7eb',
     backgroundColor: '#f9fafb',
     color: '#0f172a',
-    borderRadius: 12,
+    borderRadius: 14,
     fontSize: 20,
     fontWeight: '700',
   },

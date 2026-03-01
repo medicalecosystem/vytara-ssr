@@ -201,17 +201,7 @@ body {
   --sidebar-ring: oklch(0.556 0 0);
 }
 
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-    background-color: var(--theme-background, #e8f7f5);
-  }
-}
-
-/* Theme Variables */
+/* theme variable definitions added from theme package */
 :root {
   /* Default Theme */
   --theme-primary: #14b8a6;
@@ -253,14 +243,14 @@ body {
   --theme-accent: #c6a27e;
   --theme-background: #d8b28e;
   --theme-surface: #c6a27e;
-  --theme-text: #f17211e6;
+  --theme-text: #ffffff;
   --theme-text-secondary: #ffffff;
   --theme-border: #835c44;
   --theme-card: #c6a27e;
   --theme-navbar: #4a342a;
   --theme-sidebar-active: #4a342a;
   --theme-button-primary: #4a342a;
-  --theme-button-secondary: #a37a61;
+  --theme-button-secondary: #835c44;
 }
 
 /* Olive Theme */
@@ -270,7 +260,7 @@ body {
   --theme-accent: #b5c99a;
   --theme-background: #edf3e5;
   --theme-surface: #b5c99a;
-  --theme-text: #121010;
+  --theme-text: #ffffff;
   --theme-text-secondary: #ffffff;
   --theme-border: #87986a;
   --theme-card: #b5c99a;
@@ -282,7 +272,7 @@ body {
 
 /* Coffee Theme */
 .theme-coffee {
-  --theme-primary: #663a24;
+  --theme-primary: #391e10;
   --theme-secondary: #734128;
   --theme-accent: #C7A07A;
   --theme-background: #E2CEB1;
@@ -338,8 +328,8 @@ body {
   --theme-accent: #ffe745;
   --theme-background: #f5f1c8;
   --theme-surface: #ffdd00;
-  --theme-text: #21211f;
-  --theme-text-secondary: #ffffff;
+  --theme-text: #1e293b;
+  --theme-text-secondary: #64748b;
   --theme-border: #fec428;
   --theme-card: #f1d941;
   --theme-navbar: #f49f04;
@@ -350,13 +340,13 @@ body {
 
 /* Lavender Theme */
 .theme-lavender {
-  --theme-primary: #b677e7;
+  --theme-primary: #7f4ca5;
   --theme-secondary: #6e339b;
   --theme-accent: #dbb6ee;
   --theme-background: #f0e0fb;
   --theme-surface: #dbb6ee;
-  --theme-text: #ecedf0;
-  --theme-text-secondary: #e6e9ed;
+  --theme-text: #1e293b;
+  --theme-text-secondary: #64748b;
   --theme-border: #b57edc;
   --theme-card: #bf8fd7;
   --theme-navbar: #7f4ca5;
@@ -373,7 +363,7 @@ body {
   --theme-background: #bfd9dc;
   --theme-surface: #ffffff;
   --theme-text: #1e293b;
-  --theme-text-secondary: #eff1f5;
+  --theme-text-secondary: #64748b;
   --theme-border: #e2e8f0;
   --theme-card: #c7425b;  
   --theme-navbar: #c7425b;
@@ -394,42 +384,11 @@ body {
   background-color: #8b54b5 !important;
 }
 
-/* --------------------------------------------------------------------------
-   Theme-aware overrides for existing Tailwind `teal-*` utility classes
-   - Keeps the current UI markup (many `teal-*` classes) working with CSS vars
-   - Applied whenever a `theme-...` class is present on the root element
-   - These are intentionally specific and use `!important` so they override
-     Tailwind utility colors without changing every component.
-   -------------------------------------------------------------------------- */
-html[class*="theme-"] .bg-teal-600 { background-color: var(--theme-button-primary) !important; }
-html[class*="theme-"] .bg-teal-500 { background-color: var(--theme-primary) !important; }
-html[class*="theme-"] .bg-teal-100 { background-color: var(--theme-surface) !important; }
-html[class*="theme-"] .bg-teal-50  { background-color: var(--theme-surface) !important; }
-
-html[class*="theme-"] .text-teal-600,
-html[class*="theme-"] .text-teal-700 { color: var(--theme-primary) !important; }
-
-html[class*="theme-"] .border-teal-200,
-html[class*="theme-"] .border-teal-300,
-html[class*="theme-"] .border-teal-400 { border-color: var(--theme-border) !important; }
-
-/* Gradient helpers used by Tailwind's `from-...` / `to-...` utilities */
-html[class*="theme-"] .from-teal-50  { --tw-gradient-from: color-mix(in srgb, var(--theme-primary) 6%, var(--theme-surface) 94%); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(255,255,255,0)); }
-html[class*="theme-"] .from-teal-500 { --tw-gradient-from: var(--theme-primary); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(255,255,255,0)); }
-html[class*="theme-"] .to-teal-600   { --tw-gradient-to: var(--theme-secondary); }
-html[class*="theme-"] .to-teal-700   { --tw-gradient-to: var(--theme-secondary); }
-
-/* Hover variants (best-effort mapping) */
-html[class*="theme-"] .hover\:bg-teal-50:hover  { background-color: var(--theme-surface) !important; }
-html[class*="theme-"] .hover\:bg-teal-100:hover { background-color: var(--theme-surface) !important; }
-html[class*="theme-"] .hover\:bg-teal-600:hover { background-color: color-mix(in srgb, var(--theme-button-primary) 88%, #000 12%) !important; }
-html[class*="theme-"] .hover\:bg-teal-700:hover { background-color: color-mix(in srgb, var(--theme-button-primary) 72%, #000 28%) !important; }
-html[class*="theme-"] .hover\:border-teal-400:hover { border-color: var(--theme-border) !important; }
-
-/* Utility/icon mappings */
-html[class*="theme-"] .text-teal-100\/70 { color: color-mix(in srgb, var(--theme-primary) 70%, rgba(0,0,0,0.3) 30%) !important; }
-html[class*="theme-"] .shadow-teal-500\/30 { box-shadow: 0 10px 30px -10px color-mix(in srgb, var(--theme-primary) 30%, rgba(0,0,0,0)) !important; }
-
-/* Fallback: map small accent/pill classes */
-html[class*="theme-"] .bg-teal-200 { background-color: color-mix(in srgb, var(--theme-primary) 12%, var(--theme-surface) 88%) !important; }
-html[class*="theme-"] .text-teal-800 { color: color-mix(in srgb, var(--theme-primary) 88%, #000 12%) !important; }
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

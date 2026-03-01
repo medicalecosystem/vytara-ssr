@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
-import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { getAuthenticatedUser } from '@/lib/auth';
+import { logCareCircleActivity } from '@/lib/careCircleActivityLogs';
 
 const CARE_CIRCLE_FOLDERS = ['reports', 'prescriptions', 'insurance', 'bills'] as const;
 type CareCircleFolder = (typeof CARE_CIRCLE_FOLDERS)[number];
@@ -42,10 +42,12 @@ type VaultFile = {
 type AuthorizedVaultAccess = {
   adminClient: SupabaseClient;
   ownerProfileId: string;
+  actorUserId: string;
 };
 
 type RenamePayload = {
   linkId?: string;
+  actorProfileId?: string;
   folder?: string;
   name?: string;
   nextName?: string;
@@ -53,6 +55,7 @@ type RenamePayload = {
 
 type DeletePayload = {
   linkId?: string;
+  actorProfileId?: string;
   folder?: string;
   name?: string;
 };
@@ -67,6 +70,51 @@ const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRo
 };
 
 const canReadMedicalData = (role: CareCircleRole) => role === 'family';
+
+const isMissingAuthColumnError = (error: { code?: string; message?: string } | null) =>
+  error?.code === 'PGRST204' || error?.message?.toLowerCase().includes('auth_id');
+
+const normalizeActorProfileId = (value: unknown) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+};
+
+const resolveActorProfileId = async (
+  adminClient: SupabaseClient,
+  actorUserId: string,
+  requestedActorProfileId: string | null
+) => {
+  if (!requestedActorProfileId) return null;
+
+  const byAuth = await adminClient
+    .from('profiles')
+    .select('id')
+    .eq('id', requestedActorProfileId)
+    .eq('auth_id', actorUserId)
+    .maybeSingle();
+
+  if (!byAuth.error && byAuth.data?.id) {
+    return byAuth.data.id;
+  }
+
+  if (byAuth.error && !isMissingAuthColumnError(byAuth.error) && byAuth.error.code !== 'PGRST116') {
+    return null;
+  }
+
+  const byUser = await adminClient
+    .from('profiles')
+    .select('id')
+    .eq('id', requestedActorProfileId)
+    .eq('user_id', actorUserId)
+    .maybeSingle();
+
+  if (byUser.error || !byUser.data?.id) {
+    return null;
+  }
+
+  return byUser.data.id;
+};
 
 const isVaultFolder = (value: string | null | undefined): value is CareCircleFolder =>
   typeof value === 'string' && CARE_CIRCLE_FOLDERS.includes(value as CareCircleFolder);
@@ -124,65 +172,6 @@ const createAdminClient = () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } }
   );
-};
-
-const getAuthenticatedUser = async (request: Request): Promise<User | null> => {
-  const authHeader = request.headers.get('authorization');
-
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.replace('Bearer ', '');
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      }
-    );
-
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser(token);
-
-    if (!error && user) {
-      return user;
-    }
-
-    return null;
-  }
-
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
-          });
-        },
-      },
-    }
-  );
-
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (!error && user) {
-    return user;
-  }
-
-  return null;
 };
 
 const getAuthorizedVaultAccess = async (
@@ -251,6 +240,7 @@ const getAuthorizedVaultAccess = async (
     access: {
       adminClient,
       ownerProfileId: link.profile_id,
+      actorUserId: user.id,
     },
     response: null,
   };
@@ -341,6 +331,7 @@ export async function POST(request: Request) {
     const linkId = trimStringField(formData.get('linkId'));
     const folder = trimStringField(formData.get('folder'));
     const rawFileName = trimStringField(formData.get('fileName'));
+    const requestedActorProfileId = normalizeActorProfileId(formData.get('actorProfileId'));
     const file = formData.get('file');
 
     if (!linkId) {
@@ -378,6 +369,11 @@ export async function POST(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const targetPath = buildStoragePath(access.ownerProfileId, folder, finalName);
     const { data, error } = await access.adminClient.storage.from('medical-vault').upload(targetPath, file, {
@@ -393,6 +389,24 @@ export async function POST(request: Request) {
         { status }
       );
     }
+
+    await logCareCircleActivity({
+      adminClient: access.adminClient,
+      profileId: access.ownerProfileId,
+      actorUserId: access.actorUserId,
+      actorProfileId,
+      domain: 'vault',
+      action: 'upload',
+      entity: {
+        id: targetPath,
+        label: finalName,
+      },
+      metadata: {
+        folder,
+        fileName: finalName,
+        path: data?.path ?? targetPath,
+      },
+    });
 
     return NextResponse.json({
       file: {
@@ -418,6 +432,7 @@ export async function PATCH(request: Request) {
     }
 
     const linkId = payload.linkId?.trim();
+    const requestedActorProfileId = normalizeActorProfileId(payload.actorProfileId);
     const folder = payload.folder?.trim();
     const currentName = payload.name?.trim() ?? '';
     const nextName = payload.nextName?.trim() ?? '';
@@ -439,6 +454,11 @@ export async function PATCH(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const currentPath = buildStoragePath(access.ownerProfileId, folder, currentName);
     const nextPath = buildStoragePath(access.ownerProfileId, folder, nextName);
@@ -452,6 +472,24 @@ export async function PATCH(request: Request) {
         { status }
       );
     }
+
+    await logCareCircleActivity({
+      adminClient: access.adminClient,
+      profileId: access.ownerProfileId,
+      actorUserId: access.actorUserId,
+      actorProfileId,
+      domain: 'vault',
+      action: 'rename',
+      entity: {
+        id: nextPath,
+        label: nextName,
+      },
+      metadata: {
+        folder,
+        fromName: currentName,
+        toName: nextName,
+      },
+    });
 
     return NextResponse.json({
       file: {
@@ -475,6 +513,7 @@ export async function DELETE(request: Request) {
     }
 
     const linkId = payload.linkId?.trim();
+    const requestedActorProfileId = normalizeActorProfileId(payload.actorProfileId);
     const folder = payload.folder?.trim();
     const fileName = payload.name?.trim() ?? '';
 
@@ -492,6 +531,11 @@ export async function DELETE(request: Request) {
     if (response || !access) {
       return response!;
     }
+    const actorProfileId = await resolveActorProfileId(
+      access.adminClient,
+      access.actorUserId,
+      requestedActorProfileId
+    );
 
     const path = buildStoragePath(access.ownerProfileId, folder, fileName);
     const { error } = await access.adminClient.storage.from('medical-vault').remove([path]);
@@ -499,6 +543,23 @@ export async function DELETE(request: Request) {
     if (error) {
       return NextResponse.json({ message: error.message }, { status: 500 });
     }
+
+    await logCareCircleActivity({
+      adminClient: access.adminClient,
+      profileId: access.ownerProfileId,
+      actorUserId: access.actorUserId,
+      actorProfileId,
+      domain: 'vault',
+      action: 'delete',
+      entity: {
+        id: path,
+        label: fileName,
+      },
+      metadata: {
+        folder,
+        fileName,
+      },
+    });
 
     return NextResponse.json({ deleted: true });
   } catch (error) {

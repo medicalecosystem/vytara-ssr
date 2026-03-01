@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
+    KeyboardAvoidingView,
+    Platform,
     Pressable,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
     View,
     useColorScheme,
+    useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,6 +22,7 @@ import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { ProfileAvatarSelector } from '@/components/ProfileAvatarSelector';
 import { useProfile } from '@/hooks/useProfile';
 import type { Profile } from '@/repositories/userProfilesRepository';
+import { toast } from '@/lib/toast';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -27,6 +31,7 @@ export default function ProfileSelectionScreen() {
     const colorScheme = useColorScheme();
     const isDark = colorScheme === 'dark';
     const insets = useSafeAreaInsets();
+    const { width, height } = useWindowDimensions();
 
     const { profiles, selectedProfile, isLoading, selectProfile, createProfile } = useProfile();
 
@@ -36,13 +41,22 @@ export default function ProfileSelectionScreen() {
     const [selectedAvatarType, setSelectedAvatarType] = useState('default');
     const [selectedAvatarColor, setSelectedAvatarColor] = useState('#14b8a6');
 
+    const isCompact = width < 360;
+    const profileColumns = isCompact ? 1 : 2;
+    const profileGap = 24;
+    const profileCardWidth = Math.max(
+        112,
+        Math.min(140, (width - 40 - profileGap * (profileColumns - 1)) / profileColumns)
+    );
+    const modalMaxHeight = Math.min(height * 0.9, 620);
+
     const handleProfileSelect = async (profile: Profile) => {
         try {
             await selectProfile(profile.id);
             router.replace('/home');
         } catch (error) {
             console.error('Error selecting profile:', error);
-            Alert.alert('Error', 'Failed to select profile. Please try again.');
+            toast.error('Error', 'Failed to select profile. Please try again.');
         }
     };
 
@@ -55,7 +69,7 @@ export default function ProfileSelectionScreen() {
 
     const handleCreateProfile = async () => {
         if (!newProfileName.trim()) {
-            Alert.alert('Name Required', 'Please enter a child name.');
+            toast.warning('Name Required', 'Please enter a child name.');
             return;
         }
 
@@ -81,7 +95,7 @@ export default function ProfileSelectionScreen() {
             });
         } catch (error) {
             console.error('Error creating profile:', error);
-            Alert.alert('Error', 'Failed to create profile. Please try again.');
+            toast.error('Error', 'Failed to create profile. Please try again.');
         }
     };
 
@@ -102,7 +116,11 @@ export default function ProfileSelectionScreen() {
 
     return (
         <LinearGradient colors={['#14b8a6', '#0f766e']} style={styles.container}>
-            <View style={[styles.content, { paddingTop: insets.top + 40 }]}>
+            <ScrollView
+                contentContainerStyle={[styles.content, { paddingTop: insets.top + 32 }]}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+            >
                 {/* Header */}
                 <Animated.View entering={FadeInUp.delay(100)} style={styles.header}>
                     <Text style={styles.title}>Which child profile?</Text>
@@ -115,7 +133,11 @@ export default function ProfileSelectionScreen() {
                         <AnimatedPressable
                             key={profile.id}
                             entering={FadeInDown.delay(200 + index * 100).springify()}
-                            style={({ pressed }) => [styles.profileCard, pressed && styles.profileCardPressed]}
+                            style={({ pressed }) => [
+                                styles.profileCard,
+                                { width: profileCardWidth },
+                                pressed && styles.profileCardPressed,
+                            ]}
                             onPress={() => handleProfileSelect(profile)}
                         >
                             <ProfileAvatar
@@ -124,7 +146,7 @@ export default function ProfileSelectionScreen() {
                                 size="large"
                             />
                             <Text style={styles.profileName} numberOfLines={1}>
-                                {profile.name}
+                                {profile.display_name?.trim() || profile.name}
                             </Text>
                             {profile.is_primary && (
                                 <View style={styles.primaryBadge}>
@@ -141,6 +163,7 @@ export default function ProfileSelectionScreen() {
                             style={({ pressed }) => [
                                 styles.profileCard,
                                 styles.addProfileCard,
+                                { width: profileCardWidth },
                                 pressed && styles.profileCardPressed,
                             ]}
                             onPress={handleAddProfile}
@@ -163,60 +186,75 @@ export default function ProfileSelectionScreen() {
                         <Text style={styles.manageButtonText}>Manage Children</Text>
                     </Pressable>
                 </Animated.View>
-            </View>
+            </ScrollView>
 
             {/* Add Child Profile Modal */}
             {showAddModal && (
                 <View style={styles.modalOverlay}>
-                    <Animated.View
-                        entering={FadeInUp.springify()}
-                        style={[styles.modalContent, isDark && styles.modalContentDark]}
+                    <KeyboardAvoidingView
+                        style={styles.modalKeyboard}
+                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                     >
-                        <Text style={[styles.modalTitle, isDark && styles.modalTitleDark]}>
-                            Create Child Profile
-                        </Text>
-
-                        {/* Avatar Preview */}
-                        <View style={styles.avatarPreview}>
-                            <ProfileAvatar
-                                avatarType={selectedAvatarType}
-                                avatarColor={selectedAvatarColor}
-                                size="large"
-                            />
-                            <Pressable
-                                style={styles.changeAvatarButton}
-                                onPress={() => setShowAvatarSelector(true)}
+                        <Animated.View
+                            entering={FadeInUp.springify()}
+                            style={[
+                                styles.modalContent,
+                                { maxHeight: modalMaxHeight },
+                                isDark && styles.modalContentDark,
+                            ]}
+                        >
+                            <ScrollView
+                                contentContainerStyle={styles.modalScrollContent}
+                                showsVerticalScrollIndicator={false}
+                                keyboardShouldPersistTaps="handled"
                             >
-                                <Text style={styles.changeAvatarText}>Change Avatar</Text>
-                            </Pressable>
-                        </View>
+                                <Text style={[styles.modalTitle, isDark && styles.modalTitleDark]}>
+                                    Create Child Profile
+                                </Text>
 
-                        {/* Name Input */}
-                        <TextInput
-                            style={[styles.input, isDark && styles.inputDark]}
-                            placeholder="Child Name"
-                            placeholderTextColor={isDark ? '#94a3b8' : '#94a3b8'}
-                            value={newProfileName}
-                            onChangeText={setNewProfileName}
-                            autoFocus
-                        />
+                                {/* Avatar Preview */}
+                                <View style={styles.avatarPreview}>
+                                    <ProfileAvatar
+                                        avatarType={selectedAvatarType}
+                                        avatarColor={selectedAvatarColor}
+                                        size="large"
+                                    />
+                                    <Pressable
+                                        style={styles.changeAvatarButton}
+                                        onPress={() => setShowAvatarSelector(true)}
+                                    >
+                                        <Text style={styles.changeAvatarText}>Change Avatar</Text>
+                                    </Pressable>
+                                </View>
 
-                        {/* Buttons */}
-                        <View style={styles.modalButtons}>
-                            <Pressable
-                                style={[styles.modalButton, styles.modalButtonCancel]}
-                                onPress={() => setShowAddModal(false)}
-                            >
-                                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
-                            </Pressable>
-                            <Pressable
-                                style={[styles.modalButton, styles.modalButtonConfirm]}
-                                onPress={handleCreateProfile}
-                            >
-                                <Text style={styles.modalButtonTextConfirm}>Create</Text>
-                            </Pressable>
-                        </View>
-                    </Animated.View>
+                                {/* Name Input */}
+                                <TextInput
+                                    style={[styles.input, isDark && styles.inputDark]}
+                                    placeholder="Child Name"
+                                    placeholderTextColor={isDark ? '#94a3b8' : '#94a3b8'}
+                                    value={newProfileName}
+                                    onChangeText={setNewProfileName}
+                                    autoFocus
+                                />
+
+                                {/* Buttons */}
+                                <View style={styles.modalButtons}>
+                                    <Pressable
+                                        style={[styles.modalButton, styles.modalButtonCancel]}
+                                        onPress={() => setShowAddModal(false)}
+                                    >
+                                        <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+                                    </Pressable>
+                                    <Pressable
+                                        style={[styles.modalButton, styles.modalButtonConfirm]}
+                                        onPress={handleCreateProfile}
+                                    >
+                                        <Text style={styles.modalButtonTextConfirm}>Create</Text>
+                                    </Pressable>
+                                </View>
+                            </ScrollView>
+                        </Animated.View>
+                    </KeyboardAvoidingView>
                 </View>
             )}
 
@@ -252,8 +290,9 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
     content: {
-        flex: 1,
+        flexGrow: 1,
         paddingHorizontal: 20,
+        paddingBottom: 24,
     },
     header: {
         alignItems: 'center',
@@ -347,12 +386,19 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 20,
     },
+    modalKeyboard: {
+        width: '100%',
+        alignItems: 'center',
+    },
     modalContent: {
         backgroundColor: '#ffffff',
         borderRadius: 24,
         padding: 24,
         width: '100%',
         maxWidth: 400,
+    },
+    modalScrollContent: {
+        paddingBottom: 8,
     },
     modalContentDark: {
         backgroundColor: '#1e293b',

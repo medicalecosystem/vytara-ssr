@@ -230,8 +230,7 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
             setShowForm((v) => !v);
             if (!showForm) resetForm();
           }}
-          className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition"
-          style={{ backgroundColor: 'var(--theme-button-primary)' }}
+          className="rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 transition"
         >
           {showForm ? "Close Form" : "+ Add Medication"}
         </button>
@@ -295,7 +294,7 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
             </div>
             <div className="md:col-span-2 flex justify-end gap-4 pt-4">
               <button onClick={() => { resetForm(); setShowForm(false); }} className="px-6 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium hover:bg-slate-50 transition" disabled={saving}>Cancel</button>
-              <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl text-white font-medium transition disabled:opacity-60" style={{ backgroundColor: 'var(--theme-button-primary)' }}>
+              <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl bg-teal-600 text-white font-medium hover:bg-teal-700 transition disabled:opacity-60">
                 {saving ? (editingId ? "Updating..." : "Saving...") : editingId ? "Update" : "Save"}
               </button>
             </div>
@@ -391,7 +390,7 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
                             </div>
 
                             {progress.taken < progress.target && onLogDose && (
-                              <button onClick={() => handleLogDose(m.id, true)} className="w-full mt-3 py-2 rounded-xl text-white text-sm font-medium transition" style={{ backgroundColor: 'var(--theme-button-primary)' }}>
+                              <button onClick={() => handleLogDose(m.id, true)} className="w-full mt-3 py-2 rounded-xl bg-teal-600 text-white text-sm font-medium hover:bg-teal-700 transition">
                                 ✓ Mark dose taken
                               </button>
                             )}

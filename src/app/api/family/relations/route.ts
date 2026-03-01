@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { isValidUUID } from '@/lib/validation';
 
 type FamilyLink = {
   id: string;
@@ -74,6 +75,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ relations: {} });
     }
 
+    if (memberIds.some(id => !isValidUUID(id))) {
+      return NextResponse.json({ message: 'Invalid member ID format.' }, { status: 400 });
+    }
+
     const { data: familyLinks, error: familyLinksError } = await supabase
       .from('family_links')
       .select(
@@ -136,6 +141,10 @@ export async function POST(request: Request) {
 
     if (!memberId) {
       return NextResponse.json({ message: 'Member ID is required.' }, { status: 400 });
+    }
+
+    if (!isValidUUID(memberId)) {
+      return NextResponse.json({ message: 'Invalid member ID.' }, { status: 400 });
     }
 
     const familyId = await getFamilyId(supabase, session.user.id);

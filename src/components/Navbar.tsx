@@ -5,6 +5,7 @@ import {
   Home,
   User,
   Folder,
+  Menu,
   ChevronLeft,
   ChevronRight,
   Users,
@@ -23,7 +24,9 @@ import { useRouter } from 'next/navigation';
 import { usePathname } from 'next/navigation';
 import { supabase } from '@/lib/createClient';
 import { useAppProfile, type AppProfile } from '@/components/AppProfileProvider';
-import FloatingThemeButton from '@/components/FloatingThemeButton';
+
+// theme selector component provides the dropdown of available colour themes
+import ThemeSelector from '@/components/FloatingThemeButton';
 
 type Notice = {
   type: 'success' | 'error';
@@ -59,6 +62,7 @@ export default function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isProfilePickerOpen, setIsProfilePickerOpen] = useState(false);
   const [manageProfilesMode, setManageProfilesMode] = useState(false);
   const [showAddProfileForm, setShowAddProfileForm] = useState(false);
@@ -70,6 +74,7 @@ export default function Navbar() {
   const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const isOnboarding = pathname === '/app/health-onboarding';
+  const isSettingsPage = pathname === '/app/settings';
   const effectiveCollapsed = isOnboarding ? false : collapsed;
   const { profiles, selectedProfile, selectProfile, refreshProfiles, userId, isLoading } = useAppProfile();
 
@@ -112,12 +117,37 @@ export default function Navbar() {
 
   const openProfileModal = () => {
     setNotice(null);
+    setMobileMenuOpen(false);
     setIsProfilePickerOpen(true);
   };
 
   const closeProfileModal = () => {
     setIsProfilePickerOpen(false);
     resetProfileModalState();
+  };
+
+  const handleLogout = async () => {
+    setMobileMenuOpen(false);
+    clearSensitiveStorage();
+    clearSupabaseAuthCookies();
+    await supabase.auth.signOut({ scope: "local" });
+    router.push('/auth/login');
+  };
+
+  const clearSensitiveStorage = () => {
+    if (typeof window === "undefined") return;
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i);
+        if (key?.startsWith("vytara:")) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+    } catch {
+      // Storage may be unavailable
+    }
   };
 
   const clearSupabaseAuthCookies = () => {
@@ -315,6 +345,52 @@ export default function Navbar() {
     setSavingProfileId(profileId);
     setNotice(null);
 
+    // Check age requirement: primary profile must be 18+
+    const { data: healthData, error: healthError } = await supabase
+      .from('health')
+      .select('date_of_birth')
+      .eq('profile_id', profileId)
+      .maybeSingle();
+
+    if (healthError && healthError.code !== 'PGRST116') {
+      setNotice({
+        type: 'error',
+        text: 'Unable to verify age for this profile. Please try again.',
+      });
+      setSavingProfileId(null);
+      return;
+    }
+
+    const dobValue = healthData?.date_of_birth;
+    if (!dobValue) {
+      setNotice({
+        type: 'error',
+        text: 'This profile has no date of birth on record. Complete health onboarding first.',
+      });
+      setSavingProfileId(null);
+      return;
+    }
+
+    const dobStr = typeof dobValue === 'string' ? dobValue : String(dobValue);
+    const dobMatch = dobStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dobMatch) {
+      const birthDate = new Date(`${dobMatch[1]}-${dobMatch[2]}-${dobMatch[3]}T00:00:00`);
+      if (!Number.isNaN(birthDate.getTime())) {
+        const today = new Date();
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+        if (age < 18) {
+          setNotice({
+            type: 'error',
+            text: 'This profile\u2019s account holder must be at least 18 years old to be set as primary.',
+          });
+          setSavingProfileId(null);
+          return;
+        }
+      }
+    }
+
     const clearPrimary = await supabase
       .from('profiles')
       .update({ is_primary: false, updated_at: new Date().toISOString() })
@@ -367,11 +443,20 @@ export default function Navbar() {
     setDeletingProfileId(profile.id);
     setNotice(null);
 
-    const deletion = await supabase.from('profiles').delete().eq('id', profile.id);
-    if (deletion.error) {
+    const deletionResponse = await fetch('/api/profile/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: profile.id }),
+    });
+
+    const deletionPayload = (await deletionResponse.json().catch(() => null)) as
+      | { message?: string }
+      | null;
+
+    if (!deletionResponse.ok) {
       setNotice({
         type: 'error',
-        text: deletion.error.message || 'Unable to delete profile right now.',
+        text: deletionPayload?.message || 'Unable to delete profile right now.',
       });
       setDeletingProfileId(null);
       return;
@@ -389,14 +474,8 @@ export default function Navbar() {
   return (
     <>
       <header
-        className={`sticky top-0 z-40 w-full border-b md:hidden ${
-          isOnboarding ? 'pointer-events-none opacity-70' : ''
-        }`}
-        style={{
-          borderColor: 'var(--theme-border)',
-          background: 'var(--theme-navbar)',
-          color: 'var(--theme-text)'
-        }}
+        className={`sticky top-0 z-40 w-full border-b border-teal-900/20 bg-gradient-to-r from-teal-950 via-slate-950 to-slate-950 text-white md:hidden ${isOnboarding ? 'pointer-events-none opacity-70' : ''
+          }`}
       >
         <div className="flex items-center justify-between px-4 py-3">
           <button
@@ -404,68 +483,100 @@ export default function Navbar() {
             onClick={() => router.push('/app/homepage')}
           >
             <div className="w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-md p-2">
-              <div className="w-full h-full rounded-full" style={{ backgroundColor: 'var(--theme-primary)' }}></div>
+              <div className="w-full h-full bg-teal-600 rounded-full"></div>
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.25em]" style={{ color: 'var(--theme-text-secondary)' }}>G1</p>
+              <p className="text-xs uppercase tracking-[0.25em] text-teal-200/70">G1</p>
               <p className="text-sm font-semibold leading-tight">Patient Hub</p>
             </div>
           </button>
-          <div className="flex items-center gap-3">
-            <FloatingThemeButton />
-            <div className="flex flex-col items-end gap-2">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-navbar-menu"
+            className="rounded-lg border border-white/15 p-2 text-teal-100/90 transition hover:bg-white/10 hover:text-white"
+          >
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
+        {mobileMenuOpen && (
+          <div
+            id="mobile-navbar-menu"
+            className="border-t border-white/10 px-4 pb-4 pt-3"
+          >
+            <nav className="space-y-1.5">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+                return (
+                  <button
+                    key={item.href}
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      router.push(item.href);
+                    }}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${isActive
+                        ? 'bg-teal-500/25 text-white'
+                        : 'text-teal-100/85 hover:bg-white/10 hover:text-white'
+                      }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
+            <div className="my-3 h-px bg-white/10" />
+            <div className="space-y-1.5">
               <button
                 onClick={openProfileModal}
-                className="rounded-lg px-3 py-1.5 text-[11px] font-medium hover:bg-white/10 transition"
-                style={{ color: 'var(--theme-text-secondary)' }}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-teal-100/90 transition hover:bg-white/10 hover:text-white"
                 title={selectedProfileLabel}
               >
+                <UserRoundCog className="h-4 w-4" />
                 Switch Profile
               </button>
               <button
-                onClick={async () => {
-                  clearSupabaseAuthCookies();
-                  await supabase.auth.signOut({ scope: "local" });
-                  router.push('/auth/login');
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  router.push('/app/settings');
                 }}
-                className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-red-200/90 hover:bg-white/10 hover:text-red-100 transition"
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${isSettingsPage
+                    ? 'bg-teal-500/25 text-white'
+                    : 'text-teal-100/90 hover:bg-white/10 hover:text-white'
+                  }`}
               >
+                <Settings2 className="h-4 w-4" />
+                Settings
+              </button>
+              <button
+                onClick={() => {
+                  void handleLogout();
+                }}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-200/90 transition hover:bg-white/10 hover:text-red-100"
+              >
+                <LogOut className="h-4 w-4" />
                 Logout
               </button>
+              {/* theme selector placement for mobile menu */}
+              <div className="mt-3 px-1">
+                <ThemeSelector />
+              </div>
             </div>
           </div>
-        </div>
-        <nav className="flex flex-wrap gap-2 px-4 pb-3">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href;
-            return (
-              <button
-                key={item.href}
-                onClick={() => router.push(item.href)}
-                className={`flex min-w-[8rem] flex-1 items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition ${
-                  isActive
-                    ? 'text-white'
-                    : 'hover:bg-white/10 hover:text-white'
-                }`}
-                style={isActive ? { backgroundColor: 'var(--theme-primary)' } : { color: 'var(--theme-text-secondary)' }}
-              >
-                <Icon className="w-4 h-4" />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
+        )}
         {isOnboarding && (
-          <div className="px-4 pb-3 text-xs" style={{ color: 'var(--theme-text-secondary)' }}>
+          <div className="px-4 pb-3 text-xs text-teal-100/80">
             Complete onboarding to unlock navigation.
           </div>
         )}
       </header>
 
       <aside
-        className={`sticky top-0 hidden h-screen shrink-0 border-r transition-[width] duration-200 md:block ${effectiveCollapsed ? 'w-20' : 'w-64'} ${isOnboarding ? 'pointer-events-none opacity-70' : ''}`}
-        style={{ borderColor: 'var(--theme-border)', background: 'var(--theme-navbar)', color: 'var(--theme-text)' }}
+        className={`sticky top-0 hidden h-screen shrink-0 border-r border-teal-900/20 bg-gradient-to-b from-teal-950 via-slate-950 to-slate-950 text-white transition-[width] duration-200 md:block ${effectiveCollapsed ? 'w-20' : 'w-64'
+          } ${isOnboarding ? 'pointer-events-none opacity-70' : ''}`}
       >
         <div className="flex h-full flex-col px-3 py-6">
           <div className="flex items-center justify-between px-1">
@@ -474,11 +585,11 @@ export default function Navbar() {
               onClick={() => router.push('/app/homepage')}
             >
               <div className="w-11 h-11 bg-white rounded-full flex items-center justify-center shadow-md p-2">
-                <div className="w-full h-full rounded-full" style={{ backgroundColor: 'var(--theme-primary)' }}></div>
+                <div className="w-full h-full bg-teal-600 rounded-full"></div>
               </div>
               {!effectiveCollapsed && (
                 <div>
-                  <p className="text-sm uppercase tracking-[0.25em]" style={{ color: 'var(--theme-text-secondary)' }}>
+                  <p className="text-sm uppercase tracking-[0.25em] text-teal-200/70">
                     G1
                   </p>
                   <p className="text-lg font-semibold leading-tight">Patient Hub</p>
@@ -498,11 +609,6 @@ export default function Navbar() {
             </button>
           </div>
 
-          {/* Theme selector at the top of desktop navbar */}
-          <div className="mt-4">
-            <FloatingThemeButton />
-          </div>
-
           <nav className="mt-8 flex-1 space-y-2">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -511,9 +617,11 @@ export default function Navbar() {
                 <button
                   key={item.href}
                   onClick={() => router.push(item.href)}
-                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition`}
+                  className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${isActive
+                      ? 'bg-teal-500/20 text-white shadow-sm'
+                      : 'text-teal-100/80 hover:bg-white/10 hover:text-white'
+                    }`}
                   title={effectiveCollapsed ? item.label : undefined}
-                  style={isActive ? { backgroundColor: 'var(--theme-primary)', color: 'var(--theme-text)' } : { color: 'var(--theme-text-secondary)' }}
                 >
                   <Icon className="w-4 h-4" />
                   {!effectiveCollapsed && item.label}
@@ -523,7 +631,8 @@ export default function Navbar() {
           </nav>
 
           {isOnboarding && !effectiveCollapsed && (
-            <div className="mt-4 rounded-xl border px-3 py-3 text-xs" style={{ borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)', color: 'var(--theme-text-secondary)' }}>
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-xs text-teal-100/80">
+              Complete onboarding to unlock navigation.
             </div>
           )}
 
@@ -531,18 +640,27 @@ export default function Navbar() {
             <button
               onClick={openProfileModal}
               title={effectiveCollapsed ? 'Switch Profile' : selectedProfileLabel}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition"
-              style={{ color: 'var(--theme-text-secondary)' }}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-teal-100/90 hover:bg-white/10 hover:text-white transition"
             >
               <UserRoundCog className="w-4 h-4" />
               {!effectiveCollapsed && 'Switch Profile'}
             </button>
 
             <button
+              onClick={() => router.push('/app/settings')}
+              title={effectiveCollapsed ? 'Settings' : undefined}
+              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${isSettingsPage
+                  ? 'bg-teal-500/20 text-white shadow-sm'
+                  : 'text-teal-100/90 hover:bg-white/10 hover:text-white'
+                }`}
+            >
+              <Settings2 className="w-4 h-4" />
+              {!effectiveCollapsed && 'Settings'}
+            </button>
+
+            <button
               onClick={async () => {
-                clearSupabaseAuthCookies();
-                await supabase.auth.signOut({ scope: "local" });
-                router.push('/auth/login');
+                await handleLogout();
               }}
               title={effectiveCollapsed ? 'Logout' : undefined}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-200/90 hover:bg-white/10 hover:text-red-100 transition"
@@ -550,6 +668,12 @@ export default function Navbar() {
               <LogOut className="w-4 h-4" />
               {!effectiveCollapsed && 'Logout'}
             </button>
+            {/* desktop theme selector below the action buttons */}
+            {!effectiveCollapsed && (
+              <div className="mt-2 px-3">
+                <ThemeSelector />
+              </div>
+            )}
           </div>
         </div>
       </aside>
@@ -563,10 +687,10 @@ export default function Navbar() {
             className="w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-              <div className="px-5 py-5" style={{ background: 'linear-gradient(90deg, var(--theme-primary), var(--theme-secondary))', color: 'var(--theme-text)' }}>
+            <div className="bg-gradient-to-r from-teal-600 via-teal-500 to-cyan-500 px-5 py-5 text-white">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--theme-text-secondary)' }}>Family Profiles</p>
+                  <p className="text-xs uppercase tracking-[0.16em] text-white/75">Family Profiles</p>
                   <h3 className="mt-1 text-xl font-semibold">Switch Profile</h3>
                   <p className="mt-1 text-sm text-white/85">
                     Choose, add, and manage your children&apos;s profiles.
@@ -605,8 +729,7 @@ export default function Navbar() {
                     setShowAddProfileForm((prev) => !prev);
                     setNotice(null);
                   }}
-                  className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
-                  style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-primary)' }}
+                  className="inline-flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-700 transition hover:border-teal-300 hover:bg-teal-100"
                 >
                   <Plus className="h-4 w-4" />
                   Add Child Profile
@@ -619,11 +742,10 @@ export default function Navbar() {
                     setEditingProfileName('');
                     setNotice(null);
                   }}
-                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition ${
-                    manageProfilesMode
+                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition ${manageProfilesMode
                       ? 'border-slate-800 bg-slate-900 text-white'
                       : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                  }`}
+                    }`}
                 >
                   <Settings2 className="h-4 w-4" />
                   {manageProfilesMode ? 'Managing Children' : 'Manage Child Profiles'}
@@ -632,11 +754,10 @@ export default function Navbar() {
 
               {notice && (
                 <div
-                  className={`mt-3 rounded-xl border px-3 py-2 text-sm ${
-                    notice.type === 'success'
+                  className={`mt-3 rounded-xl border px-3 py-2 text-sm ${notice.type === 'success'
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                       : 'border-rose-200 bg-rose-50 text-rose-700'
-                  }`}
+                    }`}
                 >
                   {notice.text}
                 </div>
@@ -671,8 +792,7 @@ export default function Navbar() {
                         void handleCreateProfile();
                       }}
                       disabled={isCreatingProfile}
-                      className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-70"
-                      style={{ backgroundColor: 'var(--theme-button-primary)' }}
+                      className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-70"
                     >
                       {isCreatingProfile && <Loader2 className="h-4 w-4 animate-spin" />}
                       Create
@@ -701,8 +821,10 @@ export default function Navbar() {
                     return (
                       <div
                         key={profile.id}
-                        className={`rounded-2xl border px-4 py-3 transition ${isActive ? 'border-slate-200 bg-white' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-                        style={isActive ? { borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)' } : { borderColor: 'var(--theme-border)' }}
+                        className={`rounded-2xl border px-4 py-3 transition ${isActive
+                            ? 'border-teal-300 bg-teal-50/70'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                          }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex min-w-0 items-center gap-3">
@@ -734,8 +856,10 @@ export default function Navbar() {
                             onClick={() => {
                               void handleSelectProfile(profile.id);
                             }}
-                            className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${isActive ? 'border bg-white' : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'}`}
-                            style={isActive ? { borderColor: 'var(--theme-border)', color: 'var(--theme-primary)' } : undefined}
+                            className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${isActive
+                                ? 'border border-teal-300 bg-white text-teal-700'
+                                : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                              }`}
                           >
                             {isActive ? (
                               <>
@@ -758,8 +882,7 @@ export default function Navbar() {
                                     void handleSaveProfileName(profile);
                                   }}
                                   disabled={isSavingThis}
-                                  className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-70"
-                                  style={{ borderColor: 'var(--theme-border)', backgroundColor: 'var(--theme-surface)', color: 'var(--theme-primary)' }}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-70"
                                 >
                                   {isSavingThis && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                                   Save Child Name

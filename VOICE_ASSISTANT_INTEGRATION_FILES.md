@@ -21,9 +21,13 @@
 |------|----------|
 | `backend/app_api.py` | Imports `faq_engine`, `language`, `llm`; defines `POST /api/chat` |
 | `backend/requirements.txt` | Includes `groq`, `python-dotenv` for `llm.py` |
-| `src/components/ChatWidget.jsx` | Calls `POST /api/chat` |
-| `src/components/ChatWidget.module.css` | Styles for ChatWidget |
+| `src/components/ChatWidget.jsx` | Web: calls `POST /api/chat` |
+| `src/components/ChatWidget.module.css` | Web: styles for ChatWidget |
 | `src/app/api/chat/route.ts` | Next.js proxy: forwards `/api/chat` to Flask backend |
+| `mobile/components/ChatWidget.tsx` | Mobile: FAB + bottom sheet chat widget, calls `POST /api/chat` via `apiRequest` |
+| `mobile/components/TypingIndicator.tsx` | Mobile: animated bouncing dots typing indicator used by ChatWidget |
+| `mobile/app/(tabs)/_layout.tsx` | Mobile: renders `<ChatWidget />` overlay on all tab screens |
+| `mobile/app/_layout.tsx` | Mobile: wraps app in `GestureHandlerRootView` for bottom sheet support |
 
 ---
 
@@ -39,6 +43,10 @@ backend/requirements.txt
 src/components/ChatWidget.jsx
 src/components/ChatWidget.module.css
 src/app/api/chat/route.ts
+mobile/components/ChatWidget.tsx
+mobile/components/TypingIndicator.tsx
+mobile/app/(tabs)/_layout.tsx
+mobile/app/_layout.tsx
 ```
 
 ---
@@ -51,3 +59,4 @@ src/app/api/chat/route.ts
 |------|--------|
 | (initial) | List created from Voice Assistant integration |
 | 2025-02-07 | Added `src/app/api/chat/route.ts` (Next.js proxy to Flask for chat) |
+| 2026-02-24 | Added mobile chat widget: `mobile/components/ChatWidget.tsx`, `mobile/components/TypingIndicator.tsx`; updated `mobile/app/(tabs)/_layout.tsx` and `mobile/app/_layout.tsx` |

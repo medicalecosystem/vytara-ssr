@@ -13,7 +13,7 @@ CREATE TABLE public.care_circle_links (
   CONSTRAINT care_circle_links_pkey PRIMARY KEY (id),
   CONSTRAINT care_circle_links_requester_id_fkey FOREIGN KEY (requester_id) REFERENCES auth.users(id),
   CONSTRAINT care_circle_links_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES auth.users(id),
-  CONSTRAINT fk_care_circle_links_profile FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE
+  CONSTRAINT fk_care_circle_links_profile FOREIGN KEY (profile_id) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.care_emergency_cards (
   user_id uuid NOT NULL,
@@ -39,77 +39,6 @@ CREATE TABLE public.care_emergency_cards (
   CONSTRAINT care_emergency_cards_pkey PRIMARY KEY (profile_id),
   CONSTRAINT care_emergency_cards_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT fk_care_emergency_cards_profile FOREIGN KEY (profile_id) REFERENCES public.profiles(id)
-);
-CREATE TABLE public.families (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  name text NOT NULL,
-  created_by uuid NOT NULL,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  invites_rotated_at timestamp with time zone,
-  CONSTRAINT families_pkey PRIMARY KEY (id),
-  CONSTRAINT families_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id)
-);
-CREATE TABLE public.family_invites (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  family_id uuid NOT NULL UNIQUE,
-  code text NOT NULL UNIQUE,
-  created_by uuid NOT NULL,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  expires_at timestamp with time zone,
-  max_uses integer,
-  uses integer NOT NULL DEFAULT 0,
-  revoked boolean NOT NULL DEFAULT false,
-  CONSTRAINT family_invites_pkey PRIMARY KEY (id),
-  CONSTRAINT family_invites_family_id_fkey FOREIGN KEY (family_id) REFERENCES public.families(id),
-  CONSTRAINT family_invites_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id)
-);
-CREATE TABLE public.family_join_requests (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  family_id uuid NOT NULL,
-  requester_id uuid NOT NULL,
-  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])),
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT family_join_requests_pkey PRIMARY KEY (id),
-  CONSTRAINT family_join_requests_family_id_fkey FOREIGN KEY (family_id) REFERENCES public.families(id),
-  CONSTRAINT family_join_requests_requester_id_fkey FOREIGN KEY (requester_id) REFERENCES auth.users(id)
-);
-CREATE TABLE public.family_links (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  requester_id uuid NOT NULL,
-  recipient_id uuid NOT NULL,
-  relation text NOT NULL,
-  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'accepted'::text, 'declined'::text])),
-  created_at timestamp without time zone DEFAULT now(),
-  updated_at timestamp without time zone DEFAULT now(),
-  family_id uuid,
-  requester_relation text,
-  recipient_relation text,
-  CONSTRAINT family_links_pkey PRIMARY KEY (id)
-);
-CREATE TABLE public.family_members (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  family_id uuid NOT NULL,
-  user_id uuid NOT NULL,
-  role USER-DEFINED NOT NULL DEFAULT 'member'::family_role,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT family_members_pkey PRIMARY KEY (id),
-  CONSTRAINT family_members_family_id_fkey FOREIGN KEY (family_id) REFERENCES public.families(id),
-  CONSTRAINT family_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
-);
-CREATE TABLE public.family_relationships (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  family_id uuid NOT NULL,
-  from_user_id uuid NOT NULL,
-  to_user_id uuid NOT NULL,
-  type USER-DEFINED NOT NULL DEFAULT 'other'::relationship_type,
-  label text,
-  note text,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT family_relationships_pkey PRIMARY KEY (id),
-  CONSTRAINT family_relationships_family_id_fkey FOREIGN KEY (family_id) REFERENCES public.families(id),
-  CONSTRAINT family_relationships_from_user_id_fkey FOREIGN KEY (from_user_id) REFERENCES auth.users(id),
-  CONSTRAINT family_relationships_to_user_id_fkey FOREIGN KEY (to_user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.health (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -175,6 +104,15 @@ CREATE TABLE public.medical_summaries_cache (
   CONSTRAINT medical_summaries_cache_pkey PRIMARY KEY (id),
   CONSTRAINT medical_summaries_cache_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id)
 );
+CREATE TABLE public.notification_states (
+  user_id uuid NOT NULL,
+  notification_id text NOT NULL,
+  read_at timestamp with time zone,
+  dismissed_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT notification_states_pkey PRIMARY KEY (user_id, notification_id)
+);
 CREATE TABLE public.personal (
   id uuid NOT NULL,
   display_name text,
@@ -188,6 +126,21 @@ CREATE TABLE public.personal (
   CONSTRAINT personal_pkey PRIMARY KEY (id),
   CONSTRAINT fk_personal_profile FOREIGN KEY (profile_id) REFERENCES public.profiles(id),
   CONSTRAINT personal_user_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.profile_activity_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  profile_id uuid NOT NULL,
+  source text NOT NULL CHECK (source = ANY (ARRAY['care_circle'::text])),
+  domain text NOT NULL CHECK (domain = ANY (ARRAY['vault'::text, 'medication'::text, 'appointment'::text])),
+  action text NOT NULL CHECK (action = ANY (ARRAY['upload'::text, 'rename'::text, 'delete'::text, 'add'::text, 'update'::text])),
+  actor_user_id uuid NOT NULL,
+  actor_display_name text,
+  entity_id text,
+  entity_label text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT profile_activity_logs_pkey PRIMARY KEY (id),
+  CONSTRAINT profile_activity_logs_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.profiles (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -289,84 +242,3 @@ CREATE TABLE public.user_profiles (
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT user_profiles_pkey PRIMARY KEY (id)
 );
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_care_circle_links_requester_recipient_profile_unique
-  ON public.care_circle_links (requester_id, recipient_id, profile_id);
-
-CREATE INDEX IF NOT EXISTS idx_care_circle_links_requester_recipient
-  ON public.care_circle_links (requester_id, recipient_id);
-
-CREATE INDEX IF NOT EXISTS idx_care_circle_links_profile_id
-  ON public.care_circle_links (profile_id);
-
-CREATE INDEX IF NOT EXISTS idx_care_circle_links_requester_status_role
-  ON public.care_circle_links (requester_id, status, relationship);
-
-CREATE INDEX IF NOT EXISTS idx_care_circle_links_recipient_status_role
-  ON public.care_circle_links (recipient_id, status, relationship);
-
-CREATE OR REPLACE FUNCTION public.handle_new_profile_care_circle_fanout()
-RETURNS TRIGGER AS $$
-DECLARE
-  owner_auth_id UUID;
-BEGIN
-  owner_auth_id := COALESCE(NEW.auth_id, NEW.user_id);
-
-  IF owner_auth_id IS NULL THEN
-    RETURN NEW;
-  END IF;
-
-  INSERT INTO public.care_circle_links (
-    requester_id,
-    recipient_id,
-    profile_id,
-    status,
-    relationship,
-    created_at,
-    updated_at
-  )
-  SELECT
-    owner_auth_id,
-    pairs.recipient_id,
-    NEW.id,
-    'accepted',
-    COALESCE(pairs.primary_relationship, 'friend'),
-    NOW(),
-    NOW()
-  FROM (
-    SELECT
-      links.recipient_id,
-      (
-        SELECT primary_link.relationship
-        FROM public.care_circle_links primary_link
-        JOIN public.profiles primary_profile
-          ON primary_profile.id = primary_link.profile_id
-        WHERE primary_link.requester_id = owner_auth_id
-          AND primary_link.recipient_id = links.recipient_id
-          AND primary_link.status = 'accepted'
-          AND primary_profile.is_primary = TRUE
-        ORDER BY
-          COALESCE(primary_link.updated_at, primary_link.created_at, NOW()) DESC,
-          primary_link.created_at DESC,
-          primary_link.id DESC
-        LIMIT 1
-      ) AS primary_relationship
-    FROM public.care_circle_links links
-    WHERE links.requester_id = owner_auth_id
-      AND links.status = 'accepted'
-    GROUP BY links.recipient_id
-  ) AS pairs
-  ON CONFLICT (requester_id, recipient_id, profile_id) DO NOTHING;
-
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-DROP TRIGGER IF EXISTS on_profile_created_care_circle_fanout ON public.profiles;
-CREATE TRIGGER on_profile_created_care_circle_fanout
-  AFTER INSERT ON public.profiles
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_new_profile_care_circle_fanout();
-
-COMMENT ON FUNCTION public.handle_new_profile_care_circle_fanout() IS
-  'Auto-shares newly created profiles with recipients already accepted in requester care-circle links.';

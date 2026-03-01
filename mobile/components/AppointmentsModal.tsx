@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Calendar, type DateData } from 'react-native-calendars';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { MotiView } from 'moti';
+import { toast } from '@/lib/toast';
+import { EmptyState, EmptyStatePreset } from '@/components/EmptyState';
 
 export type Appointment = {
   id: string;
@@ -35,7 +42,14 @@ type TimeParts = {
   period: 'AM' | 'PM' | '';
 };
 
-const appointmentTypeFields = {
+type AppointmentDetailField = {
+  name: string;
+  label: string;
+  placeholder: string;
+  multiline?: boolean;
+};
+
+const appointmentTypeFields: Record<string, AppointmentDetailField[]> = {
   'Doctor Visit': [
     { name: 'doctorName', label: 'Doctor name', placeholder: 'Enter doctor name' },
     { name: 'specialty', label: 'Specialty', placeholder: 'e.g., Cardiologist' },
@@ -133,6 +147,10 @@ export function AppointmentsModal({
   onAddAppointment,
   onDeleteAppointment,
 }: Props) {
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isCompact = windowWidth < 360;
+  const sheetMaxHeight = Math.min(windowHeight - 24, 760);
+  const eventSheetMaxHeight = Math.min(windowHeight - 20, 820);
   const todayDate = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -184,7 +202,7 @@ export function AppointmentsModal({
   const openAddModal = (dateOverride?: string) => {
     const baseDate = dateOverride || new Date().toISOString().split('T')[0];
     if (baseDate < todayDate) {
-      Alert.alert('Past date', 'You can only add appointments for future dates.');
+      toast.warning('Past date', 'You can only add appointments for future dates.');
       return;
     }
     setEventForm({
@@ -225,22 +243,27 @@ export function AppointmentsModal({
       return;
     }
     if (!eventForm.title.trim()) {
-      return Alert.alert('Missing title', 'Please enter the event name.');
+      toast.warning('Missing title', 'Please enter the event name.');
+      return;
     }
     if (!eventForm.date || eventForm.date < todayDate) {
-      return Alert.alert('Invalid date', 'Please select a future date for the appointment.');
+      toast.warning('Invalid date', 'Please select a future date for the appointment.');
+      return;
     }
     if (!eventTime.hour || !eventTime.minute || !eventTime.period) {
-      return Alert.alert('Missing time', 'Please select a time for the appointment.');
+      toast.warning('Missing time', 'Please select a time for the appointment.');
+      return;
     }
     if (!eventForm.type) {
-      return Alert.alert('Missing type', 'Please select an appointment type.');
+      toast.warning('Missing type', 'Please select an appointment type.');
+      return;
     }
 
     const appointmentTime = to24HourTime(eventTime.hour, eventTime.minute, eventTime.period);
     const appointmentDateTime = new Date(`${eventForm.date}T${appointmentTime}`);
     if (appointmentDateTime <= new Date()) {
-      return Alert.alert('Invalid time', 'Please select a future date and time for the appointment.');
+      toast.warning('Invalid time', 'Please select a future date and time for the appointment.');
+      return;
     }
 
     const payload: Appointment = {
@@ -252,9 +275,14 @@ export function AppointmentsModal({
       ...additionalFields,
     };
 
-    await onAddAppointment(payload);
-    setShowEventModal(false);
-    setSelectedEvent(null);
+    try {
+      await onAddAppointment(payload);
+      setShowEventModal(false);
+      setSelectedEvent(null);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unable to save appointment.';
+      toast.error('Save failed', message);
+    }
   };
 
   const handleDeleteEvent = (appointmentId: string) => {
@@ -263,10 +291,15 @@ export function AppointmentsModal({
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => {
-          void onDeleteAppointment(appointmentId);
-          setShowEventModal(false);
-          setSelectedEvent(null);
+        onPress: async () => {
+          try {
+            await onDeleteAppointment(appointmentId);
+            setShowEventModal(false);
+            setSelectedEvent(null);
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Unable to delete appointment.';
+            toast.error('Delete failed', message);
+          }
         },
       },
     ]);
@@ -295,208 +328,217 @@ export function AppointmentsModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <Pressable style={styles.scrim} onPress={onClose} />
-        <View style={styles.sheet}>
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Appointments</Text>
-            <Pressable onPress={onClose} style={styles.closeButton}>
-              <MaterialCommunityIcons name="close" size={20} color="#1f2f33" />
-            </Pressable>
-          </View>
-
-          <View style={styles.segmented}>
-            <Pressable
-              onPress={() => setViewMode('list')}
-              style={[
-                styles.segmentButton,
-                viewMode === 'list' && styles.segmentButtonActive,
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="view-list"
-                size={16}
-                color={viewMode === 'list' ? '#0f766e' : '#6b7f86'}
-              />
-              <Text
-                style={[
-                  styles.segmentLabel,
-                  viewMode === 'list' && styles.segmentLabelActive,
-                ]}
-              >
-                List
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setViewMode('calendar')}
-              style={[
-                styles.segmentButton,
-                viewMode === 'calendar' && styles.segmentButtonActive,
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="calendar-month-outline"
-                size={16}
-                color={viewMode === 'calendar' ? '#0f766e' : '#6b7f86'}
-              />
-              <Text
-                style={[
-                  styles.segmentLabel,
-                  viewMode === 'calendar' && styles.segmentLabelActive,
-                ]}
-              >
-                Calendar
-              </Text>
-            </Pressable>
-          </View>
-
-          <ScrollView
-            style={styles.sheetBody}
-            contentContainerStyle={styles.sheetContent}
-            showsVerticalScrollIndicator={false}
+      <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.scrim} onPress={onClose} />
+          <KeyboardAvoidingView
+            style={styles.keyboardWrapper}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            {viewMode === 'list' ? (
-              <>
-                {upcomingAppointments.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <MaterialCommunityIcons name="calendar-blank" size={32} color="#c7d3d6" />
-                    <Text style={styles.emptyTitle}>No upcoming appointments</Text>
-                    <Text style={styles.emptySubtitle}>
-                      Tap the button below to schedule one.
-                    </Text>
-                  </View>
-                ) : (
-                  upcomingAppointments.map((apt) => (
-                    <Pressable
-                      key={apt.id}
-                      style={({ pressed }) => [
-                        styles.appointmentCard,
-                        pressed && styles.appointmentCardPressed,
-                      ]}
-                      onPress={() => openEditModal(apt)}
-                    >
-                      <View style={styles.cardHeader}>
-                        <View style={styles.typeBadge}>
-                          <Text style={styles.typeBadgeText}>{apt.type}</Text>
-                        </View>
-                        <Pressable
-                          onPress={() => handleDeleteEvent(apt.id)}
-                          hitSlop={10}
-                        >
-                          <MaterialCommunityIcons name="trash-can-outline" size={18} color="#b42318" />
-                        </Pressable>
-                      </View>
-                      <Text style={styles.appointmentTitle}>{apt.title}</Text>
-                      <View style={styles.detailRow}>
-                        <MaterialCommunityIcons name="calendar-month" size={16} color="#0f766e" />
-                        <Text style={styles.detailText}>{formatDateLabel(apt.date)}</Text>
-                      </View>
-                      <View style={styles.detailRow}>
-                        <MaterialCommunityIcons name="clock-outline" size={16} color="#0f766e" />
-                        <Text style={styles.detailText}>{formatTimeLabel(apt.time)}</Text>
-                      </View>
-                    </Pressable>
-                  ))
-                )}
-                <Pressable style={styles.addButton} onPress={() => openAddModal()}>
-                  <MaterialCommunityIcons name="plus" size={18} color="#0f766e" />
-                  <Text style={styles.addButtonText}>Add New Appointment</Text>
-                </Pressable>
-              </>
-            ) : (
-              <>
-                <Calendar
-                  onDayPress={handleDateSelect}
-                  theme={{
-                    todayTextColor: '#0f766e',
-                    arrowColor: '#0f766e',
-                    textDayFontWeight: '500',
-                    textMonthFontWeight: '700',
-                    textDayHeaderFontWeight: '600',
-                  }}
-                  dayComponent={({ date, state }) => {
-                    if (!date) return <View style={styles.dayCell} />;
-                    const dateString = date.dateString;
-                    const isOutsideMonth = state === 'disabled';
-                    const isPast = isPastDate(dateString);
-                    const isSelected = dateString === selectedDate;
-                    const hasAppointments = appointmentDates.has(dateString);
-                    return (
+            <MotiView
+              from={{ translateY: 100, opacity: 0.5 }}
+              animate={{ translateY: 0, opacity: 1 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+            >
+              <View style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Appointments</Text>
+              <Pressable onPress={onClose} style={styles.closeButton}>
+                <MaterialCommunityIcons name="close" size={20} color="#1f2f33" />
+              </Pressable>
+            </View>
+
+            <View style={styles.segmented}>
+              <Pressable
+                onPress={() => setViewMode('list')}
+                style={[
+                  styles.segmentButton,
+                  viewMode === 'list' && styles.segmentButtonActive,
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="view-list"
+                  size={16}
+                  color={viewMode === 'list' ? '#0f766e' : '#6b7f86'}
+                />
+                <Text
+                  style={[
+                    styles.segmentLabel,
+                    isCompact && styles.segmentLabelCompact,
+                    viewMode === 'list' && styles.segmentLabelActive,
+                  ]}
+                >
+                  List
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setViewMode('calendar')}
+                style={[
+                  styles.segmentButton,
+                  viewMode === 'calendar' && styles.segmentButtonActive,
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="calendar-month-outline"
+                  size={16}
+                  color={viewMode === 'calendar' ? '#0f766e' : '#6b7f86'}
+                />
+                <Text
+                  style={[
+                    styles.segmentLabel,
+                    isCompact && styles.segmentLabelCompact,
+                    viewMode === 'calendar' && styles.segmentLabelActive,
+                  ]}
+                >
+                  Calendar
+                </Text>
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={styles.sheetBody}
+              contentContainerStyle={styles.sheetContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {viewMode === 'list' ? (
+                <>
+                  {upcomingAppointments.length === 0 ? (
+                    <EmptyStatePreset preset="appointments" />
+                  ) : (
+                    upcomingAppointments.map((apt) => (
                       <Pressable
-                        onPress={() => handleDateSelect(date)}
-                        disabled={isOutsideMonth}
-                        style={[
-                          styles.dayCell,
-                          isSelected && styles.dayCellSelected,
-                          isOutsideMonth && styles.dayCellOutside,
+                        key={apt.id}
+                        style={({ pressed }) => [
+                          styles.appointmentCard,
+                          pressed && styles.appointmentCardPressed,
                         ]}
+                        onPress={() => openEditModal(apt)}
                       >
-                        <Text
+                        <View style={styles.cardHeader}>
+                          <View style={styles.typeBadge}>
+                            <Text style={styles.typeBadgeText}>{apt.type}</Text>
+                          </View>
+                          <Pressable
+                            onPress={() => handleDeleteEvent(apt.id)}
+                            hitSlop={10}
+                          >
+                            <MaterialCommunityIcons name="trash-can-outline" size={18} color="#b42318" />
+                          </Pressable>
+                        </View>
+                        <Text style={styles.appointmentTitle}>{apt.title}</Text>
+                        <View style={styles.detailRow}>
+                          <MaterialCommunityIcons name="calendar-month" size={16} color="#0f766e" />
+                          <Text style={styles.detailText}>{formatDateLabel(apt.date)}</Text>
+                        </View>
+                        <View style={styles.detailRow}>
+                          <MaterialCommunityIcons name="clock-outline" size={16} color="#0f766e" />
+                          <Text style={styles.detailText}>{formatTimeLabel(apt.time)}</Text>
+                        </View>
+                      </Pressable>
+                    ))
+                  )}
+                  <Pressable style={styles.addButton} onPress={() => openAddModal()}>
+                    <MaterialCommunityIcons name="plus" size={18} color="#0f766e" />
+                    <Text style={styles.addButtonText}>Add New Appointment</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Calendar
+                    onDayPress={handleDateSelect}
+                    theme={{
+                      todayTextColor: '#0f766e',
+                      arrowColor: '#0f766e',
+                      textDayFontWeight: '500',
+                      textMonthFontWeight: '700',
+                      textDayHeaderFontWeight: '600',
+                    }}
+                    dayComponent={({ date, state }) => {
+                      if (!date) return <View style={styles.dayCell} />;
+                      const dateString = date.dateString;
+                      const isOutsideMonth = state === 'disabled';
+                      const isPast = isPastDate(dateString);
+                      const isSelected = dateString === selectedDate;
+                      const hasAppointments = appointmentDates.has(dateString);
+                      return (
+                        <Pressable
+                          onPress={() => handleDateSelect(date)}
+                          disabled={isOutsideMonth}
                           style={[
-                            styles.dayText,
-                            isPast && styles.dayTextPast,
-                            isSelected && styles.dayTextSelected,
-                            isOutsideMonth && styles.dayTextOutside,
+                            styles.dayCell,
+                            isSelected && styles.dayCellSelected,
+                            isOutsideMonth && styles.dayCellOutside,
                           ]}
                         >
-                          {date.day}
-                        </Text>
-                        {hasAppointments ? (
-                          <View style={[styles.dayDot, isPast && styles.dayDotPast]} />
-                        ) : null}
-                      </Pressable>
-                    );
-                  }}
-                />
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>
-                    {formatDateLabel(selectedDate)}
-                  </Text>
-                  <Pressable
-                    onPress={() => openAddModal(selectedDate)}
-                    disabled={isSelectedDateInPast}
-                  >
-                    <Text
-                      style={[
-                        styles.sectionAction,
-                        isSelectedDateInPast && styles.sectionActionDisabled,
-                      ]}
-                    >
-                      Add
+                          <Text
+                            style={[
+                              styles.dayText,
+                              isPast && styles.dayTextPast,
+                              isSelected && styles.dayTextSelected,
+                              isOutsideMonth && styles.dayTextOutside,
+                            ]}
+                          >
+                            {date.day}
+                          </Text>
+                          {hasAppointments ? (
+                            <View style={[styles.dayDot, isPast && styles.dayDotPast]} />
+                          ) : null}
+                        </Pressable>
+                      );
+                    }}
+                  />
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>
+                      {formatDateLabel(selectedDate)}
                     </Text>
-                  </Pressable>
-                </View>
-                {isSelectedDateInPast ? (
-                  <Text style={styles.pastNote}>Past dates are view-only.</Text>
-                ) : null}
-                {selectedDayAppointments.length === 0 ? (
-                  <Text style={styles.emptySubtitle}>No appointments for this date.</Text>
-                ) : (
-                  selectedDayAppointments.map((apt) => (
                     <Pressable
-                      key={apt.id}
-                      style={({ pressed }) => [
-                        styles.appointmentCard,
-                        pressed && styles.appointmentCardPressed,
-                      ]}
-                      onPress={() => openEditModal(apt)}
+                      onPress={() => openAddModal(selectedDate)}
+                      disabled={isSelectedDateInPast}
                     >
-                      <Text style={styles.appointmentTitle}>{apt.title}</Text>
-                      <View style={styles.detailRow}>
-                        <MaterialCommunityIcons name="clock-outline" size={16} color="#0f766e" />
-                        <Text style={styles.detailText}>{formatTimeLabel(apt.time)}</Text>
-                      </View>
-                      <View style={styles.typeBadgeCompact}>
-                        <Text style={styles.typeBadgeText}>{apt.type}</Text>
-                      </View>
+                      <Text
+                        style={[
+                          styles.sectionAction,
+                          isSelectedDateInPast && styles.sectionActionDisabled,
+                        ]}
+                      >
+                        Add
+                      </Text>
                     </Pressable>
-                  ))
-                )}
-              </>
-            )}
-          </ScrollView>
-        </View>
+                  </View>
+                  {isSelectedDateInPast ? (
+                    <Text style={styles.pastNote}>Past dates are view-only.</Text>
+                  ) : null}
+                  {selectedDayAppointments.length === 0 ? (
+                    <EmptyState icon="calendar-blank-outline" title="No appointments for this date" />
+                  ) : (
+                    selectedDayAppointments.map((apt) => (
+                      <Pressable
+                        key={apt.id}
+                        style={({ pressed }) => [
+                          styles.appointmentCard,
+                          pressed && styles.appointmentCardPressed,
+                        ]}
+                        onPress={() => openEditModal(apt)}
+                      >
+                        <Text style={styles.appointmentTitle}>{apt.title}</Text>
+                        <View style={styles.detailRow}>
+                          <MaterialCommunityIcons name="clock-outline" size={16} color="#0f766e" />
+                          <Text style={styles.detailText}>{formatTimeLabel(apt.time)}</Text>
+                        </View>
+                        <View style={styles.typeBadgeCompact}>
+                          <Text style={styles.typeBadgeText}>{apt.type}</Text>
+                        </View>
+                      </Pressable>
+                    ))
+                  )}
+                </>
+              )}
+            </ScrollView>
+          </View>
+            </MotiView>
+        </KeyboardAvoidingView>
       </View>
+      </BlurView>
 
       <Modal
         visible={showEventModal}
@@ -505,214 +547,229 @@ export function AppointmentsModal({
         onRequestClose={() => setShowEventModal(false)}
       >
         <View style={styles.eventOverlay}>
-          <View style={styles.eventSheet}>
-            <View style={styles.eventHeader}>
-              <Text style={styles.eventTitle}>
-                {selectedEvent ? 'Edit Appointment' : 'Add Appointment'}
-              </Text>
-              <Pressable
-                onPress={() => {
-                  setShowEventModal(false);
-                  setSelectedEvent(null);
-                }}
-                style={styles.closeButton}
-              >
-                <MaterialCommunityIcons name="close" size={20} color="#1f2f33" />
-              </Pressable>
-            </View>
-            <ScrollView contentContainerStyle={styles.eventContent} showsVerticalScrollIndicator={false}>
-              {isReadOnlyPastEvent ? (
-                <View style={styles.readOnlyBanner}>
-                  <Text style={styles.readOnlyText}>
-                    This appointment is in the past and cannot be edited.
-                  </Text>
-                </View>
-              ) : null}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Event name</Text>
-                <TextInput
-                  value={eventForm.title}
-                  onChangeText={(value) => setEventForm((prev) => ({ ...prev, title: value }))}
-                  placeholder="e.g., Doctor visit"
-                  placeholderTextColor="#9bb0b5"
-                  style={[styles.input, isReadOnlyPastEvent && styles.inputDisabled]}
-                  editable={!isReadOnlyPastEvent}
-                />
-              </View>
-
-              <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Date</Text>
+          <KeyboardAvoidingView
+            style={styles.eventKeyboardWrapper}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <MotiView
+              from={{ translateY: 100, opacity: 0.5 }}
+              animate={{ translateY: 0, opacity: 1 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+            >
+              <View style={[styles.eventSheet, { maxHeight: eventSheetMaxHeight }]}>
+              <View style={styles.eventHeader}>
+                <Text style={styles.eventTitle}>
+                  {selectedEvent ? 'Edit Appointment' : 'Add Appointment'}
+                </Text>
                 <Pressable
-                  style={[styles.dateSelector, isReadOnlyPastEvent && styles.inputDisabled]}
                   onPress={() => {
-                    if (isReadOnlyPastEvent) return;
-                    setShowDatePicker((prev) => !prev);
+                    setShowEventModal(false);
+                    setSelectedEvent(null);
                   }}
-                  disabled={isReadOnlyPastEvent}
+                  style={styles.closeButton}
                 >
-                  <MaterialCommunityIcons name="calendar-month-outline" size={18} color="#0f766e" />
-                  <Text style={styles.dateSelectorText}>{formatDateLabel(eventForm.date)}</Text>
+                  <MaterialCommunityIcons name="close" size={20} color="#1f2f33" />
                 </Pressable>
-                {showDatePicker && !isReadOnlyPastEvent && (
-                  <Calendar
-                    onDayPress={(day) => {
-                      if (day.dateString < todayDate) return;
-                      setEventForm((prev) => ({ ...prev, date: day.dateString }));
-                      setShowDatePicker(false);
-                    }}
-                    minDate={todayDate}
-                    disableAllTouchEventsForDisabledDays
-                    markedDates={{
-                      [eventForm.date]: {
-                        selected: true,
-                        selectedColor: '#0f766e',
-                      },
-                    }}
-                    theme={{
-                      todayTextColor: '#0f766e',
-                      selectedDayBackgroundColor: '#0f766e',
-                      arrowColor: '#0f766e',
-                      textDayFontWeight: '500',
-                      textMonthFontWeight: '700',
-                    }}
-                  />
-                )}
               </View>
+              <ScrollView
+                contentContainerStyle={styles.eventContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {isReadOnlyPastEvent ? (
+                  <View style={styles.readOnlyBanner}>
+                    <Text style={styles.readOnlyText}>
+                      This appointment is in the past and cannot be edited.
+                    </Text>
+                  </View>
+                ) : null}
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Event name</Text>
+                  <TextInput
+                    value={eventForm.title}
+                    onChangeText={(value) => setEventForm((prev) => ({ ...prev, title: value }))}
+                    placeholder="e.g., Doctor visit"
+                    placeholderTextColor="#9bb0b5"
+                    style={[styles.input, isReadOnlyPastEvent && styles.inputDisabled]}
+                    editable={!isReadOnlyPastEvent}
+                  />
+                </View>
 
-              <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Time</Text>
-                <View style={styles.timeRow}>
-                  <TextInput
-                    value={eventTime.hour}
-                    onChangeText={(value) => updateTime({ hour: clampTimePart(value, 12) })}
-                    placeholder="HH"
-                    placeholderTextColor="#9bb0b5"
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    style={[styles.timeInput, isReadOnlyPastEvent && styles.inputDisabled]}
-                    editable={!isReadOnlyPastEvent}
-                  />
-                  <Text style={styles.timeSeparator}>:</Text>
-                  <TextInput
-                    value={eventTime.minute}
-                    onChangeText={(value) => updateTime({ minute: clampTimePart(value, 59) })}
-                    placeholder="MM"
-                    placeholderTextColor="#9bb0b5"
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    style={[styles.timeInput, isReadOnlyPastEvent && styles.inputDisabled]}
-                    onBlur={() => {
-                      if (!eventTime.minute) return;
-                      updateTime({ minute: eventTime.minute.padStart(2, '0') });
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Date</Text>
+                  <Pressable
+                    style={[styles.dateSelector, isReadOnlyPastEvent && styles.inputDisabled]}
+                    onPress={() => {
+                      if (isReadOnlyPastEvent) return;
+                      setShowDatePicker((prev) => !prev);
                     }}
-                    editable={!isReadOnlyPastEvent}
-                  />
-                  <View style={styles.periodColumn}>
-                    {(['AM', 'PM'] as const).map((period) => (
+                    disabled={isReadOnlyPastEvent}
+                  >
+                    <MaterialCommunityIcons name="calendar-month-outline" size={18} color="#0f766e" />
+                    <Text style={styles.dateSelectorText}>{formatDateLabel(eventForm.date)}</Text>
+                  </Pressable>
+                  {showDatePicker && !isReadOnlyPastEvent && (
+                    <Calendar
+                      onDayPress={(day) => {
+                        if (day.dateString < todayDate) return;
+                        setEventForm((prev) => ({ ...prev, date: day.dateString }));
+                        setShowDatePicker(false);
+                      }}
+                      minDate={todayDate}
+                      disableAllTouchEventsForDisabledDays
+                      markedDates={{
+                        [eventForm.date]: {
+                          selected: true,
+                          selectedColor: '#0f766e',
+                        },
+                      }}
+                      theme={{
+                        todayTextColor: '#0f766e',
+                        selectedDayBackgroundColor: '#0f766e',
+                        arrowColor: '#0f766e',
+                        textDayFontWeight: '500',
+                        textMonthFontWeight: '700',
+                      }}
+                    />
+                  )}
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Time</Text>
+                  <View style={styles.timeRow}>
+                    <TextInput
+                      value={eventTime.hour}
+                      onChangeText={(value) => updateTime({ hour: clampTimePart(value, 12) })}
+                      placeholder="HH"
+                      placeholderTextColor="#9bb0b5"
+                      keyboardType="number-pad"
+                      maxLength={2}
+                      style={[styles.timeInput, isReadOnlyPastEvent && styles.inputDisabled]}
+                      editable={!isReadOnlyPastEvent}
+                    />
+                    <Text style={styles.timeSeparator}>:</Text>
+                    <TextInput
+                      value={eventTime.minute}
+                      onChangeText={(value) => updateTime({ minute: clampTimePart(value, 59) })}
+                      placeholder="MM"
+                      placeholderTextColor="#9bb0b5"
+                      keyboardType="number-pad"
+                      maxLength={2}
+                      style={[styles.timeInput, isReadOnlyPastEvent && styles.inputDisabled]}
+                      onBlur={() => {
+                        if (!eventTime.minute) return;
+                        updateTime({ minute: eventTime.minute.padStart(2, '0') });
+                      }}
+                      editable={!isReadOnlyPastEvent}
+                    />
+                    <View style={styles.periodColumn}>
+                      {(['AM', 'PM'] as const).map((period) => (
+                        <Pressable
+                          key={period}
+                          onPress={() => updateTime({ period })}
+                          disabled={isReadOnlyPastEvent}
+                          style={[
+                            styles.periodButton,
+                            eventTime.period === period && styles.periodButtonActive,
+                            isReadOnlyPastEvent && styles.inputDisabled,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.periodLabel,
+                              eventTime.period === period && styles.periodLabelActive,
+                            ]}
+                          >
+                            {period}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                  <Text style={styles.timeHint}>{formatTimeLabel(eventForm.time)}</Text>
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Type</Text>
+                  <View style={styles.typeGrid}>
+                    {typeOptions.map((type) => (
                       <Pressable
-                        key={period}
-                        onPress={() => updateTime({ period })}
+                        key={type}
+                        onPress={() => {
+                          setEventForm((prev) => ({ ...prev, type }));
+                          setAdditionalFields({});
+                        }}
                         disabled={isReadOnlyPastEvent}
                         style={[
-                          styles.periodButton,
-                          eventTime.period === period && styles.periodButtonActive,
+                          styles.typeChip,
+                          eventForm.type === type && styles.typeChipActive,
                           isReadOnlyPastEvent && styles.inputDisabled,
                         ]}
                       >
                         <Text
                           style={[
-                            styles.periodLabel,
-                            eventTime.period === period && styles.periodLabelActive,
+                            styles.typeChipText,
+                            eventForm.type === type && styles.typeChipTextActive,
                           ]}
                         >
-                          {period}
+                          {type}
                         </Text>
                       </Pressable>
                     ))}
                   </View>
                 </View>
-                <Text style={styles.timeHint}>{formatTimeLabel(eventForm.time)}</Text>
-              </View>
 
-              <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Type</Text>
-                <View style={styles.typeGrid}>
-                  {typeOptions.map((type) => (
+                {currentTypeFields.length > 0 && (
+                  <View style={styles.extraFields}>
+                    <Text style={styles.extraTitle}>Additional details</Text>
+                    {currentTypeFields.map((field) => (
+                      <View key={field.name} style={styles.fieldGroup}>
+                        <Text style={styles.fieldLabel}>{field.label}</Text>
+                        <TextInput
+                          value={additionalFields[field.name] || ''}
+                          onChangeText={(value) =>
+                            setAdditionalFields((prev) => ({ ...prev, [field.name]: value }))
+                          }
+                          placeholder={field.placeholder}
+                          placeholderTextColor="#9bb0b5"
+                          multiline={Boolean(field.multiline)}
+                          style={[
+                            styles.input,
+                            field.multiline && styles.multiline,
+                            isReadOnlyPastEvent && styles.inputDisabled,
+                          ]}
+                          editable={!isReadOnlyPastEvent}
+                        />
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                <View style={styles.actionRow}>
+                  {selectedEvent && !isReadOnlyPastEvent ? (
                     <Pressable
-                      key={type}
-                      onPress={() => {
-                        setEventForm((prev) => ({ ...prev, type }));
-                        setAdditionalFields({});
-                      }}
-                      disabled={isReadOnlyPastEvent}
-                      style={[
-                        styles.typeChip,
-                        eventForm.type === type && styles.typeChipActive,
-                        isReadOnlyPastEvent && styles.inputDisabled,
-                      ]}
+                      style={[styles.secondaryAction, styles.deleteAction]}
+                      onPress={() => handleDeleteEvent(selectedEvent.id)}
                     >
-                      <Text
-                        style={[
-                          styles.typeChipText,
-                          eventForm.type === type && styles.typeChipTextActive,
-                        ]}
-                      >
-                        {type}
+                      <Text style={styles.deleteActionText}>Delete</Text>
+                    </Pressable>
+                  ) : null}
+                  {isReadOnlyPastEvent ? (
+                    <Pressable style={styles.primaryAction} onPress={() => setShowEventModal(false)}>
+                      <Text style={styles.primaryActionText}>Close</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable style={styles.primaryAction} onPress={handleSaveEvent}>
+                      <Text style={styles.primaryActionText}>
+                        {selectedEvent ? 'Update' : 'Add Appointment'}
                       </Text>
                     </Pressable>
-                  ))}
+                  )}
                 </View>
-              </View>
-
-              {currentTypeFields.length > 0 && (
-                <View style={styles.extraFields}>
-                  <Text style={styles.extraTitle}>Additional details</Text>
-                  {currentTypeFields.map((field) => (
-                    <View key={field.name} style={styles.fieldGroup}>
-                      <Text style={styles.fieldLabel}>{field.label}</Text>
-                      <TextInput
-                        value={additionalFields[field.name] || ''}
-                        onChangeText={(value) =>
-                          setAdditionalFields((prev) => ({ ...prev, [field.name]: value }))
-                        }
-                        placeholder={field.placeholder}
-                        placeholderTextColor="#9bb0b5"
-                        multiline={Boolean(field.multiline)}
-                        style={[
-                          styles.input,
-                          field.multiline && styles.multiline,
-                          isReadOnlyPastEvent && styles.inputDisabled,
-                        ]}
-                        editable={!isReadOnlyPastEvent}
-                      />
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              <View style={styles.actionRow}>
-                {selectedEvent && !isReadOnlyPastEvent ? (
-                  <Pressable
-                    style={[styles.secondaryAction, styles.deleteAction]}
-                    onPress={() => handleDeleteEvent(selectedEvent.id)}
-                  >
-                    <Text style={styles.deleteActionText}>Delete</Text>
-                  </Pressable>
-                ) : null}
-                {isReadOnlyPastEvent ? (
-                  <Pressable style={styles.primaryAction} onPress={() => setShowEventModal(false)}>
-                    <Text style={styles.primaryActionText}>Close</Text>
-                  </Pressable>
-                ) : (
-                  <Pressable style={styles.primaryAction} onPress={handleSaveEvent}>
-                    <Text style={styles.primaryActionText}>
-                      {selectedEvent ? 'Update' : 'Add Appointment'}
-                    </Text>
-                  </Pressable>
-                )}
-              </View>
-            </ScrollView>
-          </View>
+              </ScrollView>
+            </View>
+            </MotiView>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </Modal>
@@ -726,14 +783,17 @@ const styles = StyleSheet.create({
   },
   scrim: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 24, 0.35)',
+    backgroundColor: 'transparent',
+  },
+  keyboardWrapper: {
+    width: '100%',
+    justifyContent: 'flex-end',
   },
   sheet: {
     backgroundColor: '#f8fbfb',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingBottom: 24,
-    maxHeight: '86%',
   },
   sheetHeader: {
     paddingHorizontal: 20,
@@ -787,6 +847,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#6b7f86',
+  },
+  segmentLabelCompact: {
+    fontSize: 12,
   },
   segmentLabelActive: {
     color: '#0f766e',
@@ -945,7 +1008,11 @@ const styles = StyleSheet.create({
   },
   eventOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(13, 19, 20, 0.4)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    justifyContent: 'flex-end',
+  },
+  eventKeyboardWrapper: {
+    width: '100%',
     justifyContent: 'flex-end',
   },
   eventSheet: {
@@ -953,7 +1020,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingBottom: 20,
-    maxHeight: '92%',
   },
   eventHeader: {
     paddingHorizontal: 20,
@@ -988,8 +1054,8 @@ const styles = StyleSheet.create({
     borderColor: '#d8e3e6',
     backgroundColor: '#f7fbfb',
     borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 14,
     color: '#1f2f33',
   },
@@ -1025,8 +1091,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#d8e3e6',
     backgroundColor: '#f7fbfb',
-    borderRadius: 12,
-    paddingVertical: 10,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     textAlign: 'center',
     fontSize: 14,
     color: '#1f2f33',

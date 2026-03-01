@@ -1,10 +1,25 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
+import { createRateLimiter, getClientIP } from '@/lib/rateLimit';
+
+export const runtime = "nodejs";
 
 type OtpSendPayload = {
   phone?: string;
   mode?: "login" | "signup";
 };
+
+const ipLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, maxRequests: 10 });
+const phoneLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, maxRequests: 5 });
+
+const AUTH_LOOKUP_MAX_PAGES = Number.parseInt(
+  process.env.SUPABASE_AUTH_LOOKUP_MAX_PAGES ?? "8",
+  10
+);
+const AUTH_LOOKUP_TIMEOUT_MS = Number.parseInt(
+  process.env.SUPABASE_AUTH_LOOKUP_TIMEOUT_MS ?? "3500",
+  10
+);
 
 const normalizePhone = (raw: string) => {
   const trimmed = raw.trim();
@@ -18,24 +33,35 @@ const normalizePhone = (raw: string) => {
   return trimmed;
 };
 
+const addPhoneVariant = (variants: Set<string>, value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return;
+  variants.add(trimmed);
+  const normalized = normalizePhone(trimmed);
+  if (normalized) {
+    variants.add(normalized);
+  }
+};
+
 const getPhoneVariants = (phone: string) => {
   const normalized = normalizePhone(phone);
   const digits = normalized.replace(/\D/g, "");
   const variants = new Set<string>();
 
-  if (normalized) variants.add(normalized);
-  if (digits) variants.add(`+${digits}`);
-  if (digits) variants.add(digits);
+  addPhoneVariant(variants, phone);
+  addPhoneVariant(variants, normalized);
+  if (digits) addPhoneVariant(variants, `+${digits}`);
+  if (digits) addPhoneVariant(variants, digits);
   if (digits.length === 10) {
-    variants.add(`+91${digits}`);
-    variants.add(`91${digits}`);
+    addPhoneVariant(variants, `+91${digits}`);
+    addPhoneVariant(variants, `91${digits}`);
   }
   if (digits.length === 12 && digits.startsWith("91")) {
-    variants.add(digits.slice(2));
-    variants.add(`+${digits.slice(2)}`);
+    addPhoneVariant(variants, digits.slice(2));
+    addPhoneVariant(variants, `+${digits.slice(2)}`);
   }
 
-  return Array.from(variants).map((value) => normalizePhone(value));
+  return Array.from(variants);
 };
 
 type ExistingProfileRow = {
@@ -77,10 +103,16 @@ const findAuthUserIdByPhone = async (
   if (normalizedVariants.size === 0) return null;
 
   let page = 1;
+  const startedAt = Date.now();
   const perPage = 1000;
-  const maxPages = 50;
+  const maxPages = Number.isFinite(AUTH_LOOKUP_MAX_PAGES) && AUTH_LOOKUP_MAX_PAGES > 0
+    ? AUTH_LOOKUP_MAX_PAGES
+    : 8;
+  const timeoutMs = Number.isFinite(AUTH_LOOKUP_TIMEOUT_MS) && AUTH_LOOKUP_TIMEOUT_MS > 0
+    ? AUTH_LOOKUP_TIMEOUT_MS
+    : 3500;
 
-  while (page <= maxPages) {
+  while (page <= maxPages && Date.now() - startedAt < timeoutMs) {
     const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
     if (error) {
       throw error;
@@ -100,6 +132,10 @@ const findAuthUserIdByPhone = async (
       break;
     }
     page += 1;
+  }
+
+  if (page > maxPages || Date.now() - startedAt >= timeoutMs) {
+    console.warn("Auth user phone lookup reached fallback limits.");
   }
 
   return null;
@@ -154,6 +190,10 @@ const findUserIdByProfilePhone = async (
 };
 
 export async function POST(request: Request) {
+  const ip = getClientIP(request as any);
+  const ipBlock = ipLimiter.check(ip);
+  if (ipBlock) return ipBlock;
+
   let payload: OtpSendPayload | null = null;
   try {
     payload = (await request.json()) as OtpSendPayload;
@@ -168,6 +208,9 @@ export async function POST(request: Request) {
   if (!phone || !/^\+\d{10,15}$/.test(phone)) {
     return NextResponse.json({ message: "Invalid phone number." }, { status: 400 });
   }
+
+  const phoneBlock = phoneLimiter.check(phone);
+  if (phoneBlock) return phoneBlock;
 
   if (mode !== "login" && mode !== "signup") {
     return NextResponse.json({ message: "Invalid mode." }, { status: 400 });
@@ -189,9 +232,9 @@ export async function POST(request: Request) {
   const variants = getPhoneVariants(phone);
   let existingUserId: string | null = null;
   try {
-    existingUserId = await findAuthUserIdByPhone(adminClient, variants);
+    existingUserId = await findUserIdByProfilePhone(adminClient, variants);
     if (!existingUserId) {
-      existingUserId = await findUserIdByProfilePhone(adminClient, variants);
+      existingUserId = await findAuthUserIdByPhone(adminClient, variants);
     }
   } catch (lookupError: unknown) {
     return NextResponse.json(
@@ -202,14 +245,14 @@ export async function POST(request: Request) {
 
   if (mode === "login" && !existingUserId) {
     return NextResponse.json(
-      { message: "User not found. Please create an account first." },
+      { message: "No account found with this number." },
       { status: 404 }
     );
   }
 
   if (mode === "signup" && existingUserId) {
     return NextResponse.json(
-      { message: "Account already exists. Please sign in." },
+      { message: "This number is already registered." },
       { status: 409 }
     );
   }
@@ -228,8 +271,18 @@ export async function POST(request: Request) {
     `${baseUrl}/${apiKey}/SMS/${encodeURIComponent(phone)}/AUTOGEN` +
     (template ? `/${encodeURIComponent(template)}` : "");
 
-  const response = await fetch(url, { cache: "no-store" });
-  const data = await response.json().catch(() => null);
+  let response: Response;
+  let data: { Status?: string; Details?: string } | null = null;
+  try {
+    response = await fetch(url, { cache: "no-store" });
+    data = (await response.json().catch(() => null)) as { Status?: string; Details?: string } | null;
+  } catch (providerError: unknown) {
+    console.error("OTP provider request failed:", providerError);
+    return NextResponse.json(
+      { message: "OTP service is temporarily unreachable. Please try again." },
+      { status: 503 }
+    );
+  }
 
   if (!response.ok || !data || data.Status !== "Success") {
     return NextResponse.json(

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import { createSupabaseJwt } from "@/lib/supabaseJwt";
+import { createRateLimiter, getClientIP } from '@/lib/rateLimit';
 
 export const runtime = "nodejs";
 
@@ -10,6 +11,18 @@ type OtpVerifyPayload = {
   sessionId?: string;
   mode?: "login" | "signup";
 };
+
+const ipLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, maxRequests: 20 });
+const sessionLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 8 });
+
+const AUTH_LOOKUP_MAX_PAGES = Number.parseInt(
+  process.env.SUPABASE_AUTH_LOOKUP_MAX_PAGES ?? "8",
+  10
+);
+const AUTH_LOOKUP_TIMEOUT_MS = Number.parseInt(
+  process.env.SUPABASE_AUTH_LOOKUP_TIMEOUT_MS ?? "3500",
+  10
+);
 
 const normalizePhone = (raw: string) => {
   const trimmed = raw.trim();
@@ -23,24 +36,35 @@ const normalizePhone = (raw: string) => {
   return trimmed;
 };
 
+const addPhoneVariant = (variants: Set<string>, value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return;
+  variants.add(trimmed);
+  const normalized = normalizePhone(trimmed);
+  if (normalized) {
+    variants.add(normalized);
+  }
+};
+
 const getPhoneVariants = (phone: string) => {
   const normalized = normalizePhone(phone);
   const digits = normalized.replace(/\D/g, "");
   const variants = new Set<string>();
 
-  if (normalized) variants.add(normalized);
-  if (digits) variants.add(`+${digits}`);
-  if (digits) variants.add(digits);
+  addPhoneVariant(variants, phone);
+  addPhoneVariant(variants, normalized);
+  if (digits) addPhoneVariant(variants, `+${digits}`);
+  if (digits) addPhoneVariant(variants, digits);
   if (digits.length === 10) {
-    variants.add(`+91${digits}`);
-    variants.add(`91${digits}`);
+    addPhoneVariant(variants, `+91${digits}`);
+    addPhoneVariant(variants, `91${digits}`);
   }
   if (digits.length === 12 && digits.startsWith("91")) {
-    variants.add(digits.slice(2));
-    variants.add(`+${digits.slice(2)}`);
+    addPhoneVariant(variants, digits.slice(2));
+    addPhoneVariant(variants, `+${digits.slice(2)}`);
   }
 
-  return Array.from(variants).map((value) => normalizePhone(value));
+  return Array.from(variants);
 };
 
 type ExistingProfileRow = {
@@ -82,10 +106,16 @@ const findAuthUserByPhone = async (
   if (normalizedVariants.size === 0) return null;
 
   let page = 1;
+  const startedAt = Date.now();
   const perPage = 1000;
-  const maxPages = 50;
+  const maxPages = Number.isFinite(AUTH_LOOKUP_MAX_PAGES) && AUTH_LOOKUP_MAX_PAGES > 0
+    ? AUTH_LOOKUP_MAX_PAGES
+    : 8;
+  const timeoutMs = Number.isFinite(AUTH_LOOKUP_TIMEOUT_MS) && AUTH_LOOKUP_TIMEOUT_MS > 0
+    ? AUTH_LOOKUP_TIMEOUT_MS
+    : 3500;
 
-  while (page <= maxPages) {
+  while (page <= maxPages && Date.now() - startedAt < timeoutMs) {
     const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
     if (error) {
       throw error;
@@ -105,6 +135,10 @@ const findAuthUserByPhone = async (
       break;
     }
     page += 1;
+  }
+
+  if (page > maxPages || Date.now() - startedAt >= timeoutMs) {
+    console.warn("Auth user phone lookup reached fallback limits.");
   }
 
   return null;
@@ -159,6 +193,10 @@ const findAuthUserByProfilePhone = async (
 };
 
 export async function POST(request: Request) {
+  const ip = getClientIP(request as any);
+  const ipBlock = ipLimiter.check(ip);
+  if (ipBlock) return ipBlock;
+
   let payload: OtpVerifyPayload | null = null;
   try {
     payload = (await request.json()) as OtpVerifyPayload;
@@ -171,6 +209,9 @@ export async function POST(request: Request) {
   const otp = payload?.otp?.trim() ?? "";
   const sessionId = payload?.sessionId?.trim() ?? "";
   const mode = payload?.mode;
+
+  const sessionBlock = sessionLimiter.check(sessionId);
+  if (sessionBlock) return sessionBlock;
 
   if (!phone || !/^\+\d{10,15}$/.test(phone)) {
     return NextResponse.json({ message: "Invalid phone number." }, { status: 400 });
@@ -201,8 +242,20 @@ export async function POST(request: Request) {
     sessionId
   )}/${encodeURIComponent(otp)}`;
 
-  const verifyResponse = await fetch(verifyUrl, { cache: "no-store" });
-  const verifyData = await verifyResponse.json().catch(() => null);
+  let verifyResponse: Response;
+  let verifyData: { Status?: string; Details?: string } | null = null;
+  try {
+    verifyResponse = await fetch(verifyUrl, { cache: "no-store" });
+    verifyData = (await verifyResponse.json().catch(() => null)) as
+      | { Status?: string; Details?: string }
+      | null;
+  } catch (providerError: unknown) {
+    console.error("OTP verification provider request failed:", providerError);
+    return NextResponse.json(
+      { message: "OTP service is temporarily unreachable. Please try again." },
+      { status: 503 }
+    );
+  }
 
   if (!verifyResponse.ok || !verifyData || verifyData.Status !== "Success") {
     return NextResponse.json(
@@ -226,8 +279,9 @@ export async function POST(request: Request) {
 
   try {
     const variants = getPhoneVariants(phone);
-    const authUserByPhone = await findAuthUserByPhone(adminClient, variants);
-    const existingUser = authUserByPhone ?? (await findAuthUserByProfilePhone(adminClient, variants));
+    const userByProfilePhone = await findAuthUserByProfilePhone(adminClient, variants);
+    const authUserByPhone = userByProfilePhone ? null : await findAuthUserByPhone(adminClient, variants);
+    const existingUser = userByProfilePhone ?? authUserByPhone;
 
     if (!existingUser && mode === "login") {
       return NextResponse.json(
@@ -260,7 +314,7 @@ export async function POST(request: Request) {
       }
 
       userId = created.user.id;
-      console.log("✅ Auth user created:", userId);
+      console.log("✅ Auth user created");
 
       // The database triggers handle profile creation automatically:
       //   1. on_auth_user_created_profile → creates a profile (is_primary=true)
@@ -301,7 +355,7 @@ export async function POST(request: Request) {
         const payload = {
           auth_id: userId,
           user_id: userId,
-          name: "Me",
+          name: "Profile",
           avatar_type: "default",
           avatar_color: "#14b8a6",
           is_primary: true,
@@ -327,7 +381,7 @@ export async function POST(request: Request) {
               .from("profiles")
               .insert({
                 user_id: userId,
-                name: "Me",
+                name: "Profile",
                 avatar_type: "default",
                 avatar_color: "#14b8a6",
                 is_primary: true,

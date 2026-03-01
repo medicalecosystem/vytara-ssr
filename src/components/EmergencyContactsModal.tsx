@@ -109,8 +109,7 @@ export function EmergencyContactsModal({ data, onAdd, onDelete }: Props) {
             setShowForm((v) => !v);
             if (!showForm) resetForm();
           }}
-          className="mt-6 rounded-xl px-4 py-2 text-sm font-semibold text-white transition"
-          style={{ backgroundColor: 'var(--theme-button-primary)' }}
+          className="mt-6 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
         >
           {showForm ? "Close" : "+ Add Contact"}
         </button>
@@ -167,8 +166,7 @@ export function EmergencyContactsModal({ data, onAdd, onDelete }: Props) {
                                 setSelectedCountry(c);
                                 setCountryDropdownOpen(false);
                               }}
-                              className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-100 focus:bg-slate-100 focus:outline-none ${c.code === selectedCountry.code ? "font-semibold" : "text-slate-700"}`}
-                              style={c.code === selectedCountry.code ? { backgroundColor: 'var(--theme-surface)', color: 'var(--theme-primary)' } : undefined}
+                              className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-100 focus:bg-slate-100 focus:outline-none ${c.code === selectedCountry.code ? "bg-teal-50 text-teal-800 font-semibold" : "text-slate-700"}`}
                             >
                               {c.name} ({c.dialCode})
                             </button>
@@ -218,8 +216,7 @@ export function EmergencyContactsModal({ data, onAdd, onDelete }: Props) {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition"
-                style={{ backgroundColor: 'var(--theme-button-primary)' }}
+                className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-60"
               >
                 {saving ? "Saving..." : "Save"}
               </button>

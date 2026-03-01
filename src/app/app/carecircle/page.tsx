@@ -123,6 +123,9 @@ type VaultCategory = 'all' | 'reports' | 'prescriptions' | 'insurance' | 'bills'
 type VaultFolder = Exclude<VaultCategory, 'all'>;
 type MemberDetailsTab = 'personal' | 'appointments' | 'medications' | 'vault';
 
+const isMemberDetailsTab = (value: string | null): value is MemberDetailsTab =>
+  value === 'personal' || value === 'appointments' || value === 'medications' || value === 'vault';
+
 type MemberVaultFile = {
   name: string;
   created_at: string | null;
@@ -520,6 +523,38 @@ type SectionHelpButtonProps = {
 function SectionHelpButton({ id, label, description }: SectionHelpButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const [popoverPosition, setPopoverPosition] = useState<{
+    left: number;
+    top: number;
+    width: number;
+  } | null>(null);
+
+  const updatePopoverPosition = useCallback(() => {
+    if (!containerRef.current || typeof window === 'undefined') return;
+
+    const viewportPadding = 16;
+    const popoverGap = 8;
+    const minWidth = 220;
+    const maxWidth = 320;
+    const rect = containerRef.current.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const availableWidth = Math.max(minWidth, viewportWidth - viewportPadding * 2);
+    const width = Math.min(maxWidth, availableWidth);
+    const popoverHeight = popoverRef.current?.offsetHeight ?? 120;
+
+    let left = rect.left + rect.width / 2 - width / 2;
+    left = Math.max(viewportPadding, Math.min(left, viewportWidth - viewportPadding - width));
+
+    let top = rect.bottom + popoverGap;
+    if (top + popoverHeight > viewportHeight - viewportPadding) {
+      top = rect.top - popoverHeight - popoverGap;
+    }
+    top = Math.max(viewportPadding, Math.min(top, viewportHeight - viewportPadding - popoverHeight));
+
+    setPopoverPosition({ left, top, width });
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -545,11 +580,27 @@ function SectionHelpButton({ id, label, description }: SectionHelpButtonProps) {
     };
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleViewportChange = () => updatePopoverPosition();
+    updatePopoverPosition();
+
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    return () => {
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+    };
+  }, [isOpen, updatePopoverPosition]);
+
   return (
     <div ref={containerRef} className="relative">
       <button
         type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
+        onClick={() => {
+          setIsOpen((prev) => !prev);
+        }}
         aria-label={label}
         aria-expanded={isOpen}
         aria-controls={id}
@@ -559,9 +610,19 @@ function SectionHelpButton({ id, label, description }: SectionHelpButtonProps) {
       </button>
       {isOpen ? (
         <div
+          ref={popoverRef}
           id={id}
           role="dialog"
-          className="absolute left-0 top-full z-40 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-lg shadow-slate-900/10"
+          className="fixed z-40 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-lg shadow-slate-900/10"
+          style={
+            popoverPosition
+              ? {
+                  left: `${popoverPosition.left}px`,
+                  top: `${popoverPosition.top}px`,
+                  width: `${popoverPosition.width}px`,
+                }
+              : undefined
+          }
         >
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-teal-600">
             Quick help
@@ -649,6 +710,9 @@ export default function CareCirclePage() {
   );
   const [appointmentSaving, setAppointmentSaving] = useState(false);
   const [appointmentDeletingId, setAppointmentDeletingId] = useState<string | null>(null);
+  const [pendingMemberLinkId, setPendingMemberLinkId] = useState<string | null>(null);
+  const [pendingMemberTab, setPendingMemberTab] = useState<MemberDetailsTab | null>(null);
+  const hasAppliedMemberDeepLinkRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -658,7 +722,37 @@ export default function CareCirclePage() {
       setShowIncomingPendingInvites(true);
       setShowMyPendingInvites(false);
     }
+    const memberLinkId = params.get('memberLinkId')?.trim() || null;
+    const tabParam = params.get('tab');
+    setPendingMemberLinkId(memberLinkId);
+    setPendingMemberTab(isMemberDetailsTab(tabParam) ? tabParam : null);
+    hasAppliedMemberDeepLinkRef.current = false;
   }, []);
+
+  useEffect(() => {
+    if (!pendingMemberLinkId || hasAppliedMemberDeepLinkRef.current) return;
+
+    const allMembers = [...circleData.myCircleMembers, ...circleData.circlesImIn];
+    const targetMember = allMembers.find(
+      (member) => member.linkId === pendingMemberLinkId && member.status === 'accepted'
+    );
+    if (!targetMember) return;
+
+    hasAppliedMemberDeepLinkRef.current = true;
+    setShowIncomingPendingInvites(false);
+    setShowMyPendingInvites(false);
+    setSelectedMember(targetMember);
+    setMemberDetailsTab(pendingMemberTab ?? 'personal');
+
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('memberLinkId');
+      url.searchParams.delete('tab');
+      const nextSearch = url.searchParams.toString();
+      const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
+      window.history.replaceState({}, '', nextUrl);
+    }
+  }, [circleData.circlesImIn, circleData.myCircleMembers, pendingMemberLinkId, pendingMemberTab]);
 
   const loadEmergencyCard = useCallback(async (targetProfileId: string) => {
     setIsEmergencyLoading(true);
@@ -1308,6 +1402,9 @@ export default function CareCirclePage() {
         formData.append('folder', vaultUploadCategory);
         formData.append('file', vaultUploadFile);
         formData.append('fileName', finalName);
+        if (profileId) {
+          formData.append('actorProfileId', profileId);
+        }
 
         const response = await fetch('/api/care-circle/member/vault', {
           method: 'POST',
@@ -1330,6 +1427,7 @@ export default function CareCirclePage() {
     [
       closeVaultUploadModal,
       fetchVaultFiles,
+      profileId,
       selectedMember,
       vaultCategory,
       vaultUploadCategory,
@@ -1361,6 +1459,7 @@ export default function CareCirclePage() {
             folder: file.folder,
             name: file.name,
             nextName,
+            actorProfileId: profileId || undefined,
           }),
         });
 
@@ -1376,7 +1475,7 @@ export default function CareCirclePage() {
         setVaultRenamingKey(null);
       }
     },
-    [fetchVaultFiles, selectedMember, vaultCategory]
+    [fetchVaultFiles, profileId, selectedMember, vaultCategory]
   );
 
   const handleVaultDelete = useCallback(
@@ -1397,6 +1496,7 @@ export default function CareCirclePage() {
             linkId: selectedMember.linkId,
             folder: file.folder,
             name: file.name,
+            actorProfileId: profileId || undefined,
           }),
         });
 
@@ -1412,7 +1512,7 @@ export default function CareCirclePage() {
         setVaultDeletingKey(null);
       }
     },
-    [fetchVaultFiles, selectedMember, vaultCategory]
+    [fetchVaultFiles, profileId, selectedMember, vaultCategory]
   );
 
   const handleMedicationSubmit = useCallback(
@@ -1458,6 +1558,7 @@ export default function CareCirclePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             linkId: selectedMember.linkId,
+            actorProfileId: profileId || undefined,
             medication: {
               ...(medicationFormMode === 'edit' ? { id: medicationForm.id } : {}),
               name,
@@ -1490,7 +1591,7 @@ export default function CareCirclePage() {
         setMedicationSaving(false);
       }
     },
-    [closeMedicationFormModal, medicationForm, medicationFormMode, selectedMember]
+    [closeMedicationFormModal, medicationForm, medicationFormMode, profileId, selectedMember]
   );
 
   const handleMedicationDelete = useCallback(
@@ -1509,6 +1610,7 @@ export default function CareCirclePage() {
           body: JSON.stringify({
             linkId: selectedMember.linkId,
             medicationId: medication.id,
+            actorProfileId: profileId || undefined,
           }),
         });
 
@@ -1529,7 +1631,7 @@ export default function CareCirclePage() {
         setMedicationDeletingId(null);
       }
     },
-    [selectedMember]
+    [profileId, selectedMember]
   );
 
   const handleAppointmentSubmit = useCallback(
@@ -1568,6 +1670,7 @@ export default function CareCirclePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             linkId: selectedMember.linkId,
+            actorProfileId: profileId || undefined,
             appointment: {
               id:
                 appointmentFormMode === 'edit' && appointmentForm.id
@@ -1606,6 +1709,7 @@ export default function CareCirclePage() {
       appointmentForm,
       appointmentFormMode,
       closeAppointmentFormModal,
+      profileId,
       selectedMember,
     ]
   );
@@ -1626,6 +1730,7 @@ export default function CareCirclePage() {
           body: JSON.stringify({
             linkId: selectedMember.linkId,
             appointmentId: appointment.id,
+            actorProfileId: profileId || undefined,
           }),
         });
 
@@ -1648,7 +1753,7 @@ export default function CareCirclePage() {
         setAppointmentDeletingId(null);
       }
     },
-    [selectedMember]
+    [profileId, selectedMember]
   );
 
   const handleEmergencyChange = <Key extends keyof EmergencyCardData>(
@@ -1906,9 +2011,6 @@ export default function CareCirclePage() {
               <h1 className="text-3xl md:text-4xl font-semibold text-slate-900 mt-2">
                 {circleData.circleName}
               </h1>
-              <p className="text-slate-500 mt-2">
-                Managed by <span className="font-semibold text-slate-700">{circleData.ownerName}</span>
-              </p>
             </div>
             <div className="flex flex-wrap gap-3">
               <button
@@ -1924,10 +2026,9 @@ export default function CareCirclePage() {
                 disabled={!isSelectedProfilePrimary}
                 className={`inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-semibold shadow-md shadow-teal-900/20 transition ${
                   isSelectedProfilePrimary
-                    ? 'text-white'
+                    ? 'bg-teal-600 text-white hover:bg-teal-700'
                     : 'bg-slate-300 text-slate-600 cursor-not-allowed shadow-none'
-                }`} 
-                style={isSelectedProfilePrimary ? { backgroundColor: 'var(--theme-button-primary)' } : undefined }
+                }`}
               >
                 <UserPlus className="h-5 w-5" />
                 Invite member
@@ -1973,9 +2074,9 @@ export default function CareCirclePage() {
                     onClick={() => setIsEmergencyEditing(false)}
                     className={`inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold ${
                       !isEmergencyEditing
-                        ? 'text-white'
+                        ? 'bg-teal-600 text-white'
                         : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`} style={!isEmergencyEditing ? { backgroundColor: 'var(--theme-button-primary)' } : undefined }
+                    }`}
                   >
                     Card preview
                   </button>
@@ -1985,9 +2086,9 @@ export default function CareCirclePage() {
                       onClick={() => setIsEmergencyEditing(true)}
                       className={`inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold ${
                         isEmergencyEditing
-                          ? 'text-white'
+                          ? 'bg-teal-600 text-white'
                           : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`} style={isEmergencyEditing ? { backgroundColor: 'var(--theme-button-primary)' } : undefined }
+                      }`}
                     >
                       Edit card
                     </button>
@@ -2248,8 +2349,7 @@ export default function CareCirclePage() {
                   <button
                     type="submit"
                     disabled={isSavingEmergency}
-                    className="inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
-                    style={{ backgroundColor: 'var(--theme-button-primary)' }}
+                    className="inline-flex items-center justify-center rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
                   >
                     {isSavingEmergency ? 'Saving…' : 'Save card'}
                   </button>
@@ -2468,9 +2568,6 @@ export default function CareCirclePage() {
                   description="Circles where someone else invited you. Use this section to view what access you have and open shared details or emergency card."
                 />
               </div>
-              <p className="text-slate-500 text-sm">
-                Circles managed by others that you&apos;re part of.
-              </p>
             </div>
 
             <div className="mt-6 space-y-4">
@@ -3237,8 +3334,7 @@ export default function CareCirclePage() {
                 <button
                   type="submit"
                   disabled={vaultUploading || !vaultUploadFile}
-                  className="rounded-xl px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  style={{ backgroundColor: 'var(--theme-button-primary)' }}
+                  className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {vaultUploading ? 'Uploading…' : 'Upload'}
                 </button>
@@ -3393,8 +3489,7 @@ export default function CareCirclePage() {
                 <button
                   type="submit"
                   disabled={medicationSaving}
-                  className="rounded-xl px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  style={{ backgroundColor: 'var(--theme-button-primary)' }}
+                  className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {medicationSaving
                     ? medicationFormMode === 'add'
@@ -3412,14 +3507,14 @@ export default function CareCirclePage() {
 
       {showAppointmentFormModal ? (
         <div
-          className="fixed inset-0 z-[87] flex items-center justify-center bg-slate-900/60 px-4"
+          className="fixed inset-0 z-[87] flex items-center justify-center overflow-y-auto bg-slate-900/60 px-4 py-6"
           onClick={closeAppointmentFormModal}
         >
           <div
-            className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl"
+            className="my-auto w-full max-w-xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-shrink-0 items-center justify-between p-6 pb-0">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">
                   {appointmentFormMode === 'add' ? 'Add appointment' : 'Edit appointment'}
@@ -3438,7 +3533,10 @@ export default function CareCirclePage() {
               </button>
             </div>
 
-            <form onSubmit={handleAppointmentSubmit} className="mt-5 space-y-4">
+            <form
+              onSubmit={handleAppointmentSubmit}
+              className="mt-5 flex-1 min-h-0 overflow-y-auto space-y-4 p-6 pt-5"
+            >
               <label className="block text-sm font-medium text-slate-700">
                 Title
                 <input
@@ -3617,8 +3715,7 @@ export default function CareCirclePage() {
                 <button
                   type="submit"
                   disabled={appointmentSaving}
-                  className="rounded-xl px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  style={{ backgroundColor: 'var(--theme-button-primary)' }}
+                  className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {appointmentSaving
                     ? appointmentFormMode === 'add'
@@ -3718,7 +3815,7 @@ export default function CareCirclePage() {
                       <button
                         type="button"
                         onClick={() => handleAcceptCircleInvite(member.linkId)}
-                        className="inline-flex items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700" style={{ backgroundColor: 'var(--theme-button-primary)' }}
+                        className="inline-flex items-center justify-center rounded-full bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700"
                       >
                         Accept
                       </button>
@@ -3847,8 +3944,7 @@ export default function CareCirclePage() {
                 <button
                   type="submit"
                   disabled={isSavingInvite}
-                  className="inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
-                  style={{ backgroundColor: 'var(--theme-button-primary)' }}
+                  className="inline-flex items-center justify-center rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
                 >
                   {isSavingInvite ? 'Sending…' : 'Send invite'}
                 </button>

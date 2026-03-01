@@ -215,21 +215,64 @@ def calculate_name_similarity(name1: str, name2: str) -> float:
 
 
 # ============================================
-# GET USER INFO FROM PERSONAL TABLE
+# PROFILE LOOKUPS
 # ============================================
 
-def get_user_info(user_id: str) -> dict:
-    """Get user info from personal table"""
+def resolve_profile_id(data: dict) -> str:
+    """Resolve profile ID from request payload."""
+    if not data:
+        return None
+
+    raw_profile_id = data.get("profile_id")
+    if raw_profile_id is None:
+        return None
+
+    profile_id = str(raw_profile_id).strip()
+    return profile_id or None
+
+
+def get_profile_info(profile_id: str) -> dict:
+    """Get profile info using profile_id (prefer profiles.display_name)."""
+    if not profile_id:
+        return None
+
+    # Preferred source: profiles table (profile-scoped display_name)
     try:
-        result = sb.supabase.table('personal').select('*').eq('id', user_id).execute()
-        
-        if result.data and len(result.data) > 0:
-            return result.data[0]
-        return None
-        
+        profile_result = (
+            sb.supabase
+            .table('profiles')
+            .select('id, user_id, auth_id, name, display_name')
+            .eq('id', profile_id)
+            .limit(1)
+            .execute()
+        )
+
+        if profile_result.data:
+            profile = profile_result.data[0]
+            display_name = (profile.get('display_name') or '').strip() or (profile.get('name') or '').strip()
+            if display_name:
+                profile['display_name'] = display_name
+                return profile
     except Exception as e:
-        log_step("Get user info", "error", str(e))
-        return None
+        log_step("Get profile info", "warning", f"profiles lookup failed: {e}")
+
+    # Fallback source: personal table by profile_id
+    try:
+        personal_result = (
+            sb.supabase
+            .table('personal')
+            .select('*')
+            .eq('profile_id', profile_id)
+            .limit(1)
+            .execute()
+        )
+
+        if personal_result.data:
+            return personal_result.data[0]
+    except Exception as e:
+        log_step("Get profile info", "warning", f"personal.profile_id lookup failed: {e}")
+
+    return None
 
 
 # ============================================
@@ -246,42 +289,49 @@ def process_files():
     try:
         data = request.get_json()
         
-        if not data or "user_id" not in data:
+        profile_id = resolve_profile_id(data)
+        if not profile_id:
             return jsonify({
                 "success": False,
-                "error": "user_id is required"
+                "error": "profile_id is required"
             }), 400
-        
-        user_id = data["user_id"]
+
         folder_type = data.get("folder_type", "reports")
         
-        log_step("Config", "info", f"User: {user_id}, Folder: {folder_type}")
+        log_step("Config", "info", f"Profile: {profile_id}, Folder: {folder_type}")
         
-        # Get user info from personal table
-        log_step("Fetching user info", "start")
-        user_info = get_user_info(user_id)
+        # Get profile info
+        log_step("Fetching profile info", "start")
+        user_info = get_profile_info(profile_id)
         
-        if not user_info or not user_info.get('display_name'):
-            log_step("User info", "warning", "No display_name found")
+        if not user_info:
             return jsonify({
                 "success": False,
-                "error": "User display name not found",
+                "error": "Profile not found",
+                "message": "Selected profile does not exist"
+            }), 404
+
+        if not user_info.get('display_name'):
+            log_step("Profile info", "warning", "No display_name found")
+            return jsonify({
+                "success": False,
+                "error": "Profile display name not found",
                 "message": "Please set your display name in your profile first"
             }), 400
         
         user_display_name = user_info.get('display_name')
-        log_step("User info", "success", f"User: {user_display_name}")
+        log_step("Profile info", "success", f"User: {user_display_name}")
         
         # Get files from storage
         log_step("Fetching files", "start")
-        files = sb.list_user_files(user_id, folder_type)
+        files = sb.list_user_files(profile_id, folder_type)
         
         if not files:
             log_step("Files", "warning", "No files in storage")
             
             # Clean up orphaned records
             try:
-                query = sb.supabase.table('medical_reports_processed').delete().eq('user_id', user_id)
+                query = sb.supabase.table('medical_reports_processed').delete().eq('profile_id', profile_id)
                 if folder_type:
                     query = query.eq('folder_type', folder_type)
                 result = query.execute()
@@ -293,17 +343,17 @@ def process_files():
             
             return jsonify({
                 "success": False,
-                "error": "No files found for this user"
+                "error": "No files found for this profile"
             }), 404
         
         log_step("Files found", "success", f"{len(files)} files")
         
         # Get existing processed reports
         log_step("Checking processed", "start")
-        existing_records = sb.get_processed_reports(user_id, folder_type)
+        existing_records = sb.get_processed_reports(profile_id, folder_type)
         
         # Build sets for comparison
-        storage_paths = set(f"{user_id}/{folder_type}/{f.get('name')}" for f in files)
+        storage_paths = set(f"{profile_id}/{folder_type}/{f.get('name')}" for f in files)
         existing_paths = set(r['file_path'] for r in existing_records)
         
         # Delete orphaned records
@@ -332,7 +382,7 @@ def process_files():
         
         for idx, file_info in enumerate(files, 1):
             file_name = file_info.get('name')
-            file_path = f"{user_id}/{folder_type}/{file_name}"
+            file_path = f"{profile_id}/{folder_type}/{file_name}"
             
             print(f"\n{'─'*80}", flush=True)
             print(f"FILE {idx}/{len(files)}: {file_name}", flush=True)
@@ -447,7 +497,7 @@ def process_files():
                 # Save to database
                 log_step("Saving", "start")
                 record_id = sb.save_extracted_data(
-                    user_id=user_id,
+                    profile_id=profile_id,
                     file_path=file_path,
                     file_name=file_name,
                     folder_type=folder_type,
@@ -494,8 +544,7 @@ def process_files():
         if deleted_count > 0 or successful > 0:
             log_step("Clearing cache", "start")
             try:
-                result = sb.supabase.table('medical_summaries_cache').delete().eq('user_id', user_id).execute()
-                cache_cleared = len(result.data) if result.data else 0
+                cache_cleared = sb.clear_user_cache(profile_id)
                 log_step("Cache cleared", "success", f"{cache_cleared} entries")
             except Exception as e:
                 log_step("Cache clear failed", "error", str(e))
@@ -517,6 +566,7 @@ def process_files():
         return jsonify({
             "success": True,
             "message": f"Processed {successful} files, skipped {skipped}",
+            "profile_id": profile_id,
             "processed_count": successful,
             "skipped_count": skipped,
             "deleted_count": deleted_count,
@@ -555,37 +605,44 @@ def generate_summary():
     try:
         data = request.get_json()
         
-        if not data or "user_id" not in data:
+        profile_id = resolve_profile_id(data)
+        if not profile_id:
             return jsonify({
                 "success": False,
-                "error": "user_id is required"
+                "error": "profile_id is required"
             }), 400
-        
-        user_id = data["user_id"]
+
         use_cache = data.get("use_cache", True)
         force_regenerate = data.get("force_regenerate", False)
         folder_type = 'reports'
         
-        log_step("Config", "info", f"User: {user_id}, Folder: {folder_type}")
+        log_step("Config", "info", f"Profile: {profile_id}, Folder: {folder_type}")
         log_step("Temp dir", "info", temp_dir)
         
-        # Get user info
-        log_step("Fetching user info", "start")
-        user_info = get_user_info(user_id)
+        # Get profile info
+        log_step("Fetching profile info", "start")
+        user_info = get_profile_info(profile_id)
         
-        if not user_info or not user_info.get('display_name'):
+        if not user_info:
             return jsonify({
                 "success": False,
-                "error": "User display name not found",
+                "error": "Profile not found",
+                "message": "Selected profile does not exist"
+            }), 404
+
+        if not user_info.get('display_name'):
+            return jsonify({
+                "success": False,
+                "error": "Profile display name not found",
                 "message": "Please set your display name in your profile first"
             }), 400
         
         user_display_name = user_info.get('display_name')
-        log_step("User info", "success", f"User: {user_display_name}")
+        log_step("Profile info", "success", f"User: {user_display_name}")
         
         # Get all processed reports
         log_step("Fetching reports", "start")
-        all_reports = sb.get_processed_reports(user_id, folder_type='reports')
+        all_reports = sb.get_processed_reports(profile_id, folder_type='reports')
         
         if not all_reports:
             log_step("Reports", "error", "No reports found")
@@ -635,7 +692,7 @@ def generate_summary():
                 warning_msg += "\n"
             
             warning_msg += "### 🔧 Possible Solutions:\n\n"
-            warning_msg += "1. **Check your display name**: Make sure your display name in 'personal' table matches the name in your reports\n"
+            warning_msg += "1. **Check your display name**: Make sure your profile display name matches the name in your reports\n"
             warning_msg += f"   - Current display name: **{user_display_name}**\n"
             warning_msg += "   - Report patient names: " + ", ".join([f"'{r.get('patient_name', 'Unknown')}'" for r in all_reports[:3]]) + "\n\n"
             warning_msg += "2. **Add OpenAI API key**: Better name extraction requires `OPENAI_API_KEY` in `.env` file\n\n"
@@ -644,7 +701,7 @@ def generate_summary():
             
             return jsonify({
                 "success": False,
-                "error": "No matching reports",
+                "error": "Name of the Reports does not match the name assocated with this Profile",
                 "message": warning_msg,
                 "mismatched_count": len(mismatched_reports),
                 "pending_count": len(pending_reports),
@@ -678,7 +735,7 @@ def generate_summary():
         # Check cache
         if use_cache and not force_regenerate:
             log_step("Checking cache", "start")
-            cached = sb.get_cached_summary(user_id, 'reports', current_signature)
+            cached = sb.get_cached_summary(profile_id, 'reports', current_signature)
             
             if cached and cached.get('summary_text'):
                 summary_text = cached['summary_text']
@@ -793,7 +850,7 @@ def generate_summary():
         log_step("Caching", "start")
         try:
             sb.save_summary_cache(
-                user_id,
+                profile_id,
                 'reports',
                 summary,
                 len(reports),
@@ -817,6 +874,7 @@ def generate_summary():
         return jsonify({
             "success": True,
             "summary": summary,
+            "profile_id": profile_id,
             "report_count": len(reports),
             "mismatched_count": len(mismatched_reports),
             "folder_type": 'reports',
@@ -929,17 +987,17 @@ def health_check():
 # GET REPORTS LIST
 # ============================================
 
-@app.route("/api/reports/<user_id>", methods=["GET"])
-def get_reports(user_id):
+@app.route("/api/reports/<profile_id>", methods=["GET"])
+def get_reports(profile_id):
     """Get list of processed reports with name match status"""
-    log_step("GET REPORTS", "start", user_id)
+    log_step("GET REPORTS", "start", profile_id)
     
     try:
         folder_type = request.args.get('folder_type')
-        reports = sb.get_processed_reports(user_id, folder_type)
+        reports = sb.get_processed_reports(profile_id, folder_type)
         
-        # Get user info
-        user_info = get_user_info(user_id)
+        # Get profile info
+        user_info = get_profile_info(profile_id)
         user_display_name = user_info.get('display_name', 'User') if user_info else 'User'
         
         # Simplify for list view
@@ -974,6 +1032,7 @@ def get_reports(user_id):
         
         return jsonify({
             "success": True,
+            "profile_id": profile_id,
             "reports": simplified,
             "count": len(simplified),
             "matched_count": matched_count,
@@ -993,18 +1052,18 @@ def get_reports(user_id):
 # CLEAR CACHE
 # ============================================
 
-@app.route("/api/clear-cache/<user_id>", methods=["DELETE"])
-def clear_cache(user_id):
+@app.route("/api/clear-cache/<profile_id>", methods=["DELETE"])
+def clear_cache(profile_id):
     """Clear cached summaries"""
-    log_step("CLEAR CACHE", "start", user_id)
+    log_step("CLEAR CACHE", "start", profile_id)
     
     try:
-        deleted = sb.clear_user_cache(user_id)
+        deleted = sb.clear_user_cache(profile_id)
         log_step("Cache cleared", "success", f"{deleted} entries")
         
         return jsonify({
             "success": True,
-            "message": f"Cache cleared for user {user_id}",
+            "message": f"Cache cleared for profile {profile_id}",
             "entries_deleted": deleted
         }), 200
         
@@ -1020,18 +1079,18 @@ def clear_cache(user_id):
 # CLEAR ALL DATA
 # ============================================
 
-@app.route("/api/clear/<user_id>", methods=["DELETE"])
-def clear_user_data(user_id):
+@app.route("/api/clear/<profile_id>", methods=["DELETE"])
+def clear_user_data(profile_id):
     """Clear all processed data"""
-    log_step("CLEAR DATA", "start", user_id)
+    log_step("CLEAR DATA", "start", profile_id)
     
     try:
-        deleted = sb.clear_user_data(user_id)
+        deleted = sb.clear_user_data(profile_id)
         log_step("Data cleared", "success", f"{deleted} records")
         
         return jsonify({
             "success": True,
-            "message": f"Cleared data for user {user_id}",
+            "message": f"Cleared data for profile {profile_id}",
             "records_deleted": deleted
         }), 200
         
@@ -1047,21 +1106,21 @@ def clear_user_data(user_id):
 # DEBUG ENDPOINT
 # ============================================
 
-@app.route("/api/debug/<user_id>", methods=["GET"])
-def debug_user(user_id):
-    """Debug endpoint to check user info and reports"""
-    log_step("DEBUG", "start", user_id)
+@app.route("/api/debug/<profile_id>", methods=["GET"])
+def debug_user(profile_id):
+    """Debug endpoint to check profile info and reports"""
+    log_step("DEBUG", "start", profile_id)
     
     try:
-        # Get user info
-        user_info = get_user_info(user_id)
+        # Get profile info
+        user_info = get_profile_info(profile_id)
         
         # Get reports
-        reports = sb.get_processed_reports(user_id)
+        reports = sb.get_processed_reports(profile_id)
         
         # Analyze
         debug_info = {
-            "user_id": user_id,
+            "profile_id": profile_id,
             "user_info": user_info,
             "user_display_name": user_info.get('display_name') if user_info else None,
             "total_reports": len(reports),
@@ -1124,12 +1183,12 @@ if __name__ == "__main__":
     print("  GET    /api/health", flush=True)
     print("  POST   /api/process-files", flush=True)
     print("  POST   /api/generate-summary", flush=True)
-    print("  GET    /api/reports/<user_id>", flush=True)
-    print("  DELETE /api/clear-cache/<user_id>", flush=True)
-    print("  DELETE /api/clear/<user_id>", flush=True)
+    print("  GET    /api/reports/<profile_id>", flush=True)
+    print("  DELETE /api/clear-cache/<profile_id>", flush=True)
+    print("  DELETE /api/clear/<profile_id>", flush=True)
     print("\n💡 How It Works:", flush=True)
     print("  1️⃣  Processes all uploaded files", flush=True)
-    print("  2️⃣  Matches report names with personal.display_name", flush=True)
+    print("  2️⃣  Matches report names with profiles.display_name (fallback: personal.display_name)", flush=True)
     print("  3️⃣  Generates summary ONLY from matched reports", flush=True)
     print("  4️⃣  Shows mismatched reports as warnings IN the summary", flush=True)
     print("  5️⃣  User sees their summary + knows about other reports", flush=True)

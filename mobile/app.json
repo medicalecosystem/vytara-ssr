@@ -15,7 +15,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.mobile",
+      "appleTeamId": "XHF79A5YU6",
+      "bundleIdentifier": "com.drtechgon.vytara",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }

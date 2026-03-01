@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
+import { getAuthenticatedUser } from '@/lib/auth';
+import { isValidFileName } from '@/lib/validation';
 
 const CARE_CIRCLE_FOLDERS = ['reports', 'prescriptions', 'insurance', 'bills'] as const;
 type CareCircleFolder = (typeof CARE_CIRCLE_FOLDERS)[number];
@@ -26,73 +26,6 @@ const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRo
 };
 
 const canReadMedicalData = (role: CareCircleRole) => role === 'family';
-const isValidStorageFileName = (value: string | null | undefined) => {
-  if (!value) return false;
-  const trimmed = value.trim();
-  if (!trimmed) return false;
-  if (trimmed.includes('/') || trimmed.includes('\\')) return false;
-  if (trimmed === '.' || trimmed === '..') return false;
-  return true;
-};
-
-const getAuthenticatedUser = async (request: Request) => {
-  const authHeader = request.headers.get('authorization');
-
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.replace('Bearer ', '');
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      }
-    );
-
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser(token);
-
-    if (!error && user) {
-      return user;
-    }
-
-    return null;
-  }
-
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
-          });
-        },
-      },
-    }
-  );
-
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (!error && user) {
-    return user;
-  }
-
-  return null;
-};
 
 export async function GET(request: Request) {
   try {
@@ -110,11 +43,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: 'Missing required parameters.' }, { status: 400 });
     }
 
+    if (!isValidFileName(name)) {
+      return NextResponse.json({ error: 'Invalid file name.' }, { status: 400 });
+    }
+
     if (!CARE_CIRCLE_FOLDERS.includes(folder)) {
       return NextResponse.json({ message: 'Invalid folder.' }, { status: 400 });
-    }
-    if (!isValidStorageFileName(name)) {
-      return NextResponse.json({ message: 'Invalid file name.' }, { status: 400 });
     }
 
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {

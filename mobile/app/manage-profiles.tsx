@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import {
     Alert,
+    KeyboardAvoidingView,
+    Platform,
     Pressable,
     ScrollView,
     StyleSheet,
@@ -8,6 +10,7 @@ import {
     TextInput,
     View,
     useColorScheme,
+    useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -18,6 +21,7 @@ import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { ProfileAvatarSelector } from '@/components/ProfileAvatarSelector';
 import { useProfile } from '@/hooks/useProfile';
 import type { Profile } from '@/repositories/userProfilesRepository';
+import { toast } from '@/lib/toast';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -26,6 +30,7 @@ export default function ManageProfilesScreen() {
     const colorScheme = useColorScheme();
     const isDark = colorScheme === 'dark';
     const insets = useSafeAreaInsets();
+    const { height } = useWindowDimensions();
 
     const { profiles, updateProfile, deleteProfile } = useProfile();
 
@@ -34,6 +39,7 @@ export default function ManageProfilesScreen() {
     const [editAvatarType, setEditAvatarType] = useState('default');
     const [editAvatarColor, setEditAvatarColor] = useState('#14b8a6');
     const [showAvatarSelector, setShowAvatarSelector] = useState(false);
+    const modalMaxHeight = Math.min(height * 0.9, 620);
 
     const handleEditProfile = (profile: Profile) => {
         setEditingProfile(profile);
@@ -44,7 +50,7 @@ export default function ManageProfilesScreen() {
 
     const handleSaveEdit = async () => {
         if (!editingProfile || !editName.trim()) {
-            Alert.alert('Name Required', 'Please enter a child name.');
+            toast.warning('Name Required', 'Please enter a child name.');
             return;
         }
 
@@ -56,22 +62,22 @@ export default function ManageProfilesScreen() {
             });
 
             setEditingProfile(null);
-            Alert.alert('Success', 'Child profile updated successfully.');
+            toast.success('Success', 'Child profile updated successfully.');
         } catch (error) {
             console.error('Error updating profile:', error);
-            Alert.alert('Error', 'Failed to update child profile. Please try again.');
+            toast.error('Error', 'Failed to update child profile. Please try again.');
         }
     };
 
     const handleDeleteProfile = (profile: Profile) => {
         if (profile.is_primary) {
-            Alert.alert('Cannot Delete', 'You cannot delete the parent profile.');
+            toast.warning('Cannot Delete', 'You cannot delete the parent profile.');
             return;
         }
 
         Alert.alert(
             'Delete Child Profile',
-            `Are you sure you want to delete "${profile.name}"? All medical data associated with this child profile will be permanently deleted.`,
+            `Are you sure you want to delete "${profile.display_name?.trim() || profile.name}"? All medical data associated with this child profile will be permanently deleted.`,
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -80,10 +86,10 @@ export default function ManageProfilesScreen() {
                     onPress: async () => {
                         try {
                             await deleteProfile(profile.id);
-                            Alert.alert('Deleted', 'Child profile deleted successfully.');
+                            toast.success('Deleted', 'Child profile deleted successfully.');
                         } catch (error) {
                             console.error('Error deleting profile:', error);
-                            Alert.alert('Error', 'Failed to delete child profile. Please try again.');
+                            toast.error('Error', 'Failed to delete child profile. Please try again.');
                         }
                     },
                 },
@@ -118,7 +124,7 @@ export default function ManageProfilesScreen() {
                             <View style={styles.profileDetails}>
                                 <View style={styles.nameRow}>
                                     <Text style={[styles.profileName, isDark && styles.profileNameDark]}>
-                                        {profile.name}
+                                        {profile.display_name?.trim() || profile.name}
                                     </Text>
                                     {profile.is_primary && (
                                         <View style={styles.primaryBadge}>
@@ -159,65 +165,82 @@ export default function ManageProfilesScreen() {
             {/* Edit Modal */}
             {editingProfile && (
                 <View style={styles.modalOverlay}>
-                    <Animated.View
-                        entering={FadeInUp.springify()}
-                        style={[styles.modalContent, isDark && styles.modalContentDark]}
+                    <KeyboardAvoidingView
+                        style={styles.modalKeyboard}
+                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                     >
-                        <View style={styles.modalHeader}>
-                            <Text style={[styles.modalTitle, isDark && styles.modalTitleDark]}>Edit Child Profile</Text>
-                            <Pressable onPress={() => setEditingProfile(null)} hitSlop={8}>
-                                <MaterialCommunityIcons
-                                    name="close"
-                                    size={24}
-                                    color={isDark ? '#e2e8f0' : '#1e293b'}
+                        <Animated.View
+                            entering={FadeInUp.springify()}
+                            style={[
+                                styles.modalContent,
+                                { maxHeight: modalMaxHeight },
+                                isDark && styles.modalContentDark,
+                            ]}
+                        >
+                            <ScrollView
+                                contentContainerStyle={styles.modalScrollContent}
+                                showsVerticalScrollIndicator={false}
+                                keyboardShouldPersistTaps="handled"
+                            >
+                                <View style={styles.modalHeader}>
+                                    <Text style={[styles.modalTitle, isDark && styles.modalTitleDark]}>
+                                        Edit Child Profile
+                                    </Text>
+                                    <Pressable onPress={() => setEditingProfile(null)} hitSlop={8}>
+                                        <MaterialCommunityIcons
+                                            name="close"
+                                            size={24}
+                                            color={isDark ? '#e2e8f0' : '#1e293b'}
+                                        />
+                                    </Pressable>
+                                </View>
+
+                                {/* Avatar Preview */}
+                                <View style={styles.avatarPreview}>
+                                    <ProfileAvatar avatarType={editAvatarType} avatarColor={editAvatarColor} size="large" />
+                                    <Pressable style={styles.changeAvatarButton} onPress={() => setShowAvatarSelector(true)}>
+                                        <Text style={styles.changeAvatarText}>Change Avatar</Text>
+                                    </Pressable>
+                                </View>
+
+                                {/* Name Input */}
+                                <Text style={[styles.inputLabel, isDark && styles.inputLabelDark]}>Name</Text>
+                                <TextInput
+                                    style={[styles.input, isDark && styles.inputDark]}
+                                    placeholder="Child Name"
+                                    placeholderTextColor={isDark ? '#94a3b8' : '#94a3b8'}
+                                    value={editName}
+                                    onChangeText={setEditName}
+                                    autoFocus
                                 />
-                            </Pressable>
-                        </View>
 
-                        {/* Avatar Preview */}
-                        <View style={styles.avatarPreview}>
-                            <ProfileAvatar avatarType={editAvatarType} avatarColor={editAvatarColor} size="large" />
-                            <Pressable style={styles.changeAvatarButton} onPress={() => setShowAvatarSelector(true)}>
-                                <Text style={styles.changeAvatarText}>Change Avatar</Text>
-                            </Pressable>
-                        </View>
+                                {editingProfile.is_primary && (
+                                    <View style={styles.infoBox}>
+                                        <MaterialCommunityIcons name="information" size={20} color="#3b82f6" />
+                                        <Text style={styles.infoText}>
+                                            This is your parent profile. It cannot be deleted.
+                                        </Text>
+                                    </View>
+                                )}
 
-                        {/* Name Input */}
-                        <Text style={[styles.inputLabel, isDark && styles.inputLabelDark]}>Name</Text>
-                        <TextInput
-                            style={[styles.input, isDark && styles.inputDark]}
-                            placeholder="Child Name"
-                            placeholderTextColor={isDark ? '#94a3b8' : '#94a3b8'}
-                            value={editName}
-                            onChangeText={setEditName}
-                            autoFocus
-                        />
-
-                        {editingProfile.is_primary && (
-                            <View style={styles.infoBox}>
-                                <MaterialCommunityIcons name="information" size={20} color="#3b82f6" />
-                                <Text style={styles.infoText}>
-                                    This is your parent profile. It cannot be deleted.
-                                </Text>
-                            </View>
-                        )}
-
-                        {/* Buttons */}
-                        <View style={styles.modalButtons}>
-                            <Pressable
-                                style={[styles.modalButton, styles.modalButtonCancel]}
-                                onPress={() => setEditingProfile(null)}
-                            >
-                                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
-                            </Pressable>
-                            <Pressable
-                                style={[styles.modalButton, styles.modalButtonConfirm]}
-                                onPress={handleSaveEdit}
-                            >
-                                <Text style={styles.modalButtonTextConfirm}>Save</Text>
-                            </Pressable>
-                        </View>
-                    </Animated.View>
+                                {/* Buttons */}
+                                <View style={styles.modalButtons}>
+                                    <Pressable
+                                        style={[styles.modalButton, styles.modalButtonCancel]}
+                                        onPress={() => setEditingProfile(null)}
+                                    >
+                                        <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+                                    </Pressable>
+                                    <Pressable
+                                        style={[styles.modalButton, styles.modalButtonConfirm]}
+                                        onPress={handleSaveEdit}
+                                    >
+                                        <Text style={styles.modalButtonTextConfirm}>Save</Text>
+                                    </Pressable>
+                                </View>
+                            </ScrollView>
+                        </Animated.View>
+                    </KeyboardAvoidingView>
                 </View>
             )}
 
@@ -355,12 +378,19 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 20,
     },
+    modalKeyboard: {
+        width: '100%',
+        alignItems: 'center',
+    },
     modalContent: {
         backgroundColor: '#ffffff',
         borderRadius: 24,
         padding: 24,
         width: '100%',
         maxWidth: 400,
+    },
+    modalScrollContent: {
+        paddingBottom: 8,
     },
     modalContentDark: {
         backgroundColor: '#1e293b',

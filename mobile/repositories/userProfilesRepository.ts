@@ -1,3 +1,4 @@
+import { apiRequest } from '@/api/client';
 import { supabase } from '@/lib/supabase';
 
 export type Profile = {
@@ -188,12 +189,10 @@ export const userProfilesRepository = {
             throw new Error('Cannot delete primary profile');
         }
 
-        const { error } = await supabase.from('profiles').delete().eq('id', profileId);
-
-        if (error) {
-            console.error('Error deleting profile:', error);
-            throw error;
-        }
+        await apiRequest<{ deleted: boolean }>('/api/profile/delete', {
+            method: 'POST',
+            body: { profileId },
+        });
     },
 
     /**

@@ -25,17 +25,17 @@ BUCKET_NAME = "medical-vault"
 # FILE LISTING
 # ============================================
 
-def list_user_files(user_id: str, folder_type: str = None):
-    """List files from Supabase Storage for a user"""
-    print(f"\n📂 Listing files for user: {user_id}")
+def list_user_files(profile_id: str, folder_type: str = None):
+    """List files from Supabase Storage for a profile."""
+    print(f"\n📂 Listing files for profile: {profile_id}")
     if folder_type:
         print(f"   Folder: {folder_type}")
     
     try:
         if folder_type:
-            folder_path = f"{user_id}/{folder_type}"
+            folder_path = f"{profile_id}/{folder_type}"
         else:
-            folder_path = f"{user_id}"
+            folder_path = f"{profile_id}"
         
         response = supabase.storage.from_(BUCKET_NAME).list(folder_path)
         
@@ -127,7 +127,7 @@ def get_file_as_bytesio(file_path: str) -> io.BytesIO:
 # DATABASE OPERATIONS - FIXED VERSION
 # ============================================
 
-def save_extracted_data(user_id: str, file_path: str, file_name: str, 
+def save_extracted_data(profile_id: str, file_path: str, file_name: str, 
                        folder_type: str, extracted_text: str, 
                        patient_name: str = None, report_date: str = None,
                        age: str = None, gender: str = None, 
@@ -139,14 +139,18 @@ def save_extracted_data(user_id: str, file_path: str, file_name: str,
     Save extracted text and metadata to database
     FIXED: Removed undefined structured_data_json reference
     
-    NOTE: user_id is TEXT in your schema, not UUID
+    NOTE: profile_id is now the owner ID used for storage/report isolation.
+    Legacy compatibility: user_id (TEXT) is still populated with profile_id.
     """
     print(f"\n💾 Saving to database: {file_name}")
     
     try:
+        profile_id_str = str(profile_id)
+
         # Prepare data - simple dict without any undefined variables
         data = {
-            'user_id': str(user_id),
+            'user_id': profile_id_str,  # legacy compatibility
+            'profile_id': profile_id_str,
             'file_path': file_path,
             'file_name': file_name,
             'folder_type': folder_type,
@@ -163,11 +167,17 @@ def save_extracted_data(user_id: str, file_path: str, file_name: str,
             'processing_status': 'completed'
         }
         
-        # Use upsert to handle duplicates
-        result = supabase.table('medical_reports_processed').upsert(
-            data,
-            on_conflict='user_id,file_path'
-        ).execute()
+        # Use profile-scoped conflict target first; fallback for legacy schemas.
+        try:
+            result = supabase.table('medical_reports_processed').upsert(
+                data,
+                on_conflict='profile_id,file_path'
+            ).execute()
+        except Exception:
+            result = supabase.table('medical_reports_processed').upsert(
+                data,
+                on_conflict='user_id,file_path'
+            ).execute()
         
         record_id = result.data[0]['id'] if result.data else None
         print(f"✅ Saved (ID: {record_id})")
@@ -188,30 +198,35 @@ def save_extracted_data(user_id: str, file_path: str, file_name: str,
         raise
 
 
-def get_processed_reports(user_id: str, folder_type: str = None):
+def get_processed_reports(profile_id: str, folder_type: str = None):
     """
-    Get all processed reports for a user from database
-    
-    NOTE: user_id is TEXT in your schema
+    Get all processed reports for a profile from database.
+    Strictly scoped to profile_id.
     """
-    print(f"\n📊 Fetching processed reports for user: {user_id}")
+    print(f"\n📊 Fetching processed reports for profile: {profile_id}")
     
     try:
-        query = supabase.table('medical_reports_processed').select('*').eq(
-            'user_id', str(user_id)
-        ).eq('processing_status', 'completed')
-        
+        profile_id_str = str(profile_id)
+        query = (
+            supabase
+            .table('medical_reports_processed')
+            .select('*')
+            .eq('profile_id', profile_id_str)
+            .eq('processing_status', 'completed')
+        )
+
         if folder_type:
-            query = query.eq('folder_type', folder_type)
             print(f"   Filtering by folder: {folder_type}")
+            query = query.eq('folder_type', folder_type)
         
         result = query.execute()
-        
-        print(f"✅ Retrieved {len(result.data)} reports")
-        for r in result.data:
+        rows = result.data or []
+
+        print(f"✅ Retrieved {len(rows)} reports")
+        for r in rows:
             print(f"   • {r.get('file_name')} ({r.get('folder_type')}) - {r.get('report_date') or 'No date'}")
         
-        return result.data
+        return rows
         
     except Exception as e:
         print(f"❌ Error fetching processed reports: {e}")
@@ -362,28 +377,38 @@ def ensure_user_profile(user_id: str, default_name: str = None) -> dict:
         return None
 
 
-def save_summary_cache(user_id: str, folder_type: str, summary: str, 
+def save_summary_cache(profile_id: str, folder_type: str, summary: str, 
                       report_count: int, reports_signature: str = None):
     """
     Cache generated summary with signature
-    
-    NOTE: user_id is TEXT in your schema
+
+    NOTE: profile_id is the owner key. user_id is populated with profile_id
+    for legacy compatibility with existing unique constraints.
     """
-    print(f"\n💾 Caching summary for user: {user_id}")
+    print(f"\n💾 Caching summary for profile: {profile_id}")
     
     try:
+        profile_id_str = str(profile_id)
         payload = {
-            'user_id': str(user_id),
+            'user_id': profile_id_str,  # legacy compatibility
+            'profile_id': profile_id_str,
             'folder_type': folder_type,
             'summary_text': summary,
             'report_count': report_count,
             'reports_signature': reports_signature
         }
 
-        result = supabase.table('medical_summaries_cache').upsert(
-            payload,
-            on_conflict='user_id,folder_type'
-        ).execute()
+        # Use profile-scoped conflict target first; fallback for legacy schemas.
+        try:
+            result = supabase.table('medical_summaries_cache').upsert(
+                payload,
+                on_conflict='profile_id,folder_type'
+            ).execute()
+        except Exception:
+            result = supabase.table('medical_summaries_cache').upsert(
+                payload,
+                on_conflict='user_id,folder_type'
+            ).execute()
         
         print(f"✅ Summary cached")
         print(f"   Reports: {report_count}")
@@ -397,26 +422,27 @@ def save_summary_cache(user_id: str, folder_type: str, summary: str,
         return False
 
 
-def get_cached_summary(user_id: str, folder_type: str = None, expected_signature: str = None):
+def get_cached_summary(profile_id: str, folder_type: str = None, expected_signature: str = None):
     """
     Get cached summary if exists and is valid
-    
-    NOTE: user_id is TEXT in your schema
+
+    Strictly scoped to profile_id.
     """
     print(f"\n🔍 Checking for cached summary...")
     
     try:
+        profile_id_str = str(profile_id)
         query = supabase.table('medical_summaries_cache').select('*').eq(
-            'user_id', str(user_id)
+            'profile_id', profile_id_str
         )
-
         if folder_type:
             query = query.eq('folder_type', folder_type)
 
         result = query.order('generated_at', desc=True).limit(1).execute()
+        rows = result.data or []
 
-        if result.data:
-            record = result.data[0]
+        if rows:
+            record = rows[0]
             stored_sig = record.get('reports_signature') or ''
             
             # Check signature match
@@ -442,22 +468,20 @@ def get_cached_summary(user_id: str, folder_type: str = None, expected_signature
         return None
 
 
-def clear_user_cache(user_id: str, folder_type: str = None):
+def clear_user_cache(profile_id: str, folder_type: str = None):
     """
-    Clear cached summaries for a user
-    
-    NOTE: user_id is TEXT in your schema
+    Clear cached summaries for a profile.
+    Strictly scoped to profile_id.
     """
-    print(f"\n🗑️  Clearing cache for user: {user_id}")
+    print(f"\n🗑️  Clearing cache for profile: {profile_id}")
     
     try:
+        profile_id_str = str(profile_id)
         query = supabase.table('medical_summaries_cache').delete().eq(
-            'user_id', str(user_id)
+            'profile_id', profile_id_str
         )
-        
         if folder_type:
             query = query.eq('folder_type', folder_type)
-        
         result = query.execute()
         deleted = len(result.data) if result.data else 0
         
@@ -469,25 +493,29 @@ def clear_user_cache(user_id: str, folder_type: str = None):
         raise
 
 
-def clear_user_data(user_id: str):
+def clear_user_data(profile_id: str):
     """
-    Clear all processed data for a user
-    
-    NOTE: user_id is TEXT in your schema
+    Clear all processed data for a profile.
+    Strictly scoped to profile_id.
     """
-    print(f"\n🗑️  Clearing ALL data for user: {user_id}")
+    print(f"\n🗑️  Clearing ALL data for profile: {profile_id}")
     
     try:
-        # Delete from processed reports
-        result1 = supabase.table('medical_reports_processed').delete().eq(
-            'user_id', str(user_id)
-        ).execute()
-        
-        # Delete cached summaries
-        result2 = supabase.table('medical_summaries_cache').delete().eq(
-            'user_id', str(user_id)
-        ).execute()
-        
+        profile_id_str = str(profile_id)
+        result1 = (
+            supabase
+            .table('medical_reports_processed')
+            .delete()
+            .eq('profile_id', profile_id_str)
+            .execute()
+        )
+        result2 = (
+            supabase
+            .table('medical_summaries_cache')
+            .delete()
+            .eq('profile_id', profile_id_str)
+            .execute()
+        )
         deleted_count = len(result1.data) if result1.data else 0
         cache_count = len(result2.data) if result2.data else 0
         

@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { isValidFileName } from '@/lib/validation';
 
 const VAULT_FOLDERS = ['reports', 'prescriptions', 'insurance', 'bills'] as const;
 type VaultFolder = (typeof VAULT_FOLDERS)[number];
@@ -42,6 +43,10 @@ export async function GET(request: Request) {
 
     if (!folder || !name) {
       return NextResponse.json({ message: 'Missing required parameters.' }, { status: 400 });
+    }
+
+    if (!isValidFileName(name)) {
+      return NextResponse.json({ error: 'Invalid file name.' }, { status: 400 });
     }
 
     if (!VAULT_FOLDERS.includes(folder)) {

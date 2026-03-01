@@ -34,6 +34,38 @@ const writeProfileCache = <T,>(userId: string, key: string, value: T) => {
   window.localStorage.setItem(profileCacheKey(userId, key), JSON.stringify(entry));
 };
 
+type ProfileActivityPayload = {
+  profileId: string;
+  domain: "vault" | "medication" | "appointment";
+  action: "upload" | "rename" | "delete" | "add" | "update";
+  entity?: {
+    id?: string | null;
+    label?: string | null;
+  };
+  metadata?: Record<string, unknown>;
+};
+
+type ActivityMetadataValue = string | number | boolean | null;
+
+type ActivityMetadataChange = {
+  field: string;
+  label: string;
+  before: ActivityMetadataValue;
+  after: ActivityMetadataValue;
+};
+
+const logProfileActivity = async (payload: ProfileActivityPayload) => {
+  try {
+    await fetch("/api/profile/activity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // Non-blocking log write.
+  }
+};
+
 export default function ProfilePageUI() {
 
   const router = useRouter();
@@ -53,6 +85,8 @@ export default function ProfilePageUI() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [bloodGroup, setBloodGroup] = useState("");
   const [address, setAddress] = useState("");
+  const [heightCm, setHeightCm] = useState("");
+  const [weightKg, setWeightKg] = useState("");
   const [bmi, setBmi] = useState("");
   const [age, setAge] = useState("");
   const [personalDraft, setPersonalDraft] = useState({
@@ -62,6 +96,8 @@ export default function ProfilePageUI() {
     phoneNumber: "",
     bloodGroup: "",
     address: "",
+    heightCm: "",
+    weightKg: "",
   });
 
   const normalizedGender = gender.trim().toLowerCase();
@@ -103,13 +139,26 @@ export default function ProfilePageUI() {
   const [allergy, setAllergy] = useState<string[]>([]);
   const [treatment, setTreatment] = useState<string[]>([]);
 
+  type MedicationLog = {
+    medicationId: string;
+    timestamp: string;
+    taken: boolean;
+  };
+
   type Medication = {
-    name: string,
-    dosage: string,
-    frequency: string
-  }
+    id?: string;
+    name: string;
+    dosage: string;
+    frequency: string;
+    purpose?: string;
+    timesPerDay?: number;
+    startDate?: string;
+    endDate?: string;
+    logs?: MedicationLog[];
+  };
   
   const [currentMedications, setCurrentMedications] = useState<Medication[]>([]);
+  const [persistedCurrentMedications, setPersistedCurrentMedications] = useState<Medication[]>([]);
 
   {/* PAST MEDICAL HISTORY */}
 
@@ -148,11 +197,201 @@ export default function ProfilePageUI() {
     { value: 12, label: "December" },
   ];
   const yearOptions = Array.from({ length: currentYear - 1899 }, (_, idx) => currentYear - idx);
+  const medicationFrequencyOptions = [
+    { label: "Once daily", value: "once_daily", times: 1 },
+    { label: "Twice daily", value: "twice_daily", times: 2 },
+    { label: "Three times daily", value: "three_times_daily", times: 3 },
+    { label: "Four times daily", value: "four_times_daily", times: 4 },
+    { label: "Every 4 hours", value: "every_4_hours", times: 6 },
+    { label: "Every 6 hours", value: "every_6_hours", times: 4 },
+    { label: "Every 8 hours", value: "every_8_hours", times: 3 },
+    { label: "Every 12 hours", value: "every_12_hours", times: 2 },
+    { label: "As needed", value: "as_needed", times: 0 },
+    { label: "With meals", value: "with_meals", times: 3 },
+    { label: "Before bed", value: "before_bed", times: 1 },
+  ];
 
   const formatMonthYear = (month: number | null, year: number | null) => {
     if (!month || !year) return "Date not set";
     const label = monthOptions.find((opt) => opt.value === month)?.label ?? String(month);
     return `${label} ${year}`;
+  };
+
+  const getFrequencyLabel = (frequencyValue: string) =>
+    medicationFrequencyOptions.find((option) => option.value === frequencyValue)?.label ||
+    frequencyValue;
+
+  const getFrequencyTimesPerDay = (frequencyValue: string) =>
+    medicationFrequencyOptions.find((option) => option.value === frequencyValue)?.times ?? 1;
+
+  const cloneMedicationList = (items: Medication[]) =>
+    items.map((medication) => ({
+      ...medication,
+      logs: Array.isArray(medication.logs) ? [...medication.logs] : [],
+    }));
+
+  type MedicationActivityRecord = {
+    id: string;
+    name: string;
+    dosage: string;
+    purpose: string;
+    frequency: string;
+    timesPerDay: number | null;
+    startDate: string | null;
+    endDate: string | null;
+  };
+
+  const medicationActivityFieldLabels: Record<string, string> = {
+    name: "Name",
+    dosage: "Dosage",
+    purpose: "Purpose",
+    frequency: "Frequency",
+    timesPerDay: "Times per day",
+    startDate: "Start date",
+    endDate: "End date",
+  };
+
+  const normalizeMedicationActivityValue = (value: unknown): ActivityMetadataValue => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed || null;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : null;
+    }
+    if (typeof value === "boolean") return value;
+    return null;
+  };
+
+  const normalizeMedicationForActivity = (
+    medication: Medication,
+    index: number
+  ): MedicationActivityRecord => {
+    const name = (medication.name || "").trim();
+    const dosage = (medication.dosage || "").trim();
+    const purpose = (medication.purpose || "").trim();
+    const frequency = (medication.frequency || "").trim();
+    const startDate = (medication.startDate || "").trim() || null;
+    const endDate = (medication.endDate || "").trim() || null;
+    const timesPerDay =
+      typeof medication.timesPerDay === "number" && Number.isFinite(medication.timesPerDay)
+        ? Math.max(0, Math.floor(medication.timesPerDay))
+        : null;
+    const fallbackKey = [name, dosage, frequency, startDate || "", endDate || ""]
+      .map((entry) => entry.toLowerCase())
+      .join("|");
+    const id = (medication.id || "").trim() || `legacy-${index}-${fallbackKey || "medication"}`;
+
+    return {
+      id,
+      name,
+      dosage,
+      purpose,
+      frequency,
+      timesPerDay,
+      startDate,
+      endDate,
+    };
+  };
+
+  const getMedicationActivitySummary = (medication: MedicationActivityRecord) => {
+    const name = medication.name || "Medication";
+    const detailParts = [
+      medication.dosage,
+      medication.frequency ? getFrequencyLabel(medication.frequency) : "",
+    ].filter(Boolean);
+    return detailParts.length > 0 ? `${name} (${detailParts.join(" · ")})` : name;
+  };
+
+  const buildMedicationRecordChanges = (
+    previousMedication: MedicationActivityRecord,
+    nextMedication: MedicationActivityRecord
+  ): ActivityMetadataChange[] => {
+    const medicationLabel = nextMedication.name || previousMedication.name || "Medication";
+    return (
+      ["name", "dosage", "purpose", "frequency", "timesPerDay", "startDate", "endDate"] as const
+    )
+      .map((field) => {
+        const before = normalizeMedicationActivityValue(previousMedication[field]);
+        const after = normalizeMedicationActivityValue(nextMedication[field]);
+        if (before === after) return null;
+        return {
+          field: `${field}:${nextMedication.id}`,
+          label: `${medicationLabel} ${medicationActivityFieldLabels[field]}`,
+          before,
+          after,
+        };
+      })
+      .filter((entry): entry is ActivityMetadataChange => entry !== null);
+  };
+
+  const buildMedicationListActivityChanges = (
+    previousMedications: Medication[],
+    nextMedications: Medication[]
+  ) => {
+    const previousNormalized = previousMedications.map(normalizeMedicationForActivity);
+    const nextNormalized = nextMedications.map(normalizeMedicationForActivity);
+    const previousById = new Map(previousNormalized.map((medication) => [medication.id, medication]));
+    const nextById = new Map(nextNormalized.map((medication) => [medication.id, medication]));
+
+    const changes: ActivityMetadataChange[] = [];
+
+    nextNormalized.forEach((nextMedication) => {
+      const previousMedication = previousById.get(nextMedication.id);
+      if (!previousMedication) {
+        changes.push({
+          field: `added:${nextMedication.id}`,
+          label: "Added medication",
+          before: "none",
+          after: getMedicationActivitySummary(nextMedication),
+        });
+        return;
+      }
+      changes.push(...buildMedicationRecordChanges(previousMedication, nextMedication));
+    });
+
+    previousNormalized.forEach((previousMedication) => {
+      if (nextById.has(previousMedication.id)) return;
+      changes.push({
+        field: `removed:${previousMedication.id}`,
+        label: "Removed medication",
+        before: getMedicationActivitySummary(previousMedication),
+        after: "removed",
+      });
+    });
+
+    return changes;
+  };
+
+  const parseNullablePositiveNumber = (raw: string): number | null => {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed <= 0) return Number.NaN;
+    return parsed;
+  };
+
+  const computeAgeFromDob = (dobISO: string): number | null => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dobISO)) return null;
+    const birthDate = new Date(`${dobISO}T00:00:00`);
+    if (Number.isNaN(birthDate.getTime())) return null;
+    const now = new Date();
+    let computedAge = now.getFullYear() - birthDate.getFullYear();
+    const monthDelta = now.getMonth() - birthDate.getMonth();
+    if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < birthDate.getDate())) {
+      computedAge -= 1;
+    }
+    if (computedAge < 0 || computedAge > 130) return null;
+    return computedAge;
+  };
+
+  const computeBmiFromMetrics = (nextHeightCm: number | null, nextWeightKg: number | null): number | null => {
+    if (!nextHeightCm || !nextWeightKg) return null;
+    if (nextHeightCm < 50 || nextHeightCm > 260) return null;
+    if (nextWeightKg < 10 || nextWeightKg > 400) return null;
+    const h = nextHeightCm / 100;
+    return Math.round((nextWeightKg / (h * h)) * 10) / 10;
   };
 
   const openPersonalInfoModal = () => {
@@ -163,6 +402,8 @@ export default function ProfilePageUI() {
       phoneNumber,
       bloodGroup,
       address,
+      heightCm,
+      weightKg,
     });
     setIsPersonalInfoModalOpen(true);
   };
@@ -338,7 +579,9 @@ useEffect(() => {
         .maybeSingle();
 
       if (error) {
-        console.log("Error: ", error);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log("Error: ", error);
+        }
         return;
       }
 
@@ -372,7 +615,10 @@ useEffect(() => {
         current_diagnosed_condition: string[] | null;
         allergies: string[] | null;
         ongoing_treatments: string[] | null;
+        medications: Medication[] | null;
         current_medication: Medication[] | null;
+        height_cm: number | string | null;
+        weight_kg: number | string | null;
         bmi: number | string | null;
         age: number | string | null;
         previous_diagnosed_conditions: string[] | null;
@@ -384,7 +630,25 @@ useEffect(() => {
         setConditions(cachedHealth.current_diagnosed_condition || []);
         setAllergy(cachedHealth.allergies || []);
         setTreatment(cachedHealth.ongoing_treatments || []);
-        setCurrentMedications(cachedHealth.current_medication || []);
+        const cachedMeds = Array.isArray(cachedHealth.medications)
+          ? cachedHealth.medications
+          : cachedHealth.current_medication || [];
+        const clonedCachedMeds = cachedMeds.map((medication) => ({
+          ...medication,
+          logs: Array.isArray(medication.logs) ? [...medication.logs] : [],
+        }));
+        setCurrentMedications(clonedCachedMeds);
+        setPersistedCurrentMedications(clonedCachedMeds);
+        setHeightCm(
+          cachedHealth.height_cm !== null && cachedHealth.height_cm !== undefined
+            ? String(cachedHealth.height_cm)
+            : ''
+        );
+        setWeightKg(
+          cachedHealth.weight_kg !== null && cachedHealth.weight_kg !== undefined
+            ? String(cachedHealth.weight_kg)
+            : ''
+        );
         setBmi(
           cachedHealth.bmi !== null && cachedHealth.bmi !== undefined
             ? String(cachedHealth.bmi)
@@ -402,35 +666,81 @@ useEffect(() => {
         setChildhoodIllness(cachedHealth.childhood_illness || []);
         setLongTermTreatments(cachedHealth.long_term_treatments || []);
       }
-      const { data, error } = await supabase
-        .from("health")
-        .select(`
-          date_of_birth,
-          blood_group,
-          current_diagnosed_condition,
-          allergies,
-          ongoing_treatments,
-          current_medication,
-          bmi,
-          age,
-          previous_diagnosed_conditions,
-          past_surgeries,
-          childhood_illness,
-          long_term_treatments
-        `)
-        .eq("profile_id", profileId)
-        .maybeSingle();
+      const [{ data, error }, { data: medicationData, error: medicationError }] = await Promise.all([
+        supabase
+          .from("health")
+          .select(`
+            date_of_birth,
+            blood_group,
+            current_diagnosed_condition,
+            allergies,
+            ongoing_treatments,
+            current_medication,
+            height_cm,
+            weight_kg,
+            bmi,
+            age,
+            previous_diagnosed_conditions,
+            past_surgeries,
+            childhood_illness,
+            long_term_treatments
+          `)
+          .eq("profile_id", profileId)
+          .maybeSingle(),
+        supabase
+          .from("user_medications")
+          .select("medications")
+          .eq("profile_id", profileId)
+          .maybeSingle(),
+      ]);
 
       if (error){
-        console.log("Error: ", error);
-        return;
+        if (process.env.NODE_ENV !== 'production') {
+          console.log("Error: ", error);
+        }
       }
+      const medicationErrorCode =
+        typeof medicationError === "object" &&
+        medicationError !== null &&
+        "code" in medicationError &&
+        typeof medicationError.code === "string"
+          ? medicationError.code
+          : "";
+
+      if (medicationErrorCode && medicationErrorCode !== "PGRST116") {
+        if (process.env.NODE_ENV !== 'production') {
+          console.log("Medication fetch error: ", medicationError);
+        }
+      }
+
+      const medicationListFromTable = Array.isArray(medicationData?.medications)
+        ? (medicationData.medications as Medication[])
+        : [];
+      const legacyMedicationList = (data?.current_medication as Medication[]) || [];
+      const useLegacyMedicationList =
+        medicationListFromTable.length === 0 &&
+        (!medicationData || medicationErrorCode === "PGRST116") &&
+        legacyMedicationList.length > 0;
+      const resolvedMedicationList = useLegacyMedicationList
+        ? legacyMedicationList
+        : medicationListFromTable;
+      const clonedResolvedMedicationList = resolvedMedicationList.map((medication) => ({
+        ...medication,
+        logs: Array.isArray(medication.logs) ? [...medication.logs] : [],
+      }));
+      setCurrentMedications(clonedResolvedMedicationList);
+      setPersistedCurrentMedications(clonedResolvedMedicationList);
 
       if (data){
         setConditions((data.current_diagnosed_condition as string[]) || []);
         setAllergy((data.allergies as string[]) || []);
         setTreatment((data.ongoing_treatments as string[]) || []);
-        setCurrentMedications((data.current_medication as Medication[]) || []);
+        setHeightCm(
+          data.height_cm !== null && data.height_cm !== undefined ? String(data.height_cm) : ""
+        );
+        setWeightKg(
+          data.weight_kg !== null && data.weight_kg !== undefined ? String(data.weight_kg) : ""
+        );
         setBmi(data.bmi !== null && data.bmi !== undefined ? String(data.bmi) : "");
         setAge(data.age !== null && data.age !== undefined ? String(data.age) : "");
         setBloodGroup(data.blood_group || "");
@@ -446,7 +756,10 @@ useEffect(() => {
           current_diagnosed_condition: (data.current_diagnosed_condition as string[]) || [],
           allergies: (data.allergies as string[]) || [],
           ongoing_treatments: (data.ongoing_treatments as string[]) || [],
-          current_medication: (data.current_medication as Medication[]) || [],
+          medications: resolvedMedicationList,
+          current_medication: legacyMedicationList,
+          height_cm: data.height_cm ?? null,
+          weight_kg: data.weight_kg ?? null,
           bmi: data.bmi ?? null,
           age: data.age ?? null,
           previous_diagnosed_conditions: (data.previous_diagnosed_conditions as string[]) || [],
@@ -473,7 +786,9 @@ useEffect(() => {
         .maybeSingle();
 
       if ( error ) { 
-        console.log("Error: ", error)
+        if (process.env.NODE_ENV !== 'production') {
+          console.log("Error: ", error);
+        }
       }
 
       if (data && data.family_history) {
@@ -485,7 +800,7 @@ useEffect(() => {
   }, [cacheOwnerId, profileId, userId]);
 
   return (
-    <div className="min-h-screen pb-10 font-sans relative">
+    <div className="min-h-screen pb-10 font-sans relative bg-[#F5F5DC]">
 
       {/* Navbar */}
       
@@ -499,20 +814,20 @@ useEffect(() => {
           <div className="lg:col-span-2 bg-white rounded-3xl p-6 shadow-xl shadow-amber-900/20 border border-white/20 flex flex-col h-full relative overflow-hidden">
             
             {/* Background Decoration */}
-            <div className="absolute top-0 right-0 w-40 h-40 sm:w-64 sm:h-64 bg-gradient-to-br from-teal-50 to-teal-100 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 opacity-80 pointer-events-none"></div>
+            <div className="absolute top-0 right-0 w-40 h-40 sm:w-64 sm:h-64 bg-gradient-to-br from-amber-50 to-brown-50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 opacity-80 pointer-events-none"></div>
 
             {/* Edit and Export Buttons */}
             <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
               <button
                 onClick={exportToPDF}
-                className="px-4 py-2 bg-teal-600 text-white text-xs font-semibold uppercase tracking-wide rounded-full shadow-sm transition hover:bg-teal-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40"
+                className="px-4 py-2 bg-[#8B4513] text-white text-xs font-semibold uppercase tracking-wide rounded-full shadow-sm transition hover:bg-[#A0522D] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8B4513]/40"
                 title="Export as PDF"
               >
                 Export as PDF
               </button>
               <button
                 onClick={openPersonalInfoModal}
-                className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-teal-600 hover:bg-teal-50 rounded-full border border-gray-200 shadow-sm transition"
+                className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition"
               >
                 <Edit2 className="w-4 h-4" />
               </button>
@@ -522,8 +837,8 @@ useEffect(() => {
             <div className="flex flex-col md:flex-row items-start gap-6 mb-8 mt-2 relative z-0">
               {/* Avatar */}
               <div className="flex flex-col items-center gap-3">
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-teal-100 to-teal-200 flex items-center justify-center border-[4px] border-white shadow-lg shrink-0">
-                  <User className="w-8 h-8 sm:w-10 sm:h-10 text-teal-700/80" />
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center border-[4px] border-white shadow-lg shrink-0">
+                  <User className="w-8 h-8 sm:w-10 sm:h-10 text-amber-700/80" />
                 </div>
               </div>
 
@@ -540,20 +855,20 @@ useEffect(() => {
                 </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1 gap-x-4">
-                  <div className="flex items-center gap-2 text-sm text-gray-600 group hover:text-teal-600 transition">
-                    <div className="w-6 h-6 rounded-full bg-gray-100 group-hover:bg-teal-50 flex items-center justify-center">
+                  <div className="flex items-center gap-2 text-sm text-gray-600 group hover:text-amber-600 transition">
+                    <div className="w-6 h-6 rounded-full bg-gray-100 group-hover:bg-amber-50 flex items-center justify-center">
                       <Phone className="w-3 h-3" />
                     </div>
                     <span>{phoneNumber}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-600 group hover:text-teal-600 transition">
-                    <div className="w-6 h-6 rounded-full bg-gray-100 group-hover:bg-teal-50 flex items-center justify-center">
+                  <div className="flex items-center gap-2 text-sm text-gray-600 group hover:text-amber-600 transition">
+                    <div className="w-6 h-6 rounded-full bg-gray-100 group-hover:bg-amber-50 flex items-center justify-center">
                       <Calendar className="w-3 h-3" />
                     </div>
                     <span>{dob}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-600 group hover:text-teal-600 transition">
-                    <div className="w-6 h-6 rounded-full bg-gray-100 group-hover:bg-teal-50 flex items-center justify-center">
+                  <div className="flex items-center gap-2 text-sm text-gray-600 group hover:text-amber-600 transition">
+                    <div className="w-6 h-6 rounded-full bg-gray-100 group-hover:bg-amber-50 flex items-center justify-center">
                       <Locate className="w-3 h-3" />
                     </div>
                     <span className='break-words whitespace-normal'>{address}</span>
@@ -593,46 +908,26 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* Right: Family Medical History */}
+          {/* Right: Historical Visits */}
           <div className="bg-white rounded-3xl p-6 shadow-xl shadow-amber-900/20 border border-white/20 flex flex-col h-full">
-            <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
               <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-green-100 text-green-600">
-                  <Users className="w-4 h-4" />
+                <div className="p-1.5 rounded-lg bg-blue-100 text-blue-600">
+                  <History className="w-4 h-4" />
                 </div>
-                Family Medical History
+                Historical Visits
               </h3>
-              <button 
-                onClick={() => setIsFamilyHistoryModalOpen(true)}
-                className="p-1.5 bg-white/90 backdrop-blur text-gray-500 hover:text-teal-600 hover:bg-teal-50 rounded-full border border-gray-200 shadow-sm transition"
-              >
-                <Edit2 className="w-3 h-3" />
+
+              <button className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-md transition">
+                View All
               </button>
             </div>
 
-            {/* Family Medical History Content */}
-            <div className="flex-1 overflow-y-auto">
-              {familyMedicalHistory.length > 0 ? (
-                <div className="space-y-2">
-                  {familyMedicalHistory.map((familyMedicalHistory, index) => (
-                    <div 
-                      key={index}
-                      className='p-3 bg-gray-50 rounded-xl border border-gray-100'
-                    >
-                      <div className="flex items-center gap-2">
-                        <p className="font-bold text-gray-700 text-sm">{familyMedicalHistory.relation}</p>
-                      </div>
-                      <p className="text-xs text-gray-500">Disease: {familyMedicalHistory.disease}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex-1 flex items-center justify-center h-full min-h-[100px]">
-                  <p className="text-sm text-gray-400 italic">
-                    No family medical history
-                  </p>
-                </div>
-              )}
+            {/* EMPTY STATE */}
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-sm text-gray-400 italic">
+                No historical visits
+              </p>
             </div>
           </div>
 
@@ -650,7 +945,7 @@ useEffect(() => {
               <h3 className="font-bold text-gray-800">Current Medical Status</h3>
               <button 
                 onClick={() => setIsCurrentMedicalModalOpen(true)}
-                className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-teal-600 hover:bg-teal-50 rounded-full border border-gray-200 shadow-sm transition"
+                className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition"
               >
                 <Edit2 className="w-4 h-4" />
               </button>
@@ -719,19 +1014,24 @@ useEffect(() => {
                     className='flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100'
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center text-teal-600">
+                      <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
                         <Pill className="w-4 h-4" />
                       </div>
 
                       <div>
                         <p className="font-bold text-gray-700">{current.name}</p>
                         <p className="text-xs text-gray-500">Dosage: {current.dosage || "Not specified"}</p>
-                        <p className="text-xs text-gray-500">Frequency: {current.frequency || "Not specified"}</p>
+                        <p className="text-xs text-gray-500">
+                          Frequency: {current.frequency ? getFrequencyLabel(current.frequency) : "Not specified"}
+                        </p>
+                        {current.purpose ? (
+                          <p className="text-xs text-gray-500">Purpose: {current.purpose}</p>
+                        ) : null}
                       </div>
                     </div>
 
                     <span className='text-sm font-medium text-gray-500 bg-white px-2 py-1 rounded-md shadow-sm border border-gray-100'>
-                      {current.frequency || "As directed"}
+                      {current.frequency ? getFrequencyLabel(current.frequency) : "As directed"}
                     </span>
                   </div>
                 ))}
@@ -748,7 +1048,7 @@ useEffect(() => {
               <h3 className="font-bold text-gray-800">Past Medical History</h3>
               <button 
                 onClick={() => setIsPastMedicalModalOpen(true)}
-                className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-teal-600 hover:bg-teal-50 rounded-full border border-gray-200 shadow-sm transition"
+                className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition"
               >
                 <Edit2 className="w-4 h-4" />
               </button>
@@ -836,6 +1136,39 @@ useEffect(() => {
           </div>
         </div>
 
+        {/* Family Medical History */}
+        <div className="bg-white rounded-3xl p-6 shadow-xl shadow-amber-900/20 border border-white/20 mb-6">
+          <div className="flex items-center gap-2 mb-6 pb-4 border-b border-gray-100">
+            <div className="p-2 bg-green-50 rounded-lg text-green-600">
+              <Users className="w-5 h-5" />
+            </div>
+            <h3 className="font-bold text-gray-800">Family Medical History</h3>
+            <button 
+              onClick={() => setIsFamilyHistoryModalOpen(true)}
+              className="p-2 bg-white/90 backdrop-blur text-gray-500 hover:text-[#FF8000] hover:bg-orange-50 rounded-full border border-gray-200 shadow-sm transition"
+            >
+              <Edit2 className="w-4 h-4" />
+            </button>
+          </div>
+          
+          <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 hover:border-green-300 transition">
+            <div className="space-y-2">
+              {familyMedicalHistory.map((familyMedicalHistory, index) => (
+                <div 
+                  key={index}
+                  className='flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100'
+                >
+                  <div className="flex items-center gap-3">
+                    {/* <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center text-teal-600">
+                    </div> */}
+                      <p className="font-bold text-gray-700">{familyMedicalHistory.relation}</p>
+                      <p className="text-xs text-gray-500">Disease: {familyMedicalHistory.disease}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>   
         {/* Personal Info Modal */}
         {isPersonalInfoModalOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -856,6 +1189,18 @@ useEffect(() => {
                     alert("Please select a profile first.");
                     return;
                   }
+                  const parsedHeightCm = parseNullablePositiveNumber(personalDraft.heightCm);
+                  const parsedWeightKg = parseNullablePositiveNumber(personalDraft.weightKg);
+                  if (Number.isNaN(parsedHeightCm)) {
+                    alert("Please enter a valid height in cm.");
+                    return;
+                  }
+                  if (Number.isNaN(parsedWeightKg)) {
+                    alert("Please enter a valid weight in kg.");
+                    return;
+                  }
+                  const computedAge = computeAgeFromDob(personalDraft.dob);
+                  const computedBmi = computeBmiFromMetrics(parsedHeightCm, parsedWeightKg);
                   const personalData = {
                     display_name: personalDraft.userName,
                     phone: personalDraft.phoneNumber,
@@ -874,6 +1219,10 @@ useEffect(() => {
                         user_id: userId,
                         date_of_birth: personalDraft.dob,
                         blood_group: personalDraft.bloodGroup,
+                        height_cm: parsedHeightCm,
+                        weight_kg: parsedWeightKg,
+                        age: computedAge,
+                        bmi: computedBmi,
                         updated_at: new Date().toISOString(),
                       },
                       { onConflict: "profile_id" }
@@ -889,40 +1238,44 @@ useEffect(() => {
                     setPhoneNumber(personalDraft.phoneNumber);
                     setBloodGroup(personalDraft.bloodGroup);
                     setAddress(personalDraft.address);
+                    setHeightCm(parsedHeightCm !== null ? String(parsedHeightCm) : "");
+                    setWeightKg(parsedWeightKg !== null ? String(parsedWeightKg) : "");
+                    setAge(computedAge !== null ? String(computedAge) : "");
+                    setBmi(computedBmi !== null ? String(computedBmi) : "");
                     setIsPersonalInfoModalOpen(false);
                     alert("Personal information updated successfully!");
                   }
                 }}>
                   <div className="space-y-4">
-                    <h3 className="text-teal-600 mb-4">Basic Personal Information</h3>
+                    <h3 className="text-[#FF8000] mb-4">Basic Personal Information</h3>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="md:col-span-2">
-                        <label className="block text-teal-600 mb-2">Full Name *</label>
+                        <label className="block text-[#309898] mb-2">Full Name *</label>
                         <input
                           value={personalDraft.userName}
                           onChange={(e) => updatePersonalDraft({ userName: e.target.value })}
-                          className="w-full px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                           placeholder="Full Name"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-teal-600 mb-2">Date of Birth *</label>
+                        <label className="block text-[#309898] mb-2">Date of Birth *</label>
                         <input
                           type="date"
                           value={personalDraft.dob}
                           onChange={(e) => updatePersonalDraft({ dob: e.target.value })}
-                          className="w-full px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-teal-600 mb-2">Gender *</label>
+                        <label className="block text-[#309898] mb-2">Gender *</label>
                         <select
                           value={personalDraft.gender}
                           onChange={(e) => updatePersonalDraft({ gender: e.target.value })}
-                          className="w-full px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                         >
                           <option>Select Gender</option>
                           <option>Male</option>
@@ -932,11 +1285,11 @@ useEffect(() => {
                       </div>
 
                       <div>
-                        <label className="block text-teal-600 mb-2">Blood Group *</label>  
+                        <label className="block text-[#309898] mb-2">Blood Group *</label>  
                         <select
                           value={personalDraft.bloodGroup}
                           onChange={(e) => updatePersonalDraft({ bloodGroup: e.target.value })}
-                          className="w-full px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                         >
                           <option>Select Blood Group</option>
                           <option>A+</option>
@@ -951,33 +1304,49 @@ useEffect(() => {
                       </div>
                       
                       <div className="md:col-span-2">
-                        <label className="block text-teal-600 mb-2">Address *</label>
+                        <label className="block text-[#309898] mb-2">Address *</label>
                         <textarea
                           value={personalDraft.address}
                           onChange={(e) => updatePersonalDraft({ address: e.target.value })}
-                          className="w-full px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                           placeholder="Address"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-teal-600 mb-2">Contact Number *</label>
+                        <label className="block text-[#309898] mb-2">Contact Number *</label>
                         <input
                           type="tel"
                           value={personalDraft.phoneNumber}
                           onChange={(e) => updatePersonalDraft({ phoneNumber: e.target.value })}
-                          className="w-full px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                           placeholder="eg: 1234567890"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-teal-600 mb-2">BMI (computed)</label>
+                        <label className="block text-[#309898] mb-2">Height (cm)</label>
                         <input
-                          value={bmi}
-                          placeholder="eg: 24.5"
-                          readOnly
-                          className="w-full px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={personalDraft.heightCm}
+                          onChange={(e) => updatePersonalDraft({ heightCm: e.target.value })}
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                          placeholder="eg: 170"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[#309898] mb-2">Weight (kg)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={personalDraft.weightKg}
+                          onChange={(e) => updatePersonalDraft({ weightKg: e.target.value })}
+                          className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
+                          placeholder="eg: 65"
                         />
                       </div>
                     </div>
@@ -993,7 +1362,7 @@ useEffect(() => {
                     </button>
                     <button
                       type="submit"
-                      className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition"
+                      className="px-6 py-2 bg-[#8B4513] text-white rounded-lg hover:bg-[#A0522D] transition"
                     >
                       Save Changes
                     </button>
@@ -1024,26 +1393,100 @@ useEffect(() => {
                     alert("Please select a profile first.");
                     return;
                   }
+                  const todayDate = new Date().toISOString().split("T")[0];
+                  const hasIncompleteMedication = currentMedications.some((med) => {
+                    const hasAnyValue = med.name.trim() || med.dosage.trim() || med.frequency.trim();
+                    if (!hasAnyValue) return false;
+                    return !med.name.trim() || !med.dosage.trim() || !med.frequency.trim();
+                  });
+                  if (hasIncompleteMedication) {
+                    alert("Please fill Name, Dosage, and Frequency for each medication.");
+                    return;
+                  }
+
+                  const normalizedMedications = currentMedications
+                    .map((med) => {
+                      const frequencyValue = (med.frequency || "").trim();
+                      const resolvedTimesPerDay =
+                        typeof med.timesPerDay === "number" && med.timesPerDay >= 0
+                          ? med.timesPerDay
+                          : getFrequencyTimesPerDay(frequencyValue);
+                      return {
+                        id: med.id?.trim() || crypto.randomUUID(),
+                        name: (med.name || "").trim(),
+                        dosage: (med.dosage || "").trim(),
+                        purpose: (med.purpose || "").trim(),
+                        frequency: frequencyValue,
+                        timesPerDay: resolvedTimesPerDay,
+                        startDate: med.startDate || todayDate,
+                        endDate: med.endDate || undefined,
+                        logs: Array.isArray(med.logs) ? med.logs : [],
+                      };
+                    })
+                    .filter((med) => med.name && med.dosage && med.frequency);
+
                   const healthData = {
                     profile_id: profileId,
                     user_id: userId,
                     current_diagnosed_condition: conditions.map((item) => item.trim()).filter(Boolean),
-                    current_medication: currentMedications
-                      .map((med) => ({
-                        name: med.name.trim(),
-                        dosage: med.dosage.trim(),
-                        frequency: med.frequency.trim(),
-                      }))
-                      .filter((med) => med.name),
                     allergies: allergy.map((item) => item.trim()).filter(Boolean),
                     ongoing_treatments: treatment.map((item) => item.trim()).filter(Boolean),
                   };
-                  const { error } = await supabase
-                    .from("health")
-                    .upsert(healthData, { onConflict: "profile_id" });
-                  if (error) {
-                    alert("Error: " + error.message);
+
+                  const [{ error: healthError }, { error: medicationError }] = await Promise.all([
+                    supabase
+                      .from("health")
+                      .upsert(healthData, { onConflict: "profile_id" }),
+                    supabase
+                      .from("user_medications")
+                      .upsert(
+                        {
+                          profile_id: profileId,
+                          user_id: userId,
+                          medications: normalizedMedications,
+                          updated_at: new Date().toISOString(),
+                        },
+                        { onConflict: "profile_id" }
+                      ),
+                  ]);
+
+                  if (healthError) {
+                    alert("Error: " + healthError.message);
+                  } else if (medicationError) {
+                    alert("Error: " + medicationError.message);
                   } else {
+                    const medicationChanges = buildMedicationListActivityChanges(
+                      persistedCurrentMedications,
+                      normalizedMedications
+                    );
+                    const latestMedication =
+                      normalizedMedications[normalizedMedications.length - 1] ?? null;
+                    void logProfileActivity({
+                      profileId,
+                      domain: "medication",
+                      action: "update",
+                      entity: {
+                        id:
+                          typeof latestMedication?.id === "string"
+                            ? latestMedication.id
+                            : null,
+                        label:
+                          typeof latestMedication?.name === "string"
+                            ? latestMedication.name
+                            : "Medication list",
+                      },
+                      metadata: {
+                        name:
+                          typeof latestMedication?.name === "string"
+                            ? latestMedication.name
+                            : "Medication list",
+                        totalMedications: normalizedMedications.length,
+                        changes: medicationChanges,
+                        changeCount: medicationChanges.length,
+                      },
+                    });
+                    setCurrentMedications(normalizedMedications);
+                    setPersistedCurrentMedications(cloneMedicationList(normalizedMedications));
                     setIsCurrentMedicalModalOpen(false);
                     alert("Health information updated successfully!");
                   }
@@ -1051,7 +1494,7 @@ useEffect(() => {
                   <div className="space-y-6">
                     {/* CONDITIONS */}
                     <div className="space-y-4">
-                      <h3 className="text-teal-600 mb-4">Current Diagnosed Conditions</h3>
+                      <h3 className="text-[#FF8000] mb-4">Current Diagnosed Conditions</h3>
                       {conditions.map((cond, index) => (
                         <div key={index} className="flex gap-2 items-center">
                           <input
@@ -1062,7 +1505,7 @@ useEffect(() => {
                               setConditions(updated);
                             }}
                             placeholder="e.g., Diabetes, Asthma"
-                            className="flex-1 px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                            className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                           />
                           {index > 0 && (
                             <button
@@ -1080,7 +1523,7 @@ useEffect(() => {
                       <button
                         onClick={() => setConditions([...conditions, ""])}
                         type="button"
-                        className="flex items-center gap-2 text-teal-600 cursor-pointer"
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
                       >
                         <Plus className="w-5 h-5" /> Add Condition
                       </button>
@@ -1088,11 +1531,11 @@ useEffect(() => {
 
                     {/* MEDICATIONS */}
                     <div className="space-y-4">
-                      <h3 className="text-teal-600 mb-4">Current Medications</h3>
+                      <h3 className="text-[#FF8000] mb-4">Current Medications</h3>
                       {currentMedications.map((med, index) => (
                         <div
                           key={index}
-                          className="p-4 border-2 border-teal-300/30 rounded-lg bg-gray-50 space-y-3 relative"
+                          className="p-4 border-2 border-[#309898]/30 rounded-lg bg-gray-50 space-y-3 relative"
                         >
                           {index > 0 && (
                             <button
@@ -1106,43 +1549,132 @@ useEffect(() => {
                             </button>
                           )}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="md:col-span-2">
-                              <label className="block text-teal-600 mb-2">Medication Name</label>
+                            <div>
+                              <label className="block text-[#309898] mb-2">Name</label>
                               <input
-                                value={med.name}
+                                value={med.name || ""}
                                 onChange={(e) => {
                                   const updated = [...currentMedications];
-                                  updated[index].name = e.target.value;
+                                  updated[index] = { ...updated[index], name: e.target.value };
                                   setCurrentMedications(updated);
                                 }}
-                                placeholder="e.g., Metformin"
-                                className="w-full px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                                placeholder="e.g., Paracetamol"
+                                className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800 bg-white"
                               />
                             </div>
                             <div>
-                              <label className="block text-teal-600 mb-2">Dosage</label>
+                              <label className="block text-[#309898] mb-2">Dosage</label>
                               <input
-                                value={med.dosage}
+                                value={med.dosage || ""}
                                 onChange={(e) => {
                                   const updated = [...currentMedications];
-                                  updated[index].dosage = e.target.value;
+                                  updated[index] = { ...updated[index], dosage: e.target.value };
                                   setCurrentMedications(updated);
                                 }}
                                 placeholder="e.g., 500 mg"
-                                className="w-full px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                                className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800 bg-white"
                               />
                             </div>
                             <div>
-                              <label className="block text-teal-600 mb-2">Frequency</label>
+                              <label className="block text-[#309898] mb-2">Purpose (optional)</label>
                               <input
-                                value={med.frequency}
+                                value={med.purpose || ""}
                                 onChange={(e) => {
                                   const updated = [...currentMedications];
-                                  updated[index].frequency = e.target.value;
+                                  updated[index] = { ...updated[index], purpose: e.target.value };
                                   setCurrentMedications(updated);
                                 }}
-                                placeholder="e.g., Twice a day"
-                                className="w-full px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                                placeholder="e.g., Pain relief"
+                                className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800 bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[#309898] mb-2">Frequency</label>
+                              <select
+                                value={med.frequency || ""}
+                                onChange={(e) => {
+                                  const updated = [...currentMedications];
+                                  const selectedFrequency = e.target.value;
+                                  const selectedOption = medicationFrequencyOptions.find(
+                                    (option) => option.value === selectedFrequency
+                                  );
+                                  updated[index] = {
+                                    ...updated[index],
+                                    frequency: selectedFrequency,
+                                    timesPerDay: selectedOption?.times ?? updated[index].timesPerDay ?? 1,
+                                  };
+                                  setCurrentMedications(updated);
+                                }}
+                                className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800 bg-white"
+                              >
+                                <option value="">Select frequency</option>
+                                {medicationFrequencyOptions.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                                {med.frequency &&
+                                !medicationFrequencyOptions.some(
+                                  (option) => option.value === med.frequency
+                                ) ? (
+                                  <option value={med.frequency}>{med.frequency}</option>
+                                ) : null}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[#309898] mb-2">Times per Day</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="10"
+                                value={String(
+                                  typeof med.timesPerDay === "number"
+                                    ? med.timesPerDay
+                                    : getFrequencyTimesPerDay(med.frequency || "")
+                                )}
+                                onChange={(e) => {
+                                  const updated = [...currentMedications];
+                                  const parsed = Number(e.target.value);
+                                  updated[index] = {
+                                    ...updated[index],
+                                    timesPerDay: Number.isFinite(parsed) && parsed >= 0 ? parsed : 1,
+                                  };
+                                  setCurrentMedications(updated);
+                                }}
+                                disabled={medicationFrequencyOptions.some(
+                                  (option) => option.value === (med.frequency || "")
+                                )}
+                                className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800 bg-white disabled:bg-gray-100"
+                                placeholder="1"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[#309898] mb-2">Start Date</label>
+                              <input
+                                type="date"
+                                value={med.startDate || ""}
+                                onChange={(e) => {
+                                  const updated = [...currentMedications];
+                                  updated[index] = { ...updated[index], startDate: e.target.value };
+                                  setCurrentMedications(updated);
+                                }}
+                                className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800 bg-white"
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-[#309898] mb-2">End Date (optional)</label>
+                              <input
+                                type="date"
+                                value={med.endDate || ""}
+                                onChange={(e) => {
+                                  const updated = [...currentMedications];
+                                  updated[index] = {
+                                    ...updated[index],
+                                    endDate: e.target.value || undefined,
+                                  };
+                                  setCurrentMedications(updated);
+                                }}
+                                className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800 bg-white"
                               />
                             </div>
                           </div>
@@ -1150,13 +1682,23 @@ useEffect(() => {
                       ))}
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          const todayDate = new Date().toISOString().split("T")[0];
                           setCurrentMedications([
                             ...currentMedications,
-                            { name: "", dosage: "", frequency: "" },
-                          ])
-                        }
-                        className="flex items-center gap-2 text-teal-600 cursor-pointer"
+                            {
+                              name: "",
+                              dosage: "",
+                              purpose: "",
+                              frequency: "",
+                              timesPerDay: 1,
+                              startDate: todayDate,
+                              endDate: undefined,
+                              logs: [],
+                            },
+                          ]);
+                        }}
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
                       >
                         <Plus className="w-5 h-5" /> Add Medication
                       </button>
@@ -1164,7 +1706,7 @@ useEffect(() => {
 
                     {/* ALLERGIES */}
                     <div className="space-y-4">
-                      <h3 className="text-teal-600 mb-4">Allergies</h3>
+                      <h3 className="text-[#FF8000] mb-4">Allergies</h3>
                       {allergy.map((allergyItem, index) => (
                         <div key={index} className="flex gap-2 items-center">
                           <input
@@ -1175,7 +1717,7 @@ useEffect(() => {
                               setAllergy(updated);
                             }}
                             placeholder="e.g., Peanuts, Penicillin"
-                            className="flex-1 px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                            className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                           />
                           {index > 0 && (
                             <button
@@ -1193,7 +1735,7 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={() => setAllergy([...allergy, ""])}
-                        className="flex items-center gap-2 text-teal-600 cursor-pointer"
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
                       >
                         <Plus className="w-5 h-5" /> Add Allergy
                       </button>
@@ -1201,7 +1743,7 @@ useEffect(() => {
 
                     {/* TREATMENTS */}
                     <div className="space-y-4">
-                      <h3 className="text-teal-600 mb-4">Ongoing Treatments</h3>
+                      <h3 className="text-[#FF8000] mb-4">Ongoing Treatments</h3>
                       {treatment.map((treat, index) => (
                         <div key={index} className="flex gap-2 items-center">
                           <input
@@ -1212,7 +1754,7 @@ useEffect(() => {
                               setTreatment(updated);
                             }}
                             placeholder="e.g., Physiotherapy, Dialysis"
-                            className="flex-1 px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                            className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                           />
                           {index > 0 && (
                             <button
@@ -1230,7 +1772,7 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={() => setTreatment([...treatment, ""])}
-                        className="flex items-center gap-2 text-teal-600 cursor-pointer"
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
                       >
                         <Plus className="w-5 h-5" /> Add Treatment
                       </button>
@@ -1305,7 +1847,7 @@ useEffect(() => {
                   <div className="space-y-6">
                     {/* PREVIOUSLY DIAGNOSED DISEASES */}
                     <div className="space-y-4">
-                      <h3 className="text-teal-600 mb-4">Previously Diagnosed Diseases</h3>
+                      <h3 className="text-[#FF8000] mb-4">Previously Diagnosed Diseases</h3>
                       {previousDiagnosedCondition.map((diag, index) => (
                         <div className="flex gap-2 items-center" key={index}>
                           <input
@@ -1316,7 +1858,7 @@ useEffect(() => {
                               setPreviousDiagnosedCondition(updated);
                             }}
                             placeholder="e.g., Thyroid, Jaundice"
-                            className="flex-1 px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                            className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                           />
                           {index > 0 && (
                             <button
@@ -1324,7 +1866,7 @@ useEffect(() => {
                               onClick={() =>
                                 setPreviousDiagnosedCondition(previousDiagnosedCondition.filter((_, i) => i !== index))
                               }
-                              className="text-teal-600"
+                              className="text-[#FF8000]"
                             >
                               <X className="w-5 h-5" />
                             </button>
@@ -1334,7 +1876,7 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={() => setPreviousDiagnosedCondition([...previousDiagnosedCondition, ""])}
-                        className="flex items-center gap-2 text-teal-600 cursor-pointer"
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
                       >
                         <Plus className="w-5 h-5" /> Add Diagnosed Condition
                       </button>
@@ -1342,7 +1884,7 @@ useEffect(() => {
 
                     {/* PAST SURGERIES */}
                     <div className="space-y-4">
-                      <h3 className="text-teal-600 mb-4">Past Surgeries</h3>
+                      <h3 className="text-[#FF8000] mb-4">Past Surgeries</h3>
                       {pastSurgeries.map((surg, index) => (
                         <div key={index} className="p-4 border rounded-lg bg-gray-50 space-y-3 relative text-gray-800">
                           {index > 0 && (
@@ -1362,7 +1904,7 @@ useEffect(() => {
                               setPastSurgeries(updated);
                             }}
                             placeholder="Surgery Name"
-                            className="w-full px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                            className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                           />
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <select
@@ -1372,7 +1914,7 @@ useEffect(() => {
                                 updated[index].month = e.target.value ? Number(e.target.value) : null;
                                 setPastSurgeries(updated);
                               }}
-                              className="w-full px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                              className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                             >
                               <option value="">Select Month</option>
                               {monthOptions.map((opt) => (
@@ -1388,7 +1930,7 @@ useEffect(() => {
                                 updated[index].year = e.target.value ? Number(e.target.value) : null;
                                 setPastSurgeries(updated);
                               }}
-                              className="w-full px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                              className="w-full px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                             >
                               <option value="">Select Year</option>
                               {yearOptions.map((year) => (
@@ -1403,7 +1945,7 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={() => setPastSurgeries([...pastSurgeries, { name: "", month: null, year: null }])}
-                        className="flex items-center gap-2 text-teal-600 cursor-pointer"
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
                       >
                         <Plus className="w-5 h-5" /> Add Surgery
                       </button>
@@ -1411,7 +1953,7 @@ useEffect(() => {
 
                     {/* CHILDHOOD ILLNESSES */}
                     <div className="space-y-4">
-                      <h3 className="text-teal-600 mb-4">Childhood Illnesses</h3>
+                      <h3 className="text-[#FF8000] mb-4">Childhood Illnesses</h3>
                       {childhoodIllness.map((ill, index) => (
                         <div key={index} className="flex gap-2 items-center">
                           <input
@@ -1422,7 +1964,7 @@ useEffect(() => {
                               setChildhoodIllness(updated);
                             }}
                             placeholder="e.g., Chickenpox"
-                            className="flex-1 px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                            className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                           />
                           {index > 0 && (
                             <button
@@ -1430,7 +1972,7 @@ useEffect(() => {
                               onClick={() =>
                                 setChildhoodIllness(childhoodIllness.filter((_, i) => i !== index))
                               }
-                              className="text-teal-600"
+                              className="text-[#FF8000]"
                             >
                               <X className="w-5 h-5" />
                             </button>
@@ -1440,7 +1982,7 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={() => setChildhoodIllness([...childhoodIllness, ""])}
-                        className="flex items-center gap-2 text-teal-600 cursor-pointer"
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
                       >
                         <Plus className="w-5 h-5" /> Add Childhood Illness
                       </button>
@@ -1448,7 +1990,7 @@ useEffect(() => {
 
                     {/* LONG-TERM TREATMENTS */}
                     <div className="space-y-4">
-                      <h3 className="text-teal-600 mb-4">Long-Term Treatments (Previously Taken)</h3>
+                      <h3 className="text-[#FF8000] mb-4">Long-Term Treatments (Previously Taken)</h3>
                       {longTermTreatments.map((treat, index) => (
                         <div key={index} className="flex gap-2 items-center">
                           <input
@@ -1459,7 +2001,7 @@ useEffect(() => {
                               setLongTermTreatments(updated);
                             }}
                             placeholder="e.g., Physical Therapy"
-                            className="flex-1 px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                            className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                           />
                           {index > 0 && (
                             <button
@@ -1467,7 +2009,7 @@ useEffect(() => {
                               onClick={() =>
                                 setLongTermTreatments(longTermTreatments.filter((_, i) => i !== index))
                               }
-                              className="text-teal-600"
+                              className="text-[#FF8000]"
                             >
                               <X className="w-5 h-5" />
                             </button>
@@ -1477,7 +2019,7 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={() => setLongTermTreatments([...longTermTreatments, ""])}
-                        className="flex items-center gap-2 text-teal-600 cursor-pointer"
+                        className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
                       >
                         <Plus className="w-5 h-5" /> Add Treatment
                       </button>
@@ -1494,7 +2036,7 @@ useEffect(() => {
                     </button>
                     <button
                       type="submit"
-                      className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition"
+                      className="px-6 py-2 bg-[#FF8000] text-white rounded-lg hover:bg-[#309898] transition"
                     >
                       Save Changes
                     </button>
@@ -1545,7 +2087,7 @@ useEffect(() => {
                   }
                 }}>
                   <div className="space-y-6">
-                    <h3 className="text-teal-600 mb-2">Family Medical History</h3>
+                    <h3 className="text-[#FF8000] mb-2">Family Medical History</h3>
                     {familyMedicalHistory.map((row, index) => (
                       <div key={index} className="flex gap-4 items-center relative">
                         <input
@@ -1556,7 +2098,7 @@ useEffect(() => {
                             setFamilyMedicalHistory(updated);
                           }}
                           placeholder="e.g., Diabetes"
-                          className="flex-1 px-4 py-2 rounded-lg border-2 border-teal-300/30 text-gray-800"
+                          className="flex-1 px-4 py-2 rounded-lg border-2 border-[#309898]/30 text-gray-800"
                         />
                         <select
                           value={row.relation}
@@ -1597,7 +2139,7 @@ useEffect(() => {
                           { disease: "", relation: "" },
                         ])
                       }
-                      className="flex items-center gap-2 text-teal-600 cursor-pointer"
+                      className="flex items-center gap-2 text-[#FF8000] cursor-pointer"
                     >
                       <Plus className="w-5 h-5" /> Add More
                     </button>
