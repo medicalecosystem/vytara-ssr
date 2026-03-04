@@ -49,7 +49,7 @@ export const config = {
   matcher: [
     /*
      * Only run proxy on /app and everything under it.
-     * All other routes (/, /dashboard, /auth/*, /api/*, _next, static) are skipped.
+     * All other routes (/, /landing-page, /auth/*, /api/*, _next, static) are skipped.
      */
     '/app',
     '/app/:path*',

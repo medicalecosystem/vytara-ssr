@@ -13,7 +13,7 @@ export default function ThemeSelector({ variant = 'desktop' }: ThemeSelectorProp
   const [isOpen, setIsOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
   const pathname = usePathname();
-  const hideOnDashboard = pathname === '/dashboard';
+  const hideOnLandingPage = pathname === '/landing-page';
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -124,8 +124,8 @@ export default function ThemeSelector({ variant = 'desktop' }: ThemeSelectorProp
 
   const currentThemeName = themes.find(t => t.value === currentTheme)?.name || 'Default';
 
-  // Don't render on dashboard
-  if (hideOnDashboard) {
+  // Don't render on landing page
+  if (hideOnLandingPage) {
     return null;
   }
 
