@@ -12,7 +12,9 @@ export default function AppLayout({
   return (
     <AppProfileProvider>
       <div className="vytara-theme-scope min-h-screen flex flex-col md:flex-row">
-        <AppTourController />
+        <Suspense fallback={null}>
+          <AppTourController />
+        </Suspense>
         <Navbar />
         <main className="vytara-theme-content flex-1 min-w-0">
           {children}
