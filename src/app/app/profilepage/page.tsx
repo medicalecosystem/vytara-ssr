@@ -1361,7 +1361,7 @@ useEffect(() => {
         {isPersonalInfoModalOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+              <div className="sticky top-0 z-20 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
                 <h3 className="text-xl font-bold text-gray-800">Edit Personal Information</h3>
                 <button 
                   onClick={() => setIsPersonalInfoModalOpen(false)}
@@ -1565,7 +1565,7 @@ useEffect(() => {
         {isCurrentMedicalModalOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+              <div className="sticky top-0 z-20 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
                 <h3 className="text-xl font-bold text-gray-800">Edit Current Medical Status</h3>
                 <button 
                   onClick={() => setIsCurrentMedicalModalOpen(false)}
@@ -1984,7 +1984,7 @@ useEffect(() => {
         {isPastMedicalModalOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+              <div className="sticky top-0 z-20 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
                 <h3 className="text-xl font-bold text-gray-800">Edit Past Medical History</h3>
                 <button 
                   onClick={() => setIsPastMedicalModalOpen(false)}
@@ -2223,7 +2223,7 @@ useEffect(() => {
         {isFamilyHistoryModalOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+              <div className="sticky top-0 z-20 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
                 <h3 className="text-xl font-bold text-gray-800">Edit Family Medical History</h3>
                 <button 
                   onClick={() => setIsFamilyHistoryModalOpen(false)}

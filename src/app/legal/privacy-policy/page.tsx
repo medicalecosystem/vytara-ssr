@@ -90,6 +90,12 @@ const PrivacyPolicyLayout = () => {
           <div className="flex gap-2 items-center md:justify-start">
             <div className="w-8 h-8 bg-gradient-to-r from-[#14b8a6] to-[#134E4A] rounded-lg" />
             <p className="font-bold text-[#14b8a6] text-xl">{LEGAL.appName}</p>
+            <Link
+              href="/landing-page"
+              className="inline-flex whitespace-nowrap text-xs font-semibold text-[#134E4A] transition hover:text-[#14b8a6] sm:text-sm"
+            >
+              ← Back to Landing Page
+            </Link>
           </div>
 
           {/* DESKTOP NAV CENTER */}
@@ -113,6 +119,14 @@ const PrivacyPolicyLayout = () => {
         {/* MOBILE DROPDOWN */}
         {menu && (
           <div className="bg-white shadow-md md:hidden z-[60]">
+            <Link
+              href="/landing-page"
+              onClick={() => setMenu(false)}
+              className="block px-6 py-4 text-left text-[#134E4A] w-full"
+            >
+              ← Back to Landing Page
+            </Link>
+            <hr className="w-full border-gray-300" />
             {[
               ['Get Started', 'login'],
               ['Contact', 'footer'],

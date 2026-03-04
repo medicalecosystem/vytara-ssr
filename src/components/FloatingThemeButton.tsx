@@ -3,7 +3,14 @@
 import { Palette, ChevronDown } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { usePathname } from 'next/navigation';
-import { applyTheme, getCurrentTheme, themes } from '@/lib/themeUtils';
+import { supabase } from '@/lib/createClient';
+import {
+  applyTheme,
+  getCurrentTheme,
+  isThemeStorageKey,
+  seedThemeForUserFromLegacy,
+  themes,
+} from '@/lib/themeUtils';
 
 type ThemeSelectorProps = {
   variant?: 'desktop' | 'mobile';
@@ -12,15 +19,45 @@ type ThemeSelectorProps = {
 export default function ThemeSelector({ variant = 'desktop' }: ThemeSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
+  const [userId, setUserId] = useState('');
   const pathname = usePathname();
   const hideOnLandingPage = pathname === '/landing-page';
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const init = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!isMounted) return;
+      setUserId(session?.user?.id ?? '');
+    };
+
+    void init();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserId(session?.user?.id ?? '');
+    });
+
+    return () => {
+      isMounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+    seedThemeForUserFromLegacy(userId);
+  }, [userId]);
+
   const subscribeTheme = useCallback((onStoreChange: () => void) => {
     const onThemeChange = () => onStoreChange();
     const onStorage = (event: StorageEvent) => {
-      if (event.key === 'vytara_theme') {
+      if (isThemeStorageKey(event.key)) {
         onStoreChange();
       }
     };
@@ -35,11 +72,11 @@ export default function ThemeSelector({ variant = 'desktop' }: ThemeSelectorProp
 
   const getThemeSnapshot = useCallback(() => {
     try {
-      return getCurrentTheme();
+      return getCurrentTheme(userId);
     } catch {
       return 'default';
     }
-  }, []);
+  }, [userId]);
 
   const currentTheme = useSyncExternalStore(
     subscribeTheme,
@@ -48,8 +85,8 @@ export default function ThemeSelector({ variant = 'desktop' }: ThemeSelectorProp
   );
 
   useEffect(() => {
-    applyTheme(currentTheme);
-  }, [currentTheme]);
+    applyTheme(currentTheme, userId);
+  }, [currentTheme, userId]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -116,7 +153,7 @@ export default function ThemeSelector({ variant = 'desktop' }: ThemeSelectorProp
   }, [isOpen, updateMenuPosition]);
 
   const selectTheme = (themeValue: string) => {
-    applyTheme(themeValue);
+    applyTheme(themeValue, userId);
     // Dispatch custom event to notify other components of theme change
     window.dispatchEvent(new CustomEvent('themeChange', { detail: themeValue }));
     setIsOpen(false);

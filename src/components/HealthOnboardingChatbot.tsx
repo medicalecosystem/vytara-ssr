@@ -125,7 +125,7 @@ const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 export default function HealthOnboardingChatbot() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { selectedProfile, selectProfile, refreshProfiles } = useAppProfile();
+  const { profiles, selectedProfile, selectProfile, refreshProfiles } = useAppProfile();
   const [step, setStep] = useState(0);
   const [messages, setMessages] = useState<Message[]>([
     { id: uid(), role: "bot", text: QUESTIONS[0].question },
@@ -365,7 +365,11 @@ export default function HealthOnboardingChatbot() {
     return age >= 0 && age <= 130 ? age : null;
   };
 
-  const isPrimaryProfile = !isNewProfileOnboarding || (selectedProfile?.is_primary ?? false);
+  const dobValidationProfileId = resolveTargetProfileId();
+  const dobValidationProfile =
+    profiles.find((profileItem) => profileItem.id === dobValidationProfileId) ??
+    (selectedProfile?.id === dobValidationProfileId ? selectedProfile : null);
+  const isPrimaryProfile = Boolean(dobValidationProfile?.is_primary);
 
   const handleSingleNext = (answer: string) => {
     if (!validateRequired(currentQ.key, answer)) {

@@ -119,8 +119,8 @@ body {
 }
 
 .vytara-translate-anchor,
-body[data-has-navbar="true"] > #wrapper_outer,
-body[data-has-navbar="true"] > #conveythis-wrapper {
+body > #wrapper_outer,
+body > #conveythis-wrapper {
   position: fixed;
   top: auto !important;
   right: auto !important;
@@ -132,8 +132,8 @@ body[data-has-navbar="true"] > #conveythis-wrapper {
 
 @media (max-width: 767px) {
   .vytara-translate-anchor,
-  body[data-has-navbar="true"] > #wrapper_outer,
-  body[data-has-navbar="true"] > #conveythis-wrapper {
+  body > #wrapper_outer,
+  body > #conveythis-wrapper {
     left: 1rem !important;
   }
 }
