@@ -109,26 +109,32 @@ body {
 }
 
 @media (min-width: 768px) {
-  body {
+  body[data-has-navbar="true"] {
     --sidebar-offset: 16rem;
   }
 
-  body[data-nav-collapsed="true"] {
+  body[data-has-navbar="true"][data-nav-collapsed="true"] {
     --sidebar-offset: 5rem;
   }
 }
 
-.vytara-translate-anchor {
+.vytara-translate-anchor,
+body[data-has-navbar="true"] > #wrapper_outer,
+body[data-has-navbar="true"] > #conveythis-wrapper {
   position: fixed;
-  bottom: 1.5rem;
-  left: calc(var(--sidebar-offset, 0px) + 1rem);
-  z-index: 50;
-  transition: left 200ms ease;
+  top: auto !important;
+  right: auto !important;
+  bottom: 1.5rem !important;
+  left: calc(var(--sidebar-offset, 0px) + 1rem) !important;
+  z-index: 50 !important;
+  transition: left 200ms ease !important;
 }
 
 @media (max-width: 767px) {
-  .vytara-translate-anchor {
-    left: 1rem;
+  .vytara-translate-anchor,
+  body[data-has-navbar="true"] > #wrapper_outer,
+  body[data-has-navbar="true"] > #conveythis-wrapper {
+    left: 1rem !important;
   }
 }
 

@@ -117,6 +117,15 @@ export default function Navbar() {
     document.body.dataset.navCollapsed = effectiveCollapsed ? "true" : "false";
   }, [effectiveCollapsed]);
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.dataset.hasNavbar = 'true';
+    return () => {
+      delete document.body.dataset.hasNavbar;
+      delete document.body.dataset.navCollapsed;
+    };
+  }, []);
+
   const resetProfileModalState = () => {
     setManageProfilesMode(false);
     setShowAddProfileForm(false);
