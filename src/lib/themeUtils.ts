@@ -33,7 +33,7 @@ const hasAnyUserScopedTheme = () => {
 };
 
 export const isThemeStorageKey = (key: string | null) =>
-  Boolean(key) && (key === BASE_THEME_STORAGE_KEY || key.startsWith(USER_THEME_STORAGE_PREFIX));
+  key !== null && (key === BASE_THEME_STORAGE_KEY || key.startsWith(USER_THEME_STORAGE_PREFIX));
 
 export const seedThemeForUserFromLegacy = (userId: string) => {
   if (typeof window === 'undefined' || !userId) return;
