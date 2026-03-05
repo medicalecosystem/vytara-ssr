@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/createClient';
+import { useEffect } from 'react';
+import { useAppProfile } from '@/components/AppProfileProvider';
 import { applyTheme, getCurrentTheme, isThemeStorageKey, seedThemeForUserFromLegacy } from '@/lib/themeUtils';
 
 const resolveAndApplyTheme = (userId?: string) => {
@@ -10,30 +10,7 @@ const resolveAndApplyTheme = (userId?: string) => {
 };
 
 export default function ThemeBootstrap() {
-  const [userId, setUserId] = useState('');
-
-  useEffect(() => {
-    let mounted = true;
-
-    const init = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!mounted) return;
-      setUserId(session?.user?.id ?? '');
-    };
-
-    void init();
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserId(session?.user?.id ?? '');
-    });
-
-    return () => {
-      mounted = false;
-      sub.subscription.unsubscribe();
-    };
-  }, []);
+  const { userId } = useAppProfile();
 
   useEffect(() => {
     if (userId) {

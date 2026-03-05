@@ -1281,7 +1281,12 @@ function HomePageContent() {
 
             {/* Mobile-only Notification Button (above Get Summary button) */}
             <div className="lg:hidden">
-              <NotificationsPanel userId={userId} profileId={profileId} appointments={appointments} />
+              <NotificationsPanel
+                userId={userId}
+                profileId={profileId}
+                appointments={appointments}
+                medications={medications}
+              />
             </div>
 
             {/* Action Buttons */}
@@ -1338,7 +1343,12 @@ function HomePageContent() {
 
           {/* Desktop Notification Panel */}
           <div className="hidden lg:block" data-tour="home-notifications-desktop">
-            <NotificationsPanel userId={userId} profileId={profileId} appointments={appointments} />
+            <NotificationsPanel
+              userId={userId}
+              profileId={profileId}
+              appointments={appointments}
+              medications={medications}
+            />
           </div>
         </div>
 
@@ -1349,6 +1359,7 @@ function HomePageContent() {
               userId={userId}
               profileId={profileId}
               appointments={appointments}
+              medications={medications}
               variant="modal"
             />
           </Modal>

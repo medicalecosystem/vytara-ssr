@@ -71,6 +71,16 @@ export default function ChatWidget() {
 
       const data = await res.json();
       
+      // Handle API-level failures (success: false)
+      if (data?.success === false) {
+        console.error('[ChatWidget] API returned error:', data);
+        setMessages(prev => [
+          ...prev,
+          { role: "bot", content: data.reply || "Assistant is unavailable. Please try again later." },
+        ]);
+        return;
+      }
+      
       // Handle undefined or missing reply
       const reply = data?.reply;
       if (!reply) {

@@ -564,7 +564,7 @@ export default function Navbar() {
                 Switch Profile
               </button>
               {/* theme selector between switch profile and settings */}
-              <ThemeSelector variant="mobile" />
+              <ThemeSelector variant="mobile" userId={userId} />
               <button
                 onClick={() => {
                   setMobileMenuOpen(false);
@@ -685,7 +685,7 @@ export default function Navbar() {
             </button>
             {/* desktop theme selector between switch profile and settings */}
             {!effectiveCollapsed && (
-              <ThemeSelector variant="desktop" />
+              <ThemeSelector variant="desktop" userId={userId} />
             )}
 
             <button
