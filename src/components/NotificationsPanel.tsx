@@ -19,6 +19,32 @@ type Appointment = {
   type: string;
 };
 
+type MedicationLog = {
+  medicationId?: string;
+  timestamp?: string;
+  taken?: boolean;
+};
+
+type MedicationReminderSource = {
+  id: string;
+  name: string;
+  dosage?: string;
+  frequency?: string;
+  startDate?: string;
+  endDate?: string;
+  logs?: MedicationLog[];
+};
+
+type MedicationReminderFrequency = "with_meals" | "before_bed";
+
+type MedicationReminderSlot = {
+  key: "breakfast" | "lunch" | "dinner" | "before_bedtime";
+  label: "Breakfast" | "Lunch" | "Dinner" | "Bedtime";
+  context: "with breakfast" | "with lunch" | "with dinner" | "before bedtime";
+  hour: number;
+  minute: number;
+};
+
 type FamilyJoinRequestNotification = {
   id: string;
   requestId: string;
@@ -88,6 +114,7 @@ type NotificationsPanelProps = {
   userId: string;
   profileId?: string;
   appointments: Appointment[];
+  medications?: MedicationReminderSource[];
   variant?: "desktop" | "modal";
 };
 
@@ -152,13 +179,35 @@ type AccountAppointmentNotification = {
   dateTime: Date;
 };
 
+type AccountMedicationReminderNotification = {
+  notificationId: string;
+  medicationId: string;
+  medicationName: string;
+  dosage: string;
+  slotContext: string;
+  slotTime: Date;
+};
+
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ACCEPTED_NOTIFICATION_TTL_MS = ONE_DAY_MS;
+const MEAL_REMINDER_WINDOW_MS = 90 * 60 * 1000;
 const LOGS_PAGE_SIZE = 20;
+const MEDICATION_REMINDER_SLOTS: Record<MedicationReminderFrequency, MedicationReminderSlot[]> = {
+  with_meals: [
+    { key: "breakfast", label: "Breakfast", context: "with breakfast", hour: 8, minute: 0 },
+    { key: "lunch", label: "Lunch", context: "with lunch", hour: 13, minute: 0 },
+    { key: "dinner", label: "Dinner", context: "with dinner", hour: 20, minute: 0 },
+  ],
+  before_bed: [
+    { key: "before_bedtime", label: "Bedtime", context: "before bedtime", hour: 21, minute: 30 },
+  ],
+};
 const dismissedInvitesKey = (userId: string) =>
   `vytara:dismissed-invites:${userId}:account`;
 const dismissedAppointmentsKey = (userId: string) =>
   `vytara:dismissed-appointments:${userId}:account`;
+const dismissedMedicationRemindersKey = (userId: string) =>
+  `vytara:dismissed-medication-reminders:${userId}:account`;
 const dismissedFamilyNotificationsKey = (userId: string) =>
   `vytara:dismissed-family-notifications:${userId}`;
 const seenNotificationsKey = (userId: string) =>
@@ -167,6 +216,12 @@ const seenLogsKey = (userId: string, profileId?: string) =>
   `vytara:seen-logs:${userId}:${profileId ?? "account"}`;
 const selfAppointmentNotificationId = (ownerProfileId: string, appointmentId: string) =>
   `appointment:self:${ownerProfileId}:${appointmentId}`;
+const selfMedicationReminderNotificationId = (
+  ownerProfileId: string,
+  medicationId: string,
+  dateKey: string,
+  slotKey: MedicationReminderSlot["key"]
+) => `medication:self:meal:${ownerProfileId}:${medicationId}:${dateKey}:${slotKey}`;
 const inviteNotificationId = (inviteId: string) => `invite:${inviteId}`;
 const familyActivityNotificationId = (activityId: string) => `family-activity:${activityId}`;
 const careCircleTabByDomain: Record<ActivityLogDomain, "vault" | "medications" | "appointments"> = {
@@ -185,6 +240,30 @@ const parseAppointmentDateTime = (appointment: Appointment) => {
   const parsed = new Date(`${appointment.date}T${appointment.time}`);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
+};
+
+const toLocalDateKey = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
+
+const isMedicationActiveOnDate = (medication: MedicationReminderSource, dateKey: string) => {
+  const startDate = typeof medication.startDate === "string" ? medication.startDate.trim() : "";
+  const endDate = typeof medication.endDate === "string" ? medication.endDate.trim() : "";
+  if (startDate && startDate > dateKey) return false;
+  if (endDate && endDate < dateKey) return false;
+  return true;
+};
+
+const getTakenDoseCountForDate = (medication: MedicationReminderSource, date: Date) => {
+  const logs = Array.isArray(medication.logs) ? medication.logs : [];
+  const dayKey = date.toDateString();
+  return logs.filter((log) => {
+    if (!log?.taken || typeof log.timestamp !== "string") return false;
+    const parsed = new Date(log.timestamp);
+    if (Number.isNaN(parsed.getTime())) return false;
+    return parsed.toDateString() === dayKey;
+  }).length;
 };
 
 const parseStoredStringArray = (value: string | null): string[] => {
@@ -250,6 +329,7 @@ export function NotificationsPanel({
   userId,
   profileId,
   appointments,
+  medications = [],
   variant = "desktop",
 }: NotificationsPanelProps) {
   const router = useRouter();
@@ -262,6 +342,9 @@ export function NotificationsPanel({
   const [nowEpoch, setNowEpoch] = useState(0);
   const [dismissedInviteIds, setDismissedInviteIds] = useState<Set<string>>(() => new Set());
   const [dismissedAppointmentIds, setDismissedAppointmentIds] = useState<Set<string>>(() => new Set());
+  const [dismissedMedicationReminderIds, setDismissedMedicationReminderIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [dismissedFamilyNotificationIds, setDismissedFamilyNotificationIds] = useState<Set<string>>(
     () => new Set()
   );
@@ -303,6 +386,8 @@ export function NotificationsPanel({
   const [hydratedDismissedAppointmentsKey, setHydratedDismissedAppointmentsKey] = useState<string | null>(
     null
   );
+  const [hydratedDismissedMedicationRemindersKey, setHydratedDismissedMedicationRemindersKey] =
+    useState<string | null>(null);
   const [hydratedDismissedFamilyKey, setHydratedDismissedFamilyKey] = useState<string | null>(null);
   const [hasHydratedSeenNotifications, setHasHydratedSeenNotifications] = useState(false);
   const [hasHydratedSeenLogs, setHasHydratedSeenLogs] = useState(false);
@@ -313,14 +398,19 @@ export function NotificationsPanel({
     setHasHydratedDismissedNotifications(false);
     setHydratedDismissedInvitesKey(null);
     setHydratedDismissedAppointmentsKey(null);
+    setHydratedDismissedMedicationRemindersKey(null);
     setHydratedDismissedFamilyKey(null);
     setHasHydratedSeenNotifications(false);
     try {
       const primaryDismissedInvitesKey = dismissedInvitesKey(userId);
       const primaryDismissedAppointmentsKey = dismissedAppointmentsKey(userId);
+      const primaryDismissedMedicationRemindersKey = dismissedMedicationRemindersKey(userId);
       const primaryDismissedFamilyKey = dismissedFamilyNotificationsKey(userId);
       const storedInvites = window.localStorage.getItem(primaryDismissedInvitesKey);
       const storedAppointments = window.localStorage.getItem(primaryDismissedAppointmentsKey);
+      const storedMedicationReminders = window.localStorage.getItem(
+        primaryDismissedMedicationRemindersKey
+      );
       const storedFamilyNotifications = window.localStorage.getItem(primaryDismissedFamilyKey);
       const primarySeenNotificationsKey = seenNotificationsKey(userId);
       const storedSeenNotificationsPrimary = window.localStorage.getItem(
@@ -329,6 +419,7 @@ export function NotificationsPanel({
       const resolvedSeenNotificationsRaw = storedSeenNotificationsPrimary;
       setDismissedInviteIds(new Set(parseStoredStringArray(storedInvites)));
       setDismissedAppointmentIds(new Set(parseStoredStringArray(storedAppointments)));
+      setDismissedMedicationReminderIds(new Set(parseStoredStringArray(storedMedicationReminders)));
       setDismissedFamilyNotificationIds(new Set(parseStoredStringArray(storedFamilyNotifications)));
       const parsedSeenNotifications = parseStoredStringArray(
         resolvedSeenNotificationsRaw
@@ -336,6 +427,7 @@ export function NotificationsPanel({
       setSeenNotificationIds(new Set(parsedSeenNotifications));
       setHydratedDismissedInvitesKey(primaryDismissedInvitesKey);
       setHydratedDismissedAppointmentsKey(primaryDismissedAppointmentsKey);
+      setHydratedDismissedMedicationRemindersKey(primaryDismissedMedicationRemindersKey);
       setHydratedDismissedFamilyKey(primaryDismissedFamilyKey);
       if (!storedSeenNotificationsPrimary && parsedSeenNotifications.length > 0) {
         window.localStorage.setItem(primarySeenNotificationsKey, JSON.stringify(parsedSeenNotifications));
@@ -343,6 +435,7 @@ export function NotificationsPanel({
     } catch {
       setDismissedInviteIds(new Set());
       setDismissedAppointmentIds(new Set());
+      setDismissedMedicationReminderIds(new Set());
       setDismissedFamilyNotificationIds(new Set());
       setSeenNotificationIds(new Set());
     }
@@ -383,6 +476,24 @@ export function NotificationsPanel({
     dismissedAppointmentIds,
     hasHydratedDismissedNotifications,
     hydratedDismissedAppointmentsKey,
+    userId,
+  ]);
+
+  useEffect(() => {
+    if (!hasHydratedDismissedNotifications || !userId || typeof window === "undefined") return;
+    const storageKey = dismissedMedicationRemindersKey(userId);
+    if (hydratedDismissedMedicationRemindersKey !== storageKey) return;
+    const merged = new Set(parseStoredStringArray(window.localStorage.getItem(storageKey)));
+    dismissedMedicationReminderIds.forEach((id) => merged.add(id));
+    if (merged.size > 0) {
+      window.localStorage.setItem(storageKey, JSON.stringify(Array.from(merged)));
+    } else {
+      window.localStorage.removeItem(storageKey);
+    }
+  }, [
+    dismissedMedicationReminderIds,
+    hasHydratedDismissedNotifications,
+    hydratedDismissedMedicationRemindersKey,
     userId,
   ]);
 
@@ -1028,6 +1139,20 @@ export function NotificationsPanel({
     void persistDismissedNotification(notificationId);
   };
 
+  const dismissMedicationReminder = (notificationId: string) => {
+    setDismissedMedicationReminderIds((prev) => {
+      const next = new Set(prev);
+      next.add(notificationId);
+      return next;
+    });
+    setServerDismissedNotificationIds((prev) => {
+      const next = new Set(prev);
+      next.add(notificationId);
+      return next;
+    });
+    void persistDismissedNotification(notificationId);
+  };
+
   const dismissFamilyNotification = (id: string) => {
     setDismissedFamilyNotificationIds((prev) => {
       const next = new Set(prev);
@@ -1390,6 +1515,62 @@ export function NotificationsPanel({
     })
     .sort((a, b) => a.diffMs - b.diffMs);
 
+  const nowDate = nowEpoch > 0 ? new Date(nowEpoch) : new Date();
+  const todayDateKey = toLocalDateKey(nowDate);
+  const selfMealMedicationReminders = medications
+    .flatMap<AccountMedicationReminderNotification>((medication) => {
+      const frequency =
+        typeof medication?.frequency === "string" ? medication.frequency.trim() : "";
+      if (frequency !== "with_meals" && frequency !== "before_bed") return [];
+      const slots = MEDICATION_REMINDER_SLOTS[frequency];
+      if (!slots || slots.length === 0) return [];
+      const medicationId =
+        typeof medication.id === "string" && medication.id.trim() ? medication.id.trim() : "";
+      const medicationName =
+        typeof medication.name === "string" && medication.name.trim() ? medication.name.trim() : "";
+      if (!medicationId || !medicationName) return [];
+      if (!isMedicationActiveOnDate(medication, todayDateKey)) return [];
+
+      const takenDoseCount = getTakenDoseCountForDate(medication, nowDate);
+      const ownerProfileId = profileId?.trim() || "account";
+      return slots.flatMap((slot, slotIndex) => {
+        if (takenDoseCount > slotIndex) return [];
+        const slotTime = new Date(
+          nowDate.getFullYear(),
+          nowDate.getMonth(),
+          nowDate.getDate(),
+          slot.hour,
+          slot.minute,
+          0,
+          0
+        );
+        const slotWindowEnd = new Date(slotTime.getTime() + MEAL_REMINDER_WINDOW_MS);
+        if (nowDate < slotTime || nowDate > slotWindowEnd) return [];
+        const notificationId = selfMedicationReminderNotificationId(
+          ownerProfileId,
+          medicationId,
+          todayDateKey,
+          slot.key
+        );
+        if (dismissedMedicationReminderIds.has(notificationId)) return [];
+        if (serverDismissedNotificationIds.has(notificationId)) return [];
+        return [
+          {
+            notificationId,
+            medicationId,
+            medicationName,
+            dosage:
+              typeof medication.dosage === "string" && medication.dosage.trim()
+                ? medication.dosage.trim()
+                : "",
+            slotContext: slot.context,
+            slotTime,
+          },
+        ];
+      });
+    })
+    .sort((a, b) => a.slotTime.getTime() - b.slotTime.getTime());
+
   const visibleCareCircleInvites = careCircleInvites.filter((invite) => {
     if (dismissedInviteIds.has(invite.id)) return false;
     return !serverDismissedNotificationIds.has(inviteNotificationId(invite.id));
@@ -1466,6 +1647,7 @@ export function NotificationsPanel({
   const notificationIds = Array.from(
     new Set([
       ...upcomingAppointments.map((entry) => entry.notificationId),
+      ...selfMealMedicationReminders.map((entry) => entry.notificationId),
       ...visibleFamilyJoinRequests.map((request) => request.id),
       ...visibleFamilyAcceptance.map((acceptance) => acceptance.id),
       ...visibleLegacyFamilyAppointments.map(({ id }) => id),
@@ -1561,6 +1743,7 @@ export function NotificationsPanel({
   const totalNotifications =
     visibleCareCircleInvites.length +
     upcomingAppointments.length +
+    selfMealMedicationReminders.length +
     visibleFamilyJoinRequests.length +
     visibleFamilyAcceptance.length +
     visibleLegacyFamilyAppointments.length +
@@ -1697,6 +1880,53 @@ export function NotificationsPanel({
                   </div>
                 </button>
               ))}
+              {selfMealMedicationReminders.map(
+                ({ notificationId, medicationName, dosage, slotContext, slotTime }) => (
+                  <button
+                    key={notificationId}
+                    type="button"
+                    onClick={() => router.push("/app/homepage?open=medications")}
+                    className="group relative w-full rounded-2xl border border-slate-100 bg-teal-50/80 p-3 text-left transition hover:bg-white hover:shadow-sm"
+                  >
+                    <span className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-transparent transition group-hover:ring-teal-100" />
+                    <span className="absolute right-2 top-2">
+                      <span className="inline-flex rounded-full">
+                        <span
+                          role="button"
+                          aria-label="Dismiss medication meal reminder"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            dismissMedicationReminder(notificationId);
+                          }}
+                          className="pointer-events-auto inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 opacity-0 transition hover:bg-white hover:text-slate-600 group-hover:opacity-100"
+                        >
+                          <X size={14} />
+                        </span>
+                      </span>
+                    </span>
+                    <div className="flex items-start justify-between gap-3 pr-8">
+                      <div className="flex items-start gap-3">
+                        <span className="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-lg bg-teal-100 text-teal-700">
+                          <Pill size={14} />
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">
+                            Medication due {slotContext}
+                          </p>
+                          <p className="text-xs text-slate-600">
+                            {medicationName}
+                            {dosage ? ` · ${dosage}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[11px] text-slate-500">
+                        {slotTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                      </span>
+                    </div>
+                  </button>
+                )
+              )}
               {visibleFamilyJoinRequests.map((request) => (
                 <button
                   key={request.id}
