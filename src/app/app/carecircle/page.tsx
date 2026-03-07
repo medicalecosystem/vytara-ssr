@@ -173,6 +173,11 @@ type EmergencyCardRecord = {
   emergency_instructions: string | null;
 };
 
+type LoadEmergencyCardOptions = {
+  targetProfileId?: string | null;
+  linkId?: string | null;
+};
+
 const emptyEmergencyCard: EmergencyCardData = {
   name: '',
   age: '',
@@ -191,6 +196,32 @@ const emptyEmergencyCard: EmergencyCardData = {
   chronic_conditions: '',
   current_meds: '',
   emergency_instructions: '',
+};
+
+const toEmergencyCardData = (card: EmergencyCardRecord | null): EmergencyCardData => {
+  if (!card) {
+    return { ...emptyEmergencyCard };
+  }
+
+  return {
+    name: card.name ?? '',
+    age: card.age ? String(card.age) : '',
+    date_of_birth: card.date_of_birth ?? '',
+    photo_id_on_file: card.photo_id_on_file ?? false,
+    photo_id_last4: card.photo_id_last4 ?? '',
+    emergency_contact_name: card.emergency_contact_name ?? '',
+    emergency_contact_phone: card.emergency_contact_phone ?? '',
+    preferred_hospital: card.preferred_hospital ?? '',
+    insurer_name: card.insurer_name ?? '',
+    plan_type: card.plan_type ?? '',
+    tpa_helpline: card.tpa_helpline ?? '',
+    insurance_last4: card.insurance_last4 ?? '',
+    blood_group: card.blood_group ?? '',
+    critical_allergies: card.critical_allergies ?? '',
+    chronic_conditions: card.chronic_conditions ?? '',
+    current_meds: card.current_meds ?? '',
+    emergency_instructions: card.emergency_instructions ?? '',
+  };
 };
 
 const emptyMedicationForm: MedicationFormState = {
@@ -754,77 +785,74 @@ export default function CareCirclePage() {
     }
   }, [circleData.circlesImIn, circleData.myCircleMembers, pendingMemberLinkId, pendingMemberTab]);
 
-  const loadEmergencyCard = useCallback(async (targetProfileId: string) => {
+  const loadEmergencyCard = useCallback(async ({ targetProfileId, linkId }: LoadEmergencyCardOptions) => {
     setIsEmergencyLoading(true);
     setEmergencyError(null);
 
-    if (!targetProfileId) {
-      setEmergencyCard(emptyEmergencyCard);
-      setEmergencyError('No profile found for this member.');
-      setIsEmergencyLoading(false);
-      return;
-    }
+    try {
+      if (linkId) {
+        const response = await fetch(
+          `/api/care-circle/member/emergency-card?linkId=${encodeURIComponent(linkId)}`
+        );
+        const payload = (await response.json().catch(() => null)) as
+          | { card?: EmergencyCardRecord | null; message?: string }
+          | null;
 
-    const { data, error } = await supabase
-      .from('care_emergency_cards')
-      .select(
-        [
-          'name',
-          'age',
-          'date_of_birth',
-          'photo_id_on_file',
-          'photo_id_last4',
-          'emergency_contact_name',
-          'emergency_contact_phone',
-          'preferred_hospital',
-          'insurer_name',
-          'plan_type',
-          'tpa_helpline',
-          'insurance_last4',
-          'blood_group',
-          'critical_allergies',
-          'chronic_conditions',
-          'current_meds',
-          'emergency_instructions',
-        ].join(',')
-      )
-      .eq('profile_id', targetProfileId)
-      .maybeSingle();
+        if (!response.ok) {
+          setEmergencyCard({ ...emptyEmergencyCard });
+          setEmergencyError(payload?.message ?? 'Unable to load the emergency card details.');
+          return;
+        }
 
-    if (error && error.code !== 'PGRST116') {
+        setEmergencyCard(toEmergencyCardData(payload?.card ?? null));
+        return;
+      }
+
+      if (!targetProfileId) {
+        setEmergencyCard({ ...emptyEmergencyCard });
+        setEmergencyError('No profile found for this member.');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('care_emergency_cards')
+        .select(
+          [
+            'name',
+            'age',
+            'date_of_birth',
+            'photo_id_on_file',
+            'photo_id_last4',
+            'emergency_contact_name',
+            'emergency_contact_phone',
+            'preferred_hospital',
+            'insurer_name',
+            'plan_type',
+            'tpa_helpline',
+            'insurance_last4',
+            'blood_group',
+            'critical_allergies',
+            'chronic_conditions',
+            'current_meds',
+            'emergency_instructions',
+          ].join(',')
+        )
+        .eq('profile_id', targetProfileId)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') {
+        setEmergencyCard({ ...emptyEmergencyCard });
+        setEmergencyError('Unable to load the emergency card details.');
+        return;
+      }
+
+      setEmergencyCard(toEmergencyCardData((data as EmergencyCardRecord | null) ?? null));
+    } catch {
+      setEmergencyCard({ ...emptyEmergencyCard });
       setEmergencyError('Unable to load the emergency card details.');
+    } finally {
       setIsEmergencyLoading(false);
-      return;
     }
-
-    const card = data as EmergencyCardRecord | null;
-
-    if (!card) {
-      setEmergencyCard(emptyEmergencyCard);
-      setIsEmergencyLoading(false);
-      return;
-    }
-
-    setEmergencyCard({
-      name: card.name ?? '',
-      age: card.age ? String(card.age) : '',
-      date_of_birth: card.date_of_birth ?? '',
-      photo_id_on_file: card.photo_id_on_file ?? false,
-      photo_id_last4: card.photo_id_last4 ?? '',
-      emergency_contact_name: card.emergency_contact_name ?? '',
-      emergency_contact_phone: card.emergency_contact_phone ?? '',
-      preferred_hospital: card.preferred_hospital ?? '',
-      insurer_name: card.insurer_name ?? '',
-      plan_type: card.plan_type ?? '',
-      tpa_helpline: card.tpa_helpline ?? '',
-      insurance_last4: card.insurance_last4 ?? '',
-      blood_group: card.blood_group ?? '',
-      critical_allergies: card.critical_allergies ?? '',
-      chronic_conditions: card.chronic_conditions ?? '',
-      current_meds: card.current_meds ?? '',
-      emergency_instructions: card.emergency_instructions ?? '',
-    });
-    setIsEmergencyLoading(false);
   }, []);
 
   const loadCareCircle = useCallback(async () => {
@@ -876,7 +904,7 @@ export default function CareCirclePage() {
     const circleName = `${displayName}'s Care Circle`;
 
     if (profileId) {
-      await loadEmergencyCard(profileId);
+      await loadEmergencyCard({ targetProfileId: profileId });
     } else {
       setEmergencyCard(emptyEmergencyCard);
     }
@@ -1810,7 +1838,7 @@ export default function CareCirclePage() {
 
     setIsSavingEmergency(false);
     setIsEmergencyEditing(false);
-    await loadEmergencyCard(profileId);
+    await loadEmergencyCard({ targetProfileId: profileId });
   };
 
   const handleViewOwnEmergencyCard = async () => {
@@ -1828,7 +1856,7 @@ export default function CareCirclePage() {
     setIsEmergencyOpen(true);
     setIsEmergencyEditing(false);
     setEmergencyCardOwner({ userId: currentUserId, profileId, name: ownerName });
-    await loadEmergencyCard(profileId);
+    await loadEmergencyCard({ targetProfileId: profileId });
   };
 
   const handleViewMemberEmergencyCard = async (member: CareCircleMember) => {
@@ -1842,7 +1870,7 @@ export default function CareCirclePage() {
       profileId: member.memberProfileId,
       name: member.name,
     });
-    await loadEmergencyCard(member.memberProfileId);
+    await loadEmergencyCard({ linkId: member.linkId, targetProfileId: member.memberProfileId });
   };
 
   const handleViewMemberDetails = (member: CareCircleMember) => {
