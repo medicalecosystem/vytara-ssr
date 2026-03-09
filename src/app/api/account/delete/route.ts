@@ -9,6 +9,7 @@ const STORAGE_REMOVE_BATCH_SIZE = 100;
 
 type DeleteAccountPayload = {
   confirmation?: unknown;
+  profileId?: unknown;
 };
 
 type DbErrorLike = {
@@ -30,6 +31,11 @@ type ProfileOwnershipRow = {
   id: string;
   user_id?: string | null;
   auth_id?: string | null;
+};
+
+type OwnedPrimaryCheckRow = {
+  id: string;
+  is_primary?: boolean | null;
 };
 
 const isMissingRelationError = (error: DbErrorLike) =>
@@ -136,6 +142,40 @@ const listProfilesForUser = async (adminClient: SupabaseClient, userId: string) 
   }
 
   return Array.from(byId.values());
+};
+
+const findOwnedProfileForUser = async (
+  adminClient: SupabaseClient,
+  userId: string,
+  profileId: string
+): Promise<OwnedPrimaryCheckRow | null> => {
+  const byAuth = await adminClient
+    .from('profiles')
+    .select('id, is_primary')
+    .eq('id', profileId)
+    .eq('auth_id', userId)
+    .maybeSingle();
+
+  if (byAuth.error && !isMissingColumnError(byAuth.error) && !isMissingRelationError(byAuth.error)) {
+    throw new Error(`owned profile by auth_id: ${byAuth.error.message || 'Read failed.'}`);
+  }
+
+  if (byAuth.data?.id) {
+    return byAuth.data as OwnedPrimaryCheckRow;
+  }
+
+  const byUser = await adminClient
+    .from('profiles')
+    .select('id, is_primary')
+    .eq('id', profileId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (byUser.error && !isMissingColumnError(byUser.error) && !isMissingRelationError(byUser.error)) {
+    throw new Error(`owned profile by user_id: ${byUser.error.message || 'Read failed.'}`);
+  }
+
+  return (byUser.data as OwnedPrimaryCheckRow | null) ?? null;
 };
 
 const listVaultPathsFromStorageTable = async (adminClient: SupabaseClient, ownerPrefix: string) => {
@@ -479,6 +519,7 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => null)) as DeleteAccountPayload | null;
     const confirmation = typeof body?.confirmation === 'string' ? body.confirmation.trim().toUpperCase() : '';
+    const profileId = typeof body?.profileId === 'string' ? body.profileId.trim() : '';
 
     if (confirmation !== 'DELETE') {
       return NextResponse.json(
@@ -487,9 +528,31 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!profileId) {
+      return NextResponse.json(
+        { message: 'The selected primary profile is required to delete the account.' },
+        { status: 400 }
+      );
+    }
+
     const adminClient = createAdminClient();
     if (!adminClient) {
       return NextResponse.json({ message: 'Service role key is missing.' }, { status: 500 });
+    }
+
+    const actingProfile = await findOwnedProfileForUser(adminClient, user.id, profileId);
+    if (!actingProfile?.id) {
+      return NextResponse.json(
+        { message: 'You can only delete the account from one of your own profiles.' },
+        { status: 403 }
+      );
+    }
+
+    if (!actingProfile.is_primary) {
+      return NextResponse.json(
+        { message: 'Only the primary profile can delete the account.' },
+        { status: 403 }
+      );
     }
 
     const ownedProfiles = await listProfilesForUser(adminClient, user.id);

@@ -8,6 +8,13 @@ import { ChevronDown, MoreVertical } from "lucide-react";
 import Plasma from "@/components/Plasma";
 import { supabase } from "@/lib/createClient";
 import {
+  clearRememberedAccount,
+  pickRememberedAccountName,
+  readRememberedAccount,
+  type RememberedAccount,
+  writeRememberedAccount,
+} from "@/lib/rememberedAccount";
+import {
   COUNTRIES,
   DEFAULT_COUNTRY,
   INDIA_PHONE_DIGITS,
@@ -16,16 +23,6 @@ import {
 } from "@/lib/countries";
 
 /* ========================= LOGIN PAGE ========================= */
-
-type RememberedAccount = {
-  userId: string;
-  name: string;
-  phone: string;
-  email?: string | null;
-  avatarUrl?: string | null;
-};
-
-const REMEMBERED_ACCOUNT_KEY = "vytara_remembered_account";
 
 /** Safe redirect path after login: must be under /app to avoid open redirect */
 function getPostLoginPath(returnTo: string | null): string {
@@ -80,15 +77,56 @@ export default function LoginClient({ returnTo }: LoginClientProps) {
   }, [timer]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(REMEMBERED_ACCOUNT_KEY);
-    if (!stored) return;
-    try {
-      const parsed = JSON.parse(stored) as RememberedAccount;
-      if (parsed?.userId && parsed?.name && parsed?.phone) {
-        window.setTimeout(() => setRememberedAccount(parsed), 0);
-      }
-    } catch {
-      window.localStorage.removeItem(REMEMBERED_ACCOUNT_KEY);
+    const stored = readRememberedAccount();
+    if (stored) {
+      window.setTimeout(() => setRememberedAccount(stored), 0);
+
+      let cancelled = false;
+      void (async () => {
+        try {
+          const response = await fetch("/api/auth/remember-device/profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: stored.userId }),
+          });
+
+          const payload = (await response.json().catch(() => null)) as
+            | { displayName?: string | null; phone?: string | null }
+            | null;
+
+          if (cancelled) {
+            return;
+          }
+
+          if (response.ok) {
+            const nextName = pickRememberedAccountName(
+              payload?.displayName,
+              stored.name,
+              stored.phone
+            );
+            const nextPhone = payload?.phone?.trim() || stored.phone;
+            if (nextName !== stored.name || nextPhone !== stored.phone) {
+              saveRememberedAccount({
+                ...stored,
+                name: nextName,
+                phone: nextPhone,
+              });
+            }
+            return;
+          }
+
+          if (response.status === 401 || response.status === 403) {
+            clearRememberedAccount();
+            setRememberedAccount(null);
+          }
+        } catch {
+          // Keep the last locally cached card if refresh lookup fails.
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
     }
   }, []);
 
@@ -126,7 +164,11 @@ export default function LoginClient({ returnTo }: LoginClientProps) {
       .limit(1);
 
     if (!authProfilesError && authProfiles?.[0]) {
-      return authProfiles[0].display_name?.trim() || authProfiles[0].name?.trim() || fallback;
+      return pickRememberedAccountName(
+        authProfiles[0].display_name,
+        authProfiles[0].name,
+        fallback
+      );
     }
 
     const { data: userProfiles } = await supabase
@@ -137,11 +179,15 @@ export default function LoginClient({ returnTo }: LoginClientProps) {
       .order("created_at", { ascending: true })
       .limit(1);
 
-    return userProfiles?.[0]?.display_name?.trim() || userProfiles?.[0]?.name?.trim() || fallback;
+    return pickRememberedAccountName(
+      userProfiles?.[0]?.display_name,
+      userProfiles?.[0]?.name,
+      fallback
+    );
   };
 
   const saveRememberedAccount = (account: RememberedAccount) => {
-    window.localStorage.setItem(REMEMBERED_ACCOUNT_KEY, JSON.stringify(account));
+    writeRememberedAccount(account);
     setRememberedAccount(account);
   };
 
@@ -157,7 +203,7 @@ export default function LoginClient({ returnTo }: LoginClientProps) {
     } catch {
       // Keep local cleanup even if network requests fail.
     }
-    window.localStorage.removeItem(REMEMBERED_ACCOUNT_KEY);
+    clearRememberedAccount();
     setRememberedAccount(null);
     setRememberMenuOpen(false);
   };
@@ -168,6 +214,9 @@ export default function LoginClient({ returnTo }: LoginClientProps) {
     setContinueLoading(true);
 
     let consumeResponse: Response;
+    let consumePayload:
+      | { displayName?: string | null; phone?: string | null }
+      | null = null;
     try {
       consumeResponse = await fetch("/api/auth/remember-device/consume", {
         method: "POST",
@@ -182,11 +231,29 @@ export default function LoginClient({ returnTo }: LoginClientProps) {
       return;
     }
 
+    consumePayload = (await consumeResponse.json().catch(() => null)) as
+      | { displayName?: string | null; phone?: string | null }
+      | null;
+
     if (!consumeResponse.ok) {
       setContinueLoading(false);
       setError("Saved login expired. Please sign in again.");
       await removeRememberedAccount();
       return;
+    }
+
+    const nextName = pickRememberedAccountName(
+      consumePayload?.displayName,
+      rememberedAccount.name,
+      rememberedAccount.phone
+    );
+    const nextPhone = consumePayload?.phone?.trim() || rememberedAccount.phone;
+    if (nextName !== rememberedAccount.name || nextPhone !== rememberedAccount.phone) {
+      saveRememberedAccount({
+        ...rememberedAccount,
+        name: nextName,
+        phone: nextPhone,
+      });
     }
 
     setContinueLoading(false);

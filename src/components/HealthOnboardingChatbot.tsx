@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/createClient";
 import { useAppProfile } from "@/components/AppProfileProvider";
+import { syncRememberedAccountName } from "@/lib/rememberedAccount";
 
 interface MedicationLogEntry {
   medicationId: string;
@@ -125,7 +126,8 @@ const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 export default function HealthOnboardingChatbot() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { profiles, selectedProfile, selectProfile, refreshProfiles } = useAppProfile();
+  const { profiles, selectedProfile, selectProfile, refreshProfiles, userId } = useAppProfile();
+  const [viewportWidth, setViewportWidth] = useState(0);
   const [step, setStep] = useState(0);
   const [messages, setMessages] = useState<Message[]>([
     { id: uid(), role: "bot", text: QUESTIONS[0].question },
@@ -191,6 +193,24 @@ export default function HealthOnboardingChatbot() {
   useEffect(() => {
     return () => {
       if (botTimeoutRef.current) window.clearTimeout(botTimeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const syncViewportWidth = () => {
+      const nextWidth = Math.round(window.visualViewport?.width ?? window.innerWidth);
+      setViewportWidth(nextWidth);
+    };
+
+    syncViewportWidth();
+    window.addEventListener("resize", syncViewportWidth);
+    window.visualViewport?.addEventListener("resize", syncViewportWidth);
+
+    return () => {
+      window.removeEventListener("resize", syncViewportWidth);
+      window.visualViewport?.removeEventListener("resize", syncViewportWidth);
     };
   }, []);
 
@@ -520,6 +540,129 @@ export default function HealthOnboardingChatbot() {
   const progressPercent = isComplete
     ? 100
     : Math.min(100, Math.round((step / QUESTIONS.length) * 100));
+  const isMobileLayout = viewportWidth > 0 && viewportWidth <= 768;
+  const isSmallPhone = viewportWidth > 0 && viewportWidth <= 420;
+
+  const pageWrapStyle = {
+    ...styles.pageWrap,
+    padding: isMobileLayout
+      ? `8px 10px calc(22px + env(safe-area-inset-bottom, 0px))`
+      : styles.pageWrap.padding,
+  };
+  const headerStyle = {
+    ...styles.header,
+    flexDirection: isMobileLayout ? "column" : styles.header.flexDirection,
+    alignItems: isMobileLayout ? "stretch" : styles.header.alignItems,
+    gap: isMobileLayout ? 14 : styles.header.gap,
+    padding: isMobileLayout ? "4px 4px 10px" : styles.header.padding,
+  };
+  const headerActionsStyle = {
+    ...styles.headerActions,
+    width: isMobileLayout ? "100%" : undefined,
+    justifyContent: isMobileLayout ? "space-between" : undefined,
+    flexWrap: "wrap" as const,
+  };
+  const titleStyle = {
+    ...styles.title,
+    fontSize: isSmallPhone ? 24 : isMobileLayout ? 26 : styles.title.fontSize,
+    lineHeight: isMobileLayout ? 1.08 : undefined,
+  };
+  const subtitleStyle = {
+    ...styles.subtitle,
+    fontSize: isMobileLayout ? 14 : styles.subtitle.fontSize,
+    maxWidth: isMobileLayout ? "100%" : styles.subtitle.maxWidth,
+  };
+  const gridLayoutStyle = {
+    ...styles.gridLayout,
+    gridTemplateColumns: isMobileLayout ? "1fr" : styles.gridLayout.gridTemplateColumns,
+    gap: isMobileLayout ? 12 : styles.gridLayout.gap,
+    padding: isMobileLayout ? "0 2px 10px" : styles.gridLayout.padding,
+  };
+  const rightPanelStyle = {
+    ...styles.rightPanel,
+    order: isMobileLayout ? 1 : undefined,
+  };
+  const chatPanelStyle = {
+    ...styles.liquidCard,
+    ...styles.chatPanel,
+    height: isMobileLayout ? 280 : styles.chatPanel.height,
+    order: isMobileLayout ? 2 : undefined,
+  };
+  const liquidCardStyle = {
+    ...styles.liquidCard,
+    padding: isMobileLayout ? 12 : styles.liquidCard.padding,
+  };
+  const chatWindowStyle = {
+    ...styles.chatWindow,
+    padding: isMobileLayout ? 12 : styles.chatWindow.padding,
+  };
+  const messageBubbleStyle = {
+    ...styles.messageBubble,
+    maxWidth: isMobileLayout ? "92%" : styles.messageBubble.maxWidth,
+    fontSize: isMobileLayout ? 13 : styles.messageBubble.fontSize,
+  };
+  const progressTextStyle = {
+    ...styles.progressText,
+    textAlign: isMobileLayout ? "left" : styles.progressText.textAlign,
+  };
+  const questionTextStyle = {
+    ...styles.questionText,
+    fontSize: isMobileLayout ? 16 : styles.questionText.fontSize,
+    lineHeight: isMobileLayout ? 1.45 : undefined,
+  };
+  const inputRowStyle = {
+    ...styles.inputRow,
+    flexDirection: isMobileLayout ? "column" : styles.inputRow.flexDirection,
+    alignItems: isMobileLayout ? "stretch" : styles.inputRow.alignItems,
+  };
+  const inputStyle = {
+    ...styles.input,
+    width: "100%",
+    minWidth: 0,
+    fontSize: isMobileLayout ? 16 : styles.input.fontSize,
+  };
+  const sendButtonStyle = {
+    ...styles.sendButton,
+    width: isMobileLayout ? "100%" : undefined,
+    minHeight: isMobileLayout ? 48 : styles.sendButton.height,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+  const quickRepliesGridStyle = {
+    ...styles.quickRepliesGrid,
+    display: isMobileLayout ? "grid" : styles.quickRepliesGrid.display,
+    gridTemplateColumns: isMobileLayout ? "repeat(2, minmax(0, 1fr))" : undefined,
+  };
+  const chipBtnStyle = {
+    ...styles.chipBtn,
+    width: isMobileLayout ? "100%" : undefined,
+    minHeight: isMobileLayout ? 46 : undefined,
+    textAlign: "center" as const,
+  };
+  const multiGroupStyle = {
+    ...styles.multiGroup,
+    padding: isMobileLayout ? 10 : styles.multiGroup.padding,
+  };
+  const multiActionsStyle = {
+    ...styles.multiActions,
+    flexDirection: isMobileLayout ? "column" : styles.multiActions.flexDirection,
+    alignItems: isMobileLayout ? "stretch" : styles.multiActions.alignItems,
+  };
+  const addRowBtnStyle = {
+    ...styles.addRowBtn,
+    width: "100%",
+  };
+  const removeBtnStyle = {
+    ...styles.removeBtn,
+    alignSelf: isMobileLayout ? "flex-end" : undefined,
+    minWidth: isMobileLayout ? 96 : styles.removeBtn.minWidth,
+    padding: isMobileLayout ? "0 16px" : undefined,
+  };
+  const sectionTitleStyle = {
+    ...styles.sectionTitle,
+    marginBottom: isMobileLayout ? 12 : styles.sectionTitle.marginBottom,
+  };
 
   const handleDiscardNewProfile = async () => {
     if (!isNewProfileOnboarding || !newProfileId) {
@@ -630,17 +773,24 @@ export default function HealthOnboardingChatbot() {
         profileUpdates.gender = gender.trim();
       }
 
-      if (Object.keys(profileUpdates).length) {
-        const { error } = await supabase
-          .from("profiles")
-          .update(profileUpdates)
+	      if (Object.keys(profileUpdates).length) {
+	        const { error } = await supabase
+	          .from("profiles")
+	          .update(profileUpdates)
           .eq("id", targetProfileId);
         if (error) {
           throw new Error(error.message);
-        }
-      }
+	        }
+	      }
 
-      setIsSaved(true);
+	      const targetProfile =
+	        profiles.find((profileItem) => profileItem.id === targetProfileId) ??
+	        (selectedProfile?.id === targetProfileId ? selectedProfile : null);
+	      if (targetProfile?.is_primary && displayName.trim()) {
+	        syncRememberedAccountName(userId, displayName.trim());
+	      }
+
+	      setIsSaved(true);
       addMessage("bot", "💾 Saved successfully!");
       window.setTimeout(() => {
         void (async () => {
@@ -668,18 +818,18 @@ export default function HealthOnboardingChatbot() {
   };
 
   return (
-    <div style={styles.pageWrap}>
+    <div style={pageWrapStyle}>
       {/* FULL PAGE BACKGROUND (below navbar) */}
       <div style={styles.fullBg} />
       <div style={styles.noiseOverlay} />
 
-      <div style={styles.header}>
+      <div style={headerStyle}>
         <div>
           <div style={styles.kicker}>Health Setup</div>
-          <h1 style={styles.title}>Welcome, let’s build your profile.</h1>
-          <p style={styles.subtitle}>This helps G1 organize your medical history securely.</p>
+          <h1 style={titleStyle}>Welcome, let’s build your profile.</h1>
+          <p style={subtitleStyle}>This helps G1 organize your medical history securely.</p>
         </div>
-        <div style={styles.headerActions}>
+        <div style={headerActionsStyle}>
           {isNewProfileOnboarding && !isSaved && (
             <button
               type="button"
@@ -697,9 +847,9 @@ export default function HealthOnboardingChatbot() {
         </div>
       </div>
 
-      <div style={styles.gridLayout}>
+      <div style={gridLayoutStyle}>
         {/* CHAT */}
-        <div style={{ ...styles.liquidCard, ...styles.chatPanel }}>
+        <div style={chatPanelStyle}>
           <div style={styles.specular} />
           <div style={styles.innerRim} />
 
@@ -708,15 +858,17 @@ export default function HealthOnboardingChatbot() {
               <div style={styles.dot} />
               <div style={styles.chatHeaderTitle}>Assistant</div>
             </div>
-            <div style={styles.chatHeaderRight}>Secure • Private</div>
+            <div style={{ ...styles.chatHeaderRight, display: isSmallPhone ? "none" : styles.chatHeaderRight.display }}>
+              Secure • Private
+            </div>
           </div>
 
-          <div style={styles.chatWindow} ref={scrollRef}>
+          <div style={chatWindowStyle} ref={scrollRef}>
             {messages.map((msg) => (
               <div
                 key={msg.id}
                 style={{
-                  ...styles.messageBubble,
+                  ...messageBubbleStyle,
                   ...(msg.role === "user" ? styles.userBubble : styles.botBubble),
                 }}
               >
@@ -728,33 +880,33 @@ export default function HealthOnboardingChatbot() {
         </div>
 
         {/* RIGHT */}
-        <div style={styles.rightPanel}>
-          <div style={styles.liquidCard}>
+        <div style={rightPanelStyle}>
+          <div style={liquidCardStyle}>
             <div style={styles.specular} />
             <div style={styles.innerRim} />
 
-            <div style={styles.sectionTitle}>Progress</div>
+            <div style={sectionTitleStyle}>Progress</div>
             <div style={styles.progressRow}>
               <div style={styles.progressBarBg}>
                 <div style={{ ...styles.progressBarFill, width: `${progressPercent}%` }} />
               </div>
               <div style={styles.progressPct}>{progressPercent}%</div>
             </div>
-            <div style={styles.progressText}>
+            <div style={progressTextStyle}>
               Step {Math.min(step + 1, QUESTIONS.length)} of {QUESTIONS.length}
             </div>
           </div>
 
           {!isComplete && (
-            <div style={styles.liquidCard}>
+            <div style={liquidCardStyle}>
               <div style={styles.specular} />
               <div style={styles.innerRim} />
 
-              <div style={styles.sectionTitle}>
+              <div style={sectionTitleStyle}>
                 Your details {isRequired ? <span style={{ opacity: 0.75 }}>(Required)</span> : null}
               </div>
 
-              <div style={styles.questionText}>{currentQ.question}</div>
+              <div style={questionTextStyle}>{currentQ.question}</div>
               {canGoBack && (
                 <button type="button" onClick={handlePreviousQuestion} style={styles.previousQuestionBtn}>
                   ← Previous question
@@ -762,9 +914,9 @@ export default function HealthOnboardingChatbot() {
               )}
 
               {currentQ.inputType === "date" && (
-                <div style={styles.inputRow}>
+                <div style={inputRowStyle}>
                   <select
-                    style={styles.input}
+                    style={inputStyle}
                     value={dobParts.month}
                     onWheel={(e) => e.stopPropagation()}
                     onChange={(e) => {
@@ -786,7 +938,7 @@ export default function HealthOnboardingChatbot() {
                     ))}
                   </select>
                   <select
-                    style={styles.input}
+                    style={inputStyle}
                     value={dobParts.day}
                     onWheel={(e) => e.stopPropagation()}
                     onChange={(e) => {
@@ -808,7 +960,7 @@ export default function HealthOnboardingChatbot() {
                     ))}
                   </select>
                   <select
-                    style={styles.input}
+                    style={inputStyle}
                     value={dobParts.year}
                     onWheel={(e) => e.stopPropagation()}
                     onChange={(e) => {
@@ -830,7 +982,7 @@ export default function HealthOnboardingChatbot() {
                     ))}
                   </select>
 
-                  <button type="button" style={styles.sendButton} onClick={() => handleSingleNext(profile.dateOfBirth)}>
+                  <button type="button" style={sendButtonStyle} onClick={() => handleSingleNext(profile.dateOfBirth)}>
                     ➤
                   </button>
                 </div>
@@ -842,15 +994,15 @@ export default function HealthOnboardingChatbot() {
                     {currentQ.required ? "This field is mandatory." : "Optional — you can skip if it doesn’t apply."}
                   </div>
 
-                  <form onSubmit={handleTextSubmit} style={styles.inputRow}>
+                  <form onSubmit={handleTextSubmit} style={inputRowStyle}>
                     <input
-                      style={styles.input}
+                      style={inputStyle}
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
                       placeholder={currentQ.placeholder || "Type here..."}
                       autoFocus
                     />
-                    <button type="submit" style={styles.sendButton}>
+                    <button type="submit" style={sendButtonStyle}>
                       ➤
                     </button>
                   </form>
@@ -858,9 +1010,9 @@ export default function HealthOnboardingChatbot() {
               )}
 
               {currentQ.inputType === "single-select" && (
-                <div style={styles.quickRepliesGrid}>
+                <div style={quickRepliesGridStyle}>
                   {currentQ.options?.map((opt) => (
-                    <button key={opt} onClick={() => handleSingleNext(opt)} style={styles.chipBtn}>
+                    <button key={opt} onClick={() => handleSingleNext(opt)} style={chipBtnStyle}>
                       {opt}
                     </button>
                   ))}
@@ -871,9 +1023,9 @@ export default function HealthOnboardingChatbot() {
                 <>
                   <div style={styles.helperText}>Optional — you can leave any field blank if it doesn’t apply.</div>
                   {(profile[currentQ.key] as string[]).map((value, index) => (
-                    <div key={`${currentQ.key}-${index}`} style={styles.inputRow}>
+                    <div key={`${currentQ.key}-${index}`} style={inputRowStyle}>
                       <input
-                        style={styles.input}
+                        style={inputStyle}
                         value={value}
                         onChange={(e) => {
                           const next = [...(profile[currentQ.key] as string[])];
@@ -885,7 +1037,7 @@ export default function HealthOnboardingChatbot() {
                       {index > 0 && (
                         <button
                           type="button"
-                          style={styles.removeBtn}
+                          style={removeBtnStyle}
                           onClick={() => {
                             const next = [...(profile[currentQ.key] as string[])];
                             next.splice(index, 1);
@@ -898,10 +1050,10 @@ export default function HealthOnboardingChatbot() {
                     </div>
                   ))}
 
-                  <div style={styles.multiActions}>
+                  <div style={multiActionsStyle}>
                     <button
                       type="button"
-                      style={styles.addRowBtn}
+                      style={addRowBtnStyle}
                       onClick={() => {
                         const list = profile[currentQ.key] as string[];
                         if (!list[list.length - 1]?.trim()) {
@@ -913,7 +1065,7 @@ export default function HealthOnboardingChatbot() {
                     >
                       + Add another
                     </button>
-                    <button type="button" style={styles.sendButton} onClick={() => handleMultiTextNext(currentQ.key)}>
+                    <button type="button" style={sendButtonStyle} onClick={() => handleMultiTextNext(currentQ.key)}>
                       ➤
                     </button>
                   </div>
@@ -926,11 +1078,11 @@ export default function HealthOnboardingChatbot() {
                     Name, dosage, and frequency are required to match your homepage medication format.
                   </div>
                   {profile.currentMedication.map((item, index) => (
-                    <div key={`med-${index}`} style={styles.multiGroup}>
+                    <div key={`med-${index}`} style={multiGroupStyle}>
                       <div style={styles.multiLabel}>Medication {index + 1}</div>
-                      <div style={styles.inputRow}>
+                      <div style={inputRowStyle}>
                         <input
-                          style={styles.input}
+                          style={inputStyle}
                           value={item.name}
                           onChange={(e) => {
                             const next = [...profile.currentMedication];
@@ -942,7 +1094,7 @@ export default function HealthOnboardingChatbot() {
                         {index > 0 && (
                           <button
                             type="button"
-                            style={styles.removeBtn}
+                            style={removeBtnStyle}
                             onClick={() => {
                               const next = [...profile.currentMedication];
                               next.splice(index, 1);
@@ -953,9 +1105,9 @@ export default function HealthOnboardingChatbot() {
                           </button>
                         )}
                       </div>
-                      <div style={styles.inputRow}>
+                      <div style={inputRowStyle}>
                         <input
-                          style={styles.input}
+                          style={inputStyle}
                           value={item.dosage}
                           onChange={(e) => {
                             const next = [...profile.currentMedication];
@@ -965,9 +1117,9 @@ export default function HealthOnboardingChatbot() {
                           placeholder="Dosage"
                         />
                       </div>
-                      <div style={styles.inputRow}>
+                      <div style={inputRowStyle}>
                         <input
-                          style={styles.input}
+                          style={inputStyle}
                           value={item.purpose || ""}
                           onChange={(e) => {
                             const next = [...profile.currentMedication];
@@ -977,9 +1129,9 @@ export default function HealthOnboardingChatbot() {
                           placeholder="Purpose (optional)"
                         />
                       </div>
-                      <div style={styles.inputRow}>
+                      <div style={inputRowStyle}>
                         <select
-                          style={styles.input}
+                          style={inputStyle}
                           value={item.frequency || "once_daily"}
                           onWheel={(e) => e.stopPropagation()}
                           onChange={(e) => {
@@ -1000,9 +1152,9 @@ export default function HealthOnboardingChatbot() {
                           ))}
                         </select>
                       </div>
-                      <div style={styles.inputRow}>
+                      <div style={inputRowStyle}>
                         <input
-                          style={styles.input}
+                          style={inputStyle}
                           type="number"
                           min={0}
                           step={1}
@@ -1028,10 +1180,10 @@ export default function HealthOnboardingChatbot() {
                     </div>
                   ))}
 
-                  <div style={styles.multiActions}>
+                  <div style={multiActionsStyle}>
                     <button
                       type="button"
-                      style={styles.addRowBtn}
+                      style={addRowBtnStyle}
                       onClick={() => {
                         const last = profile.currentMedication[profile.currentMedication.length - 1];
                         if (!last?.name.trim() || !last?.dosage.trim() || !last?.frequency.trim()) {
@@ -1049,7 +1201,7 @@ export default function HealthOnboardingChatbot() {
                     >
                       + Add another
                     </button>
-                    <button type="button" style={styles.sendButton} onClick={handleMedicationNext}>
+                    <button type="button" style={sendButtonStyle} onClick={handleMedicationNext}>
                       ➤
                     </button>
                   </div>
@@ -1060,11 +1212,11 @@ export default function HealthOnboardingChatbot() {
                 <>
                   <div style={styles.helperText}>Include month and year for each surgery.</div>
                   {profile.pastSurgeries.map((item, index) => (
-                    <div key={`surg-${index}`} style={styles.multiGroup}>
+                    <div key={`surg-${index}`} style={multiGroupStyle}>
                       <div style={styles.multiLabel}>Surgery {index + 1}</div>
-                      <div style={styles.inputRow}>
+                      <div style={inputRowStyle}>
                         <input
-                          style={styles.input}
+                          style={inputStyle}
                           value={item.name}
                           onChange={(e) => {
                             const next = [...profile.pastSurgeries];
@@ -1076,7 +1228,7 @@ export default function HealthOnboardingChatbot() {
                         {index > 0 && (
                           <button
                             type="button"
-                            style={styles.removeBtn}
+                            style={removeBtnStyle}
                             onClick={() => {
                               const next = [...profile.pastSurgeries];
                               next.splice(index, 1);
@@ -1087,9 +1239,9 @@ export default function HealthOnboardingChatbot() {
                           </button>
                         )}
                       </div>
-                      <div style={styles.inputRow}>
+                      <div style={inputRowStyle}>
                         <select
-                          style={styles.input}
+                          style={inputStyle}
                           value={item.month ?? ""}
                           onWheel={(e) => e.stopPropagation()}
                           onChange={(e) => {
@@ -1107,7 +1259,7 @@ export default function HealthOnboardingChatbot() {
                           ))}
                         </select>
                         <select
-                          style={styles.input}
+                          style={inputStyle}
                           value={item.year ?? ""}
                           onWheel={(e) => e.stopPropagation()}
                           onChange={(e) => {
@@ -1128,10 +1280,10 @@ export default function HealthOnboardingChatbot() {
                     </div>
                   ))}
 
-                  <div style={styles.multiActions}>
+                  <div style={multiActionsStyle}>
                     <button
                       type="button"
-                      style={styles.addRowBtn}
+                      style={addRowBtnStyle}
                       onClick={() => {
                         const last = profile.pastSurgeries[profile.pastSurgeries.length - 1];
                         if (!last?.name.trim() || !last?.month || !last?.year) {
@@ -1146,7 +1298,7 @@ export default function HealthOnboardingChatbot() {
                     >
                       + Add another
                     </button>
-                    <button type="button" style={styles.sendButton} onClick={handleSurgeryNext}>
+                    <button type="button" style={sendButtonStyle} onClick={handleSurgeryNext}>
                       ➤
                     </button>
                   </div>
@@ -1162,11 +1314,11 @@ export default function HealthOnboardingChatbot() {
           )}
 
           {isComplete && (
-            <div style={styles.liquidCard}>
+            <div style={liquidCardStyle}>
               <div style={styles.specular} />
               <div style={styles.innerRim} />
 
-              <div style={styles.sectionTitle}>Save</div>
+              <div style={sectionTitleStyle}>Save</div>
               <div style={styles.greetingCard}>
                 <div style={styles.greetingTitle}>
                   You are all set, {profile.displayName.trim() || "there"}.

@@ -8,6 +8,11 @@ import { ChevronDown } from "lucide-react";
 import { supabase } from "@/lib/createClient";
 import Plasma from "@/components/Plasma";
 import {
+  pickRememberedAccountName,
+  type RememberedAccount,
+  writeRememberedAccount,
+} from "@/lib/rememberedAccount";
+import {
   COUNTRIES,
   DEFAULT_COUNTRY,
   INDIA_PHONE_DIGITS,
@@ -16,16 +21,6 @@ import {
 } from "@/lib/countries";
 
 /* ========================= SIGNUP WITH PHONE ========================= */
-
-type RememberedAccount = {
-  userId: string;
-  name: string;
-  phone: string;
-  email?: string | null;
-  avatarUrl?: string | null;
-};
-
-const REMEMBERED_ACCOUNT_KEY = "vytara_remembered_account";
 
 const getRequestErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error && error.message) {
@@ -87,7 +82,11 @@ export default function SignupPage() {
       .limit(1);
 
     if (!authProfilesError && authProfiles?.[0]) {
-      return authProfiles[0].display_name?.trim() || authProfiles[0].name?.trim() || fallback;
+      return pickRememberedAccountName(
+        authProfiles[0].display_name,
+        authProfiles[0].name,
+        fallback
+      );
     }
 
     const { data: userProfiles } = await supabase
@@ -98,11 +97,15 @@ export default function SignupPage() {
       .order("created_at", { ascending: true })
       .limit(1);
 
-    return userProfiles?.[0]?.display_name?.trim() || userProfiles?.[0]?.name?.trim() || fallback;
+    return pickRememberedAccountName(
+      userProfiles?.[0]?.display_name,
+      userProfiles?.[0]?.name,
+      fallback
+    );
   };
 
   const saveRememberedAccount = (account: RememberedAccount) => {
-    window.localStorage.setItem(REMEMBERED_ACCOUNT_KEY, JSON.stringify(account));
+    writeRememberedAccount(account);
   };
 
   /* ========================= SEND OTP ========================= */

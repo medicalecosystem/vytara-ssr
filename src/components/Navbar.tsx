@@ -16,7 +16,6 @@ import {
   Settings2,
   Pencil,
   Trash2,
-  Star,
   Loader2,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
@@ -24,6 +23,7 @@ import { useRouter } from 'next/navigation';
 import { usePathname } from 'next/navigation';
 import { supabase } from '@/lib/createClient';
 import { useAppProfile, type AppProfile } from '@/components/AppProfileProvider';
+import { syncRememberedAccountName } from '@/lib/rememberedAccount';
 
 // theme selector component provides the dropdown of available colour themes
 import ThemeSelector from '@/components/FloatingThemeButton';
@@ -364,99 +364,14 @@ export default function Navbar() {
       return;
     }
 
+    if (profile.is_primary) {
+      syncRememberedAccountName(userId, trimmed);
+    }
+
     await refreshProfiles();
     setEditingProfileId(null);
     setEditingProfileName('');
     setNotice({ type: 'success', text: 'Profile name updated.' });
-    setSavingProfileId(null);
-  };
-
-  const handleSetPrimaryProfile = async (profileId: string) => {
-    const allProfileIds = profiles.map((profile) => profile.id);
-    if (allProfileIds.length === 0) {
-      return;
-    }
-
-    setSavingProfileId(profileId);
-    setNotice(null);
-
-    // Check age requirement: primary profile must be 18+
-    const { data: healthData, error: healthError } = await supabase
-      .from('health')
-      .select('date_of_birth')
-      .eq('profile_id', profileId)
-      .maybeSingle();
-
-    if (healthError && healthError.code !== 'PGRST116') {
-      setNotice({
-        type: 'error',
-        text: 'Unable to verify age for this profile. Please try again.',
-      });
-      setSavingProfileId(null);
-      return;
-    }
-
-    const dobValue = healthData?.date_of_birth;
-    if (!dobValue) {
-      setNotice({
-        type: 'error',
-        text: 'This profile has no date of birth on record. Complete health onboarding first.',
-      });
-      setSavingProfileId(null);
-      return;
-    }
-
-    const dobStr = typeof dobValue === 'string' ? dobValue : String(dobValue);
-    const dobMatch = dobStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (dobMatch) {
-      const birthDate = new Date(`${dobMatch[1]}-${dobMatch[2]}-${dobMatch[3]}T00:00:00`);
-      if (!Number.isNaN(birthDate.getTime())) {
-        const today = new Date();
-        let age = today.getFullYear() - birthDate.getFullYear();
-        const m = today.getMonth() - birthDate.getMonth();
-        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
-        if (age < 18) {
-          setNotice({
-            type: 'error',
-            text: 'This profile\u2019s account holder must be at least 18 years old to be set as primary.',
-          });
-          setSavingProfileId(null);
-          return;
-        }
-      }
-    }
-
-    const clearPrimary = await supabase
-      .from('profiles')
-      .update({ is_primary: false, updated_at: new Date().toISOString() })
-      .in('id', allProfileIds);
-
-    if (clearPrimary.error) {
-      setNotice({
-        type: 'error',
-        text: clearPrimary.error.message || 'Unable to update primary profile.',
-      });
-      setSavingProfileId(null);
-      return;
-    }
-
-    const setPrimary = await supabase
-      .from('profiles')
-      .update({ is_primary: true, updated_at: new Date().toISOString() })
-      .eq('id', profileId);
-
-    if (setPrimary.error) {
-      setNotice({
-        type: 'error',
-        text: setPrimary.error.message || 'Unable to update primary profile.',
-      });
-      setSavingProfileId(null);
-      return;
-    }
-
-    await persistSelectedProfileHint(profileId);
-    await refreshProfiles();
-    setNotice({ type: 'success', text: 'Primary profile updated.' });
     setSavingProfileId(null);
   };
 
@@ -956,24 +871,6 @@ export default function Navbar() {
                               >
                                 <Pencil className="h-3.5 w-3.5" />
                                 Rename
-                              </button>
-                            )}
-
-                            {!profile.is_primary && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  void handleSetPrimaryProfile(profile.id);
-                                }}
-                                disabled={isSavingThis}
-                                className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-70"
-                              >
-                                {isSavingThis ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Star className="h-3.5 w-3.5" />
-                                )}
-                                Set Primary
                               </button>
                             )}
 

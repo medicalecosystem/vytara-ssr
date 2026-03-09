@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, FileText, Lock, Shield, UserRound, X } from 'lucide-react';
 import { supabase } from '@/lib/createClient';
+import { useAppProfile } from '@/components/AppProfileProvider';
 
 const accountItems = [
   {
@@ -54,6 +55,7 @@ const ACCOUNT_DELETE_CONFIRMATION = 'DELETE';
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { selectedProfile, isLoading: isProfileLoading } = useAppProfile();
   const [activeTab, setActiveTab] = useState<SettingsTab>('account');
   const [isDeletePanelOpen, setIsDeletePanelOpen] = useState(false);
   const [deleteConfirmationInput, setDeleteConfirmationInput] = useState('');
@@ -63,6 +65,8 @@ export default function SettingsPage() {
   const [isLegalModalReady, setIsLegalModalReady] = useState(false);
   const legalIframeRef = useRef<HTMLIFrameElement | null>(null);
   const isAccountTab = activeTab === 'account';
+  const selectedProfileId = selectedProfile?.id ?? '';
+  const canDeleteAccount = Boolean(selectedProfile?.is_primary);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -71,6 +75,12 @@ export default function SettingsPage() {
       delete document.body.dataset.hideChatWidget;
     };
   }, [activeLegalItem]);
+
+  useEffect(() => {
+    if (canDeleteAccount) return;
+    setIsDeletePanelOpen(false);
+    setDeleteConfirmationInput('');
+  }, [canDeleteAccount, selectedProfileId]);
 
   const hideLegalPageChrome = () => {
     const iframe = legalIframeRef.current;
@@ -131,6 +141,11 @@ export default function SettingsPage() {
   };
 
   const handleDeleteAccount = async () => {
+    if (!selectedProfileId || !canDeleteAccount) {
+      setDeleteAccountError('Only the primary profile can delete the account.');
+      return;
+    }
+
     if (deleteConfirmationInput.trim().toUpperCase() !== ACCOUNT_DELETE_CONFIRMATION) {
       setDeleteAccountError(`Type "${ACCOUNT_DELETE_CONFIRMATION}" to confirm account deletion.`);
       return;
@@ -143,7 +158,10 @@ export default function SettingsPage() {
       const response = await fetch('/api/account/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirmation: ACCOUNT_DELETE_CONFIRMATION }),
+        body: JSON.stringify({
+          confirmation: ACCOUNT_DELETE_CONFIRMATION,
+          profileId: selectedProfileId,
+        }),
       });
 
       const payload = (await response.json().catch(() => null)) as
@@ -311,15 +329,27 @@ export default function SettingsPage() {
                   Deleting your account removes your access and permanently deletes your health profiles
                   and related records.
                 </p>
+                <p className="mt-2 text-xs font-medium text-[#9f1239]">
+                  {isProfileLoading
+                    ? 'Checking profile permissions...'
+                    : canDeleteAccount
+                      ? 'You are using the primary profile, so account deletion is available.'
+                      : 'Switch to the primary profile to delete the account.'}
+                </p>
 
                 {!isDeletePanelOpen ? (
                   <button
                     type="button"
                     onClick={() => {
+                      if (!canDeleteAccount) {
+                        setDeleteAccountError('Only the primary profile can delete the account.');
+                        return;
+                      }
                       setIsDeletePanelOpen(true);
                       setDeleteAccountError(null);
                     }}
-                    className="mt-3 inline-flex items-center rounded-lg border border-[#fda4af] bg-[#ffffff] px-3 py-2 text-sm font-medium text-[#be123c] transition hover:bg-[#ffe4e6]"
+                    disabled={isProfileLoading || !canDeleteAccount}
+                    className="mt-3 inline-flex items-center rounded-lg border border-[#fda4af] bg-[#ffffff] px-3 py-2 text-sm font-medium text-[#be123c] transition hover:bg-[#ffe4e6] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Delete account
                   </button>

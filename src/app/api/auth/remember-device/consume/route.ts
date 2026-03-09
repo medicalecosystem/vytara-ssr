@@ -10,6 +10,7 @@ import {
   rememberDeviceCookieClearOptions,
   rememberDeviceCookieOptions,
 } from "@/lib/rememberDevice";
+import { pickRememberedAccountName } from "@/lib/rememberedAccount";
 import { createRateLimiter, getClientIP } from '@/lib/rateLimit';
 
 const consumeLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, maxRequests: 10 });
@@ -47,6 +48,46 @@ const failedRememberResponse = (status = 401) =>
     { message: "Saved login expired. Please sign in again." },
     { status }
   );
+
+const resolveDisplayName = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string,
+  fallback: string
+) => {
+  const byAuth = await adminClient
+    .from("profiles")
+    .select("display_name, name")
+    .eq("auth_id", userId)
+    .order("is_primary", { ascending: false })
+    .order("created_at", { ascending: true })
+    .limit(1);
+
+  if (!byAuth.error && byAuth.data?.[0]) {
+    return pickRememberedAccountName(byAuth.data[0].display_name, byAuth.data[0].name, fallback);
+  }
+
+  const missingAuthColumn =
+    byAuth.error?.code === "PGRST204" ||
+    byAuth.error?.message?.toLowerCase().includes("auth_id");
+
+  const byUser = await adminClient
+    .from("profiles")
+    .select("display_name, name")
+    .eq("user_id", userId)
+    .order("is_primary", { ascending: false })
+    .order("created_at", { ascending: true })
+    .limit(1);
+
+  if (!byUser.error && byUser.data?.[0]) {
+    return pickRememberedAccountName(byUser.data[0].display_name, byUser.data[0].name, fallback);
+  }
+
+  if (!missingAuthColumn && byAuth.error) {
+    return fallback;
+  }
+
+  return fallback;
+};
 
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request);
@@ -162,6 +203,8 @@ export async function POST(request: NextRequest) {
     return failedRememberResponse();
   }
 
+  const displayName = await resolveDisplayName(adminClient, userId, phone);
+
   const sessionTtl = parsePositiveInt(
     process.env.REMEMBER_DEVICE_SESSION_TTL_SECONDS ??
       process.env.SUPABASE_JWT_EXPIRES_IN_SECONDS,
@@ -180,6 +223,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       userId,
+      displayName,
+      phone,
       access_token: token,
       refresh_token: "no-refresh",
       expires_at: expiresAt,
@@ -226,5 +271,5 @@ export async function POST(request: NextRequest) {
     rememberDeviceCookieOptions
   );
 
-  return NextResponse.json({ ok: true, userId, expiresAt });
+  return NextResponse.json({ ok: true, userId, expiresAt, displayName, phone });
 }

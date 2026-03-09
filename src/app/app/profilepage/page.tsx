@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import Silk from '@/components/Silk';
 import jsPDF from 'jspdf';
 import { useAppProfile } from '@/components/AppProfileProvider';
+import { syncRememberedAccountName } from '@/lib/rememberedAccount';
 
 type CacheEntry<T> = { ts: number; value: T };
 const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -1423,6 +1424,9 @@ useEffect(() => {
                   } else if (healthError) {
                     alert("Error: " + healthError.message);
                   } else {
+                    if (selectedProfile?.is_primary && personalDraft.userName.trim()) {
+                      syncRememberedAccountName(userId, personalDraft.userName.trim());
+                    }
                     setUserName(personalDraft.userName);
                     setGender(personalDraft.gender);
                     setDob(personalDraft.dob);
