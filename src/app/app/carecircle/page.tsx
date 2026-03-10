@@ -12,6 +12,19 @@ import {
   PHONE_MAX_DIGITS,
   type CountryOption,
 } from '@/lib/countries';
+import {
+  MEDICATION_MEAL_OPTIONS,
+  countMedicationMealTiming,
+  deriveMedicationMealTiming,
+  formatMedicationDosage,
+  formatMedicationFrequencyLabel,
+  formatMedicationMealTimingSummary,
+  normalizeMedicationDosage,
+  resolveMedicationFrequency,
+  resolveMedicationTimesPerDay,
+  type MedicationMealKey,
+  type MedicationMealTiming,
+} from '@/lib/medications';
 
 type CareCircleStatus = 'pending' | 'accepted' | 'declined';
 type CareCircleRole = 'family' | 'friend';
@@ -76,6 +89,7 @@ type MemberDetailsMedication = {
   name: string;
   dosage: string;
   frequency: string;
+  mealTiming?: MedicationMealTiming;
   purpose?: string;
   timesPerDay?: number;
   startDate?: string;
@@ -92,8 +106,8 @@ type MedicationFormState = {
   name: string;
   dosage: string;
   frequency: string;
+  mealTiming: MedicationMealTiming;
   purpose: string;
-  timesPerDay: string;
   startDate: string;
   endDate: string;
 };
@@ -229,8 +243,8 @@ const emptyMedicationForm: MedicationFormState = {
   name: '',
   dosage: '',
   frequency: '',
+  mealTiming: {},
   purpose: '',
-  timesPerDay: '1',
   startDate: '',
   endDate: '',
 };
@@ -247,20 +261,6 @@ const roleLabels: Record<CareCircleRole, string> = {
   family: 'Family',
   friend: 'Friend',
 };
-
-const medicationFrequencyOptions = [
-  { label: 'Once daily', value: 'once_daily', times: 1 },
-  { label: 'Twice daily', value: 'twice_daily', times: 2 },
-  { label: 'Three times daily', value: 'three_times_daily', times: 3 },
-  { label: 'Four times daily', value: 'four_times_daily', times: 4 },
-  { label: 'Every 4 hours', value: 'every_4_hours', times: 6 },
-  { label: 'Every 6 hours', value: 'every_6_hours', times: 4 },
-  { label: 'Every 8 hours', value: 'every_8_hours', times: 3 },
-  { label: 'Every 12 hours', value: 'every_12_hours', times: 2 },
-  { label: 'As needed', value: 'as_needed', times: 0 },
-  { label: 'With meals', value: 'with_meals', times: 3 },
-  { label: 'Before bed', value: 'before_bed', times: 1 },
-] as const;
 
 const appointmentTypeFields = {
   'Doctor Visit': [
@@ -1165,34 +1165,60 @@ export default function CareCirclePage() {
   const openEditMedicationModal = useCallback((medication: MemberDetailsMedication) => {
     setMedicationActionError(null);
     setMedicationFormMode('edit');
-    const matchingOption = medicationFrequencyOptions.find(
-      (option) => option.value === medication.frequency
+    const normalizedMealTiming = deriveMedicationMealTiming(
+      medication.mealTiming,
+      medication.frequency
     );
     setMedicationForm({
       id: medication.id,
       name: medication.name || '',
-      dosage: medication.dosage || '',
-      frequency: medication.frequency || '',
+      dosage: formatMedicationDosage(medication.dosage),
+      frequency: resolveMedicationFrequency(medication.frequency, normalizedMealTiming),
+      mealTiming: normalizedMealTiming,
       purpose: medication.purpose || '',
-      timesPerDay: matchingOption
-        ? String(matchingOption.times)
-        : medication.timesPerDay !== undefined && medication.timesPerDay !== null
-        ? String(medication.timesPerDay)
-        : '1',
       startDate: medication.startDate || '',
       endDate: medication.endDate || '',
     });
     setShowMedicationFormModal(true);
   }, []);
 
-  const handleMedicationFrequencyChange = useCallback((value: string) => {
-    const selected = medicationFrequencyOptions.find((option) => option.value === value);
-    setMedicationForm((prev) => ({
-      ...prev,
-      frequency: value,
-      timesPerDay: selected ? String(selected.times) : prev.timesPerDay,
-    }));
-  }, []);
+  const handleMedicationMealSelection = useCallback(
+    (meal: MedicationMealKey, checked: boolean) => {
+      setMedicationForm((prev) => {
+        const nextMealTiming = {
+          ...deriveMedicationMealTiming(prev.mealTiming, prev.frequency),
+        };
+        if (!checked) {
+          delete nextMealTiming[meal];
+        } else {
+          nextMealTiming[meal] = nextMealTiming[meal] || 'before';
+        }
+        return {
+          ...prev,
+          mealTiming: nextMealTiming,
+          frequency: formatMedicationMealTimingSummary(nextMealTiming),
+        };
+      });
+    },
+    []
+  );
+
+  const handleMedicationMealTimingChange = useCallback(
+    (meal: MedicationMealKey, value: 'before' | 'after') => {
+      setMedicationForm((prev) => {
+        const nextMealTiming = {
+          ...deriveMedicationMealTiming(prev.mealTiming, prev.frequency),
+          [meal]: value,
+        };
+        return {
+          ...prev,
+          mealTiming: nextMealTiming,
+          frequency: formatMedicationMealTimingSummary(nextMealTiming),
+        };
+      });
+    },
+    []
+  );
 
   const closeAppointmentFormModal = useCallback(() => {
     setShowAppointmentFormModal(false);
@@ -1549,29 +1575,24 @@ export default function CareCirclePage() {
       if (!selectedMember) return;
 
       const name = medicationForm.name.trim();
-      const dosage = medicationForm.dosage.trim();
-      const frequency = medicationForm.frequency.trim();
+      const dosage = normalizeMedicationDosage(medicationForm.dosage);
+      const mealTiming = deriveMedicationMealTiming(
+        medicationForm.mealTiming,
+        medicationForm.frequency
+      );
+      const frequency = resolveMedicationFrequency(medicationForm.frequency, mealTiming);
       const purpose = medicationForm.purpose.trim();
-      const timesRaw = medicationForm.timesPerDay.trim();
       const startDate = medicationForm.startDate.trim();
       const endDate = medicationForm.endDate.trim();
-
-      if (!name || !dosage || !frequency) {
-        setMedicationActionError('Medication name, dosage, and frequency are required.');
-        return;
-      }
-
-      const selectedFrequency = medicationFrequencyOptions.find(
-        (option) => option.value === frequency
+      const mealTimingCount = countMedicationMealTiming(mealTiming);
+      const timesPerDay = resolveMedicationTimesPerDay(
+        frequency,
+        mealTimingCount,
+        mealTiming
       );
-      const parsedTimes = Number.parseInt(timesRaw, 10);
-      const timesPerDay = selectedFrequency
-        ? selectedFrequency.times
-        : Number.isFinite(parsedTimes)
-        ? parsedTimes
-        : undefined;
-      if (timesPerDay === undefined || timesPerDay < 0) {
-        setMedicationActionError('Times per day must be a non-negative number.');
+
+      if (!name || !dosage || mealTimingCount === 0) {
+        setMedicationActionError('Medication name, dosage, and meal timing are required.');
         return;
       }
 
@@ -1592,6 +1613,7 @@ export default function CareCirclePage() {
               name,
               dosage,
               frequency,
+              mealTiming: Object.keys(mealTiming).length > 0 ? mealTiming : undefined,
               purpose,
               timesPerDay,
               startDate: normalizedStartDate,
@@ -1971,6 +1993,10 @@ export default function CareCirclePage() {
       return bStart - aStart;
     });
   }, [memberDetails?.medications]);
+  const normalizedMedicationFormMealTiming = deriveMedicationMealTiming(
+    medicationForm.mealTiming,
+    medicationForm.frequency
+  );
 
   const sortedMemberAppointments = useMemo(() => {
     const appointments = memberDetails?.appointments || [];
@@ -3156,8 +3182,12 @@ export default function CareCirclePage() {
                               <div className="flex flex-wrap items-start justify-between gap-2">
                                 <div>
                                   <p className="font-semibold text-slate-800">{med.name || '—'}</p>
-                                  <p className="text-slate-600 mt-1">Dosage: {med.dosage || '—'}</p>
-                                  <p className="text-slate-600">Frequency: {med.frequency || '—'}</p>
+                                  <p className="text-slate-600 mt-1">
+                                    Dosage: {formatMedicationDosage(med.dosage) || '—'}
+                                  </p>
+                                  <p className="text-slate-600">
+                                    Schedule: {formatMedicationFrequencyLabel(med.frequency, med.mealTiming) || '—'}
+                                  </p>
                                   {med.timesPerDay !== undefined && med.timesPerDay !== null ? (
                                     <p className="text-slate-600">Times/day: {String(med.timesPerDay)}</p>
                                   ) : null}
@@ -3405,7 +3435,7 @@ export default function CareCirclePage() {
             <form onSubmit={handleMedicationSubmit} className="mt-5 space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block text-sm font-medium text-slate-700">
-                  Name
+                  Medication name
                   <input
                     type="text"
                     value={medicationForm.name}
@@ -3430,39 +3460,43 @@ export default function CareCirclePage() {
                 </label>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block text-sm font-medium text-slate-700">
-                  Frequency
-                  <select
-                    value={medicationForm.frequency}
-                    onChange={(event) => handleMedicationFrequencyChange(event.target.value)}
-                    className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  >
-                    <option value="">Select frequency</option>
-                    {medicationFrequencyOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block text-sm font-medium text-slate-700">
-                  Times per day
-                  <input
-                    type="number"
-                    min="0"
-                    max="10"
-                    value={medicationForm.timesPerDay}
-                    onChange={(event) =>
-                      setMedicationForm((prev) => ({ ...prev, timesPerDay: event.target.value }))
-                    }
-                    placeholder="1"
-                    disabled={medicationFrequencyOptions.some(
-                      (option) => option.value === medicationForm.frequency
-                    )}
-                    className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-100"
-                  />
-                </label>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <label className="block text-sm font-medium text-slate-700">Meal timing</label>
+                <div className="mt-3 space-y-3">
+                  {MEDICATION_MEAL_OPTIONS.map((meal) => {
+                    const isSelected = Boolean(normalizedMedicationFormMealTiming[meal.key]);
+                    return (
+                      <div key={meal.key} className="flex items-center justify-between gap-4">
+                        <label className="flex items-center gap-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(event) =>
+                              handleMedicationMealSelection(meal.key, event.target.checked)
+                            }
+                            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                          />
+                          {meal.label}
+                        </label>
+                        {isSelected ? (
+                          <select
+                            value={normalizedMedicationFormMealTiming[meal.key]}
+                            onChange={(event) =>
+                              handleMedicationMealTimingChange(
+                                meal.key,
+                                event.target.value as 'before' | 'after'
+                              )
+                            }
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                          >
+                            <option value="before">Before</option>
+                            <option value="after">After</option>
+                          </select>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">

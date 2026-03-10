@@ -2,6 +2,14 @@ import { NextResponse } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { logCareCircleActivity } from '@/lib/careCircleActivityLogs';
+import {
+  deriveMedicationMealTiming,
+  normalizeMedicationDosage,
+  normalizeMedicationReminderSlotKey,
+  resolveMedicationFrequency,
+  resolveMedicationTimesPerDay,
+  type MedicationMealTiming,
+} from '@/lib/medications';
 
 type CareCircleRole = 'family' | 'friend';
 
@@ -18,6 +26,7 @@ type MedicationLog = {
   medicationId: string;
   timestamp: string;
   taken: boolean;
+  slotKey?: string;
 };
 
 type MedicationRecord = {
@@ -26,6 +35,7 @@ type MedicationRecord = {
   dosage: string;
   purpose?: string;
   frequency: string;
+  mealTiming?: MedicationMealTiming;
   timesPerDay?: number;
   startDate?: string;
   endDate?: string;
@@ -133,13 +143,6 @@ const normalizeDateInput = (value: unknown): string | undefined => {
   return formatDateOnly(parsed);
 };
 
-const normalizeTimesPerDay = (value: unknown): number | undefined => {
-  if (value === null || value === undefined || value === '') return undefined;
-  const numeric = typeof value === 'number' ? value : Number(String(value).trim());
-  if (!Number.isFinite(numeric) || numeric < 0) return undefined;
-  return Math.floor(numeric);
-};
-
 const normalizeActivityMetadataValue = (value: unknown): ActivityMetadataValue => {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') {
@@ -210,9 +213,10 @@ const normalizeMedicationLog = (value: unknown): MedicationLog | null => {
   const medicationId = typeof row.medicationId === 'string' ? row.medicationId.trim() : '';
   const timestamp = typeof row.timestamp === 'string' ? row.timestamp.trim() : '';
   const taken = typeof row.taken === 'boolean' ? row.taken : null;
+  const slotKey = normalizeMedicationReminderSlotKey(row.slotKey);
 
   if (!medicationId || !timestamp || taken === null) return null;
-  return { medicationId, timestamp, taken };
+  return { medicationId, timestamp, taken, slotKey };
 };
 
 const parseJsonArray = (value: unknown, fallbackKey: string) => {
@@ -243,10 +247,11 @@ const normalizeMedicationRecord = (value: unknown): MedicationRecord | null => {
   const row = value as Record<string, unknown>;
   const id = typeof row.id === 'string' ? row.id.trim() : '';
   const name = typeof row.name === 'string' ? row.name.trim() : '';
-  const dosage = typeof row.dosage === 'string' ? row.dosage.trim() : '';
-  const frequency = typeof row.frequency === 'string' ? row.frequency.trim() : '';
+  const dosage = normalizeMedicationDosage(row.dosage);
+  const mealTiming = deriveMedicationMealTiming(row.mealTiming, row.frequency);
+  const frequency = resolveMedicationFrequency(row.frequency, mealTiming);
   const purpose = typeof row.purpose === 'string' ? row.purpose.trim() : '';
-  const timesPerDay = normalizeTimesPerDay(row.timesPerDay);
+  const timesPerDay = resolveMedicationTimesPerDay(frequency, row.timesPerDay, mealTiming);
   const startDate = normalizeDateInput(row.startDate);
   const endDate = normalizeDateInput(row.endDate);
   const logs = Array.isArray(row.logs)
@@ -260,6 +265,7 @@ const normalizeMedicationRecord = (value: unknown): MedicationRecord | null => {
     name,
     dosage,
     frequency,
+    mealTiming: Object.keys(mealTiming).length > 0 ? mealTiming : undefined,
     purpose: purpose || undefined,
     timesPerDay,
     startDate,
@@ -412,11 +418,18 @@ export async function POST(request: Request) {
 
     const medicationInput = input as Record<string, unknown>;
     const name = typeof medicationInput.name === 'string' ? medicationInput.name.trim() : '';
-    const dosage = typeof medicationInput.dosage === 'string' ? medicationInput.dosage.trim() : '';
-    const frequency =
-      typeof medicationInput.frequency === 'string' ? medicationInput.frequency.trim() : '';
+    const dosage = normalizeMedicationDosage(medicationInput.dosage);
+    const mealTiming = deriveMedicationMealTiming(
+      medicationInput.mealTiming,
+      medicationInput.frequency
+    );
+    const frequency = resolveMedicationFrequency(medicationInput.frequency, mealTiming);
     const purpose = typeof medicationInput.purpose === 'string' ? medicationInput.purpose.trim() : '';
-    const timesPerDay = normalizeTimesPerDay(medicationInput.timesPerDay);
+    const timesPerDay = resolveMedicationTimesPerDay(
+      frequency,
+      medicationInput.timesPerDay,
+      mealTiming
+    );
     const startDate = normalizeDateInput(medicationInput.startDate) ?? formatDateOnly(new Date());
     const endDate = normalizeDateInput(medicationInput.endDate);
     const logs = Array.isArray(medicationInput.logs)
@@ -461,8 +474,9 @@ export async function POST(request: Request) {
       name,
       dosage,
       frequency,
+      mealTiming: Object.keys(mealTiming).length > 0 ? mealTiming : undefined,
       purpose: purpose || undefined,
-      timesPerDay: timesPerDay ?? 1,
+      timesPerDay,
       startDate,
       endDate,
       logs,
@@ -552,20 +566,26 @@ export async function PATCH(request: Request) {
     }
 
     const hasPurposeField = Object.prototype.hasOwnProperty.call(medicationInput, 'purpose');
+    const hasMealTimingField = Object.prototype.hasOwnProperty.call(medicationInput, 'mealTiming');
     const hasTimesField = Object.prototype.hasOwnProperty.call(medicationInput, 'timesPerDay');
     const hasStartDateField = Object.prototype.hasOwnProperty.call(medicationInput, 'startDate');
     const hasEndDateField = Object.prototype.hasOwnProperty.call(medicationInput, 'endDate');
     const hasLogsField = Object.prototype.hasOwnProperty.call(medicationInput, 'logs');
 
     const nameInput = typeof medicationInput.name === 'string' ? medicationInput.name.trim() : '';
-    const dosageInput =
-      typeof medicationInput.dosage === 'string' ? medicationInput.dosage.trim() : '';
+    const dosageInput = normalizeMedicationDosage(medicationInput.dosage);
     const frequencyInput =
       typeof medicationInput.frequency === 'string' ? medicationInput.frequency.trim() : '';
 
     const name = nameInput || existing.name;
     const dosage = dosageInput || existing.dosage;
-    const frequency = frequencyInput || existing.frequency;
+    const mealTiming = hasMealTimingField
+      ? deriveMedicationMealTiming(
+          medicationInput.mealTiming,
+          frequencyInput || existing.frequency
+        )
+      : deriveMedicationMealTiming(existing.mealTiming, existing.frequency);
+    const frequency = resolveMedicationFrequency(frequencyInput || existing.frequency, mealTiming);
 
     if (!name || !dosage || !frequency) {
       return NextResponse.json(
@@ -580,8 +600,8 @@ export async function PATCH(request: Request) {
         : undefined
       : existing.purpose;
     const timesPerDay = hasTimesField
-      ? normalizeTimesPerDay(medicationInput.timesPerDay)
-      : existing.timesPerDay;
+      ? resolveMedicationTimesPerDay(frequency, medicationInput.timesPerDay, mealTiming)
+      : resolveMedicationTimesPerDay(frequency, existing.timesPerDay, mealTiming);
     const startDate = hasStartDateField
       ? normalizeDateInput(medicationInput.startDate)
       : existing.startDate;
@@ -599,6 +619,7 @@ export async function PATCH(request: Request) {
       name,
       dosage,
       frequency,
+      mealTiming: Object.keys(mealTiming).length > 0 ? mealTiming : undefined,
       purpose,
       timesPerDay,
       startDate,

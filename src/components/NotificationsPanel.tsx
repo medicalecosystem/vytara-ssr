@@ -4,6 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Calendar, FileText, Pill, X } from "lucide-react";
 import { supabase } from "@/lib/createClient";
+import {
+  formatMedicationDosage,
+  formatMedicationFrequencyLabel,
+  getDueMedicationReminderSlots,
+  type MedicationReminderSlot,
+  type MedicationMealTiming,
+} from "@/lib/medications";
 
 type CareCircleInvite = {
   id: string;
@@ -23,6 +30,7 @@ type MedicationLog = {
   medicationId?: string;
   timestamp?: string;
   taken?: boolean;
+  slotKey?: string;
 };
 
 type MedicationReminderSource = {
@@ -30,19 +38,10 @@ type MedicationReminderSource = {
   name: string;
   dosage?: string;
   frequency?: string;
+  mealTiming?: MedicationMealTiming;
   startDate?: string;
   endDate?: string;
   logs?: MedicationLog[];
-};
-
-type MedicationReminderFrequency = "with_meals" | "before_bed";
-
-type MedicationReminderSlot = {
-  key: "breakfast" | "lunch" | "dinner" | "before_bedtime";
-  label: "Breakfast" | "Lunch" | "Dinner" | "Bedtime";
-  context: "with breakfast" | "with lunch" | "with dinner" | "before bedtime";
-  hour: number;
-  minute: number;
 };
 
 type FamilyJoinRequestNotification = {
@@ -192,16 +191,6 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ACCEPTED_NOTIFICATION_TTL_MS = ONE_DAY_MS;
 const MEAL_REMINDER_WINDOW_MS = 90 * 60 * 1000;
 const LOGS_PAGE_SIZE = 20;
-const MEDICATION_REMINDER_SLOTS: Record<MedicationReminderFrequency, MedicationReminderSlot[]> = {
-  with_meals: [
-    { key: "breakfast", label: "Breakfast", context: "with breakfast", hour: 8, minute: 0 },
-    { key: "lunch", label: "Lunch", context: "with lunch", hour: 13, minute: 0 },
-    { key: "dinner", label: "Dinner", context: "with dinner", hour: 20, minute: 0 },
-  ],
-  before_bed: [
-    { key: "before_bedtime", label: "Bedtime", context: "before bedtime", hour: 21, minute: 30 },
-  ],
-};
 const dismissedInvitesKey = (userId: string) =>
   `vytara:dismissed-invites:${userId}:account`;
 const dismissedAppointmentsKey = (userId: string) =>
@@ -240,30 +229,6 @@ const parseAppointmentDateTime = (appointment: Appointment) => {
   const parsed = new Date(`${appointment.date}T${appointment.time}`);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
-};
-
-const toLocalDateKey = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-    date.getDate()
-  ).padStart(2, "0")}`;
-
-const isMedicationActiveOnDate = (medication: MedicationReminderSource, dateKey: string) => {
-  const startDate = typeof medication.startDate === "string" ? medication.startDate.trim() : "";
-  const endDate = typeof medication.endDate === "string" ? medication.endDate.trim() : "";
-  if (startDate && startDate > dateKey) return false;
-  if (endDate && endDate < dateKey) return false;
-  return true;
-};
-
-const getTakenDoseCountForDate = (medication: MedicationReminderSource, date: Date) => {
-  const logs = Array.isArray(medication.logs) ? medication.logs : [];
-  const dayKey = date.toDateString();
-  return logs.filter((log) => {
-    if (!log?.taken || typeof log.timestamp !== "string") return false;
-    const parsed = new Date(log.timestamp);
-    if (Number.isNaN(parsed.getTime())) return false;
-    return parsed.toDateString() === dayKey;
-  }).length;
 };
 
 const parseStoredStringArray = (value: string | null): string[] => {
@@ -1226,14 +1191,6 @@ export function NotificationsPanel({
     return parsed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   };
 
-  const humanizeCodeValue = (value: string) => {
-    if (!/^[a-z0-9]+(?:[_-][a-z0-9]+)+$/i.test(value)) return value;
-    return value
-      .replace(/[_-]+/g, " ")
-      .toLowerCase()
-      .replace(/^\w/, (char) => char.toUpperCase());
-  };
-
   const formatActivityMetadataValue = (
     value: ActivityMetadataChangeValue,
     domain: ActivityLogDomain,
@@ -1251,7 +1208,7 @@ export function NotificationsPanel({
       return formatTimeOnlyValue(trimmed);
     }
     if (domain === "medication" && field === "frequency") {
-      return humanizeCodeValue(trimmed);
+      return formatMedicationFrequencyLabel(trimmed);
     }
     if (domain === "medication" && field === "timesPerDay") {
       const numeric = Number(trimmed);
@@ -1516,36 +1473,21 @@ export function NotificationsPanel({
     .sort((a, b) => a.diffMs - b.diffMs);
 
   const nowDate = nowEpoch > 0 ? new Date(nowEpoch) : new Date();
-  const todayDateKey = toLocalDateKey(nowDate);
   const selfMealMedicationReminders = medications
     .flatMap<AccountMedicationReminderNotification>((medication) => {
-      const frequency =
-        typeof medication?.frequency === "string" ? medication.frequency.trim() : "";
-      if (frequency !== "with_meals" && frequency !== "before_bed") return [];
-      const slots = MEDICATION_REMINDER_SLOTS[frequency];
+      const slots = getDueMedicationReminderSlots(medication, nowDate, MEAL_REMINDER_WINDOW_MS);
       if (!slots || slots.length === 0) return [];
       const medicationId =
         typeof medication.id === "string" && medication.id.trim() ? medication.id.trim() : "";
       const medicationName =
         typeof medication.name === "string" && medication.name.trim() ? medication.name.trim() : "";
       if (!medicationId || !medicationName) return [];
-      if (!isMedicationActiveOnDate(medication, todayDateKey)) return [];
-
-      const takenDoseCount = getTakenDoseCountForDate(medication, nowDate);
       const ownerProfileId = profileId?.trim() || "account";
-      return slots.flatMap((slot, slotIndex) => {
-        if (takenDoseCount > slotIndex) return [];
-        const slotTime = new Date(
-          nowDate.getFullYear(),
-          nowDate.getMonth(),
-          nowDate.getDate(),
-          slot.hour,
-          slot.minute,
-          0,
-          0
-        );
-        const slotWindowEnd = new Date(slotTime.getTime() + MEAL_REMINDER_WINDOW_MS);
-        if (nowDate < slotTime || nowDate > slotWindowEnd) return [];
+      const todayDateKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(
+        2,
+        "0"
+      )}-${String(nowDate.getDate()).padStart(2, "0")}`;
+      return slots.flatMap((slot) => {
         const notificationId = selfMedicationReminderNotificationId(
           ownerProfileId,
           medicationId,
@@ -1561,10 +1503,10 @@ export function NotificationsPanel({
             medicationName,
             dosage:
               typeof medication.dosage === "string" && medication.dosage.trim()
-                ? medication.dosage.trim()
+                ? formatMedicationDosage(medication.dosage)
                 : "",
             slotContext: slot.context,
-            slotTime,
+            slotTime: slot.slotTime,
           },
         ];
       });

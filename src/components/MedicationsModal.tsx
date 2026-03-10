@@ -2,46 +2,43 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import {
+  MEDICATION_MEAL_OPTIONS,
+  countMedicationMealTiming,
+  deriveMedicationMealTiming,
+  formatMedicationDosage,
+  formatMedicationFrequencyLabel,
+  formatMedicationMealTimingSummary,
+  getMedicationDoseStatesForDate,
+  getDueMedicationReminderSlots,
+  normalizeMedicationDosage,
+  resolveMedicationTimesPerDay,
+  type MedicationLog as SharedMedicationLog,
+  type MedicationMealKey,
+  type MedicationReminderSlot,
+  type MedicationRecord as SharedMedication,
+} from "@/lib/medications";
 
-export type MedicationLog = {
-  medicationId: string;
-  timestamp: string;
-  taken: boolean;
-};
-
-export type Medication = {
-  id: string;
-  name: string;
-  dosage: string;
-  purpose: string;
-  frequency: string;
-  timesPerDay?: number;
-  mealTiming?: {
-    breakfast?: "before" | "after";
-    lunch?: "before" | "after";
-    dinner?: "before" | "after";
-  };
-  startDate?: string;
-  endDate?: string;
-  logs?: MedicationLog[];
-};
+export type MedicationLog = SharedMedicationLog;
+export type Medication = SharedMedication & { id: string };
 
 type Props = {
   data: Medication[];
   onAdd: (medication: Medication) => Promise<void> | void;
   onUpdate: (medication: Medication) => Promise<void> | void;
   onDelete: (id: string) => Promise<void> | void;
-  onLogDose?: (medicationId: string, taken: boolean) => Promise<void> | void;
+  onLogDose?: (
+    medicationId: string,
+    taken: boolean,
+    slotKey?: MedicationReminderSlot["key"]
+  ) => Promise<void> | void;
 };
 
 export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [showReminders, setShowReminders] = useState(false);
-
-  // New state: which list to show
-  const [activeTab, setActiveTab] = useState<"current" | "completed">("current");
+  const [showListView, setShowListView] = useState(false);
 
   const [name, setName] = useState("");
   const [dosage, setDosage] = useState("");
@@ -49,12 +46,7 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
   const [mealTiming, setMealTiming] = useState<Medication["mealTiming"]>({});
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-
-  const mealOptions: Array<{ key: "breakfast" | "lunch" | "dinner"; label: string }> = [
-    { key: "breakfast", label: "Breakfast" },
-    { key: "lunch", label: "Lunch" },
-    { key: "dinner", label: "Dinner" },
-  ];
+  const reminderWindowMs = 90 * 60 * 1000;
 
   // Auto-set start date to today for new medications
   useEffect(() => {
@@ -63,36 +55,6 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
       setStartDate(today);
     }
   }, [showForm, editingId, startDate]);
-
-  // Reminder check – stop reminding after end date
-  useEffect(() => {
-    const checkReminders = () => {
-      const now = new Date();
-      const upcomingMeds = data.filter((med) => {
-        if (!med.timesPerDay || !med.startDate || med.timesPerDay === 0) return false;
-
-        if (med.endDate) {
-          const end = new Date(med.endDate);
-          const endDateOnly = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-          const nowDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          if (nowDateOnly > endDateOnly) return false;
-        }
-
-        const medLogs = med.logs || [];
-        const todayLogs = medLogs.filter(
-          (log) => new Date(log.timestamp).toDateString() === now.toDateString() && log.taken
-        );
-
-        return todayLogs.length < (med.timesPerDay || 1);
-      });
-
-      setShowReminders(upcomingMeds.length > 0);
-    };
-
-    checkReminders();
-    const interval = setInterval(checkReminders, 60000);
-    return () => clearInterval(interval);
-  }, [data]);
 
   const resetForm = () => {
     setName("");
@@ -106,9 +68,9 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
 
   const handleEdit = (medication: Medication) => {
     setName(medication.name);
-    setDosage(medication.dosage);
-    setPurpose(medication.purpose);
-    setMealTiming(medication.mealTiming || {});
+    setDosage(formatMedicationDosage(medication.dosage));
+    setPurpose(medication.purpose || "");
+    setMealTiming(deriveMedicationMealTiming(medication.mealTiming, medication.frequency));
 
     setStartDate(medication.startDate || "");
     setEndDate(medication.endDate || "");
@@ -116,17 +78,7 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
     setShowForm(true);
   };
 
-  const getMealTimingSummary = (timing: Medication["mealTiming"]) => {
-    if (!timing) return "";
-
-    const parts = mealOptions
-      .filter((meal) => timing[meal.key])
-      .map((meal) => `${meal.label} ${timing[meal.key]}`);
-
-    return parts.join(", ");
-  };
-
-  const handleMealSelection = (meal: "breakfast" | "lunch" | "dinner", checked: boolean) => {
+  const handleMealSelection = (meal: MedicationMealKey, checked: boolean) => {
     setMealTiming((prev) => {
       if (!checked) {
         const updated = { ...prev };
@@ -138,14 +90,14 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
   };
 
   const handleMealTimingChange = (
-    meal: "breakfast" | "lunch" | "dinner",
+    meal: MedicationMealKey,
     value: "before" | "after"
   ) => {
     setMealTiming((prev) => ({ ...prev, [meal]: value }));
   };
 
   const handleSave = async () => {
-    const selectedMealCount = Object.keys(mealTiming || {}).length;
+    const selectedMealCount = countMedicationMealTiming(mealTiming);
 
     if (!name.trim() || !dosage.trim() || selectedMealCount === 0) {
       alert("Please fill Medication Name, Dosage, and select at least one meal timing.");
@@ -154,16 +106,16 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
 
     setSaving(true);
     try {
-      const frequencySummary = getMealTimingSummary(mealTiming);
+      const frequencySummary = formatMedicationMealTimingSummary(mealTiming);
 
       const medicationData: Medication = {
         id: editingId || crypto.randomUUID(),
         name: name.trim(),
-        dosage: dosage.trim(),
+        dosage: normalizeMedicationDosage(dosage),
         purpose: purpose.trim(),
         frequency: frequencySummary,
-        timesPerDay: selectedMealCount,
-        mealTiming,
+        timesPerDay: resolveMedicationTimesPerDay(frequencySummary, selectedMealCount, mealTiming),
+        mealTiming: selectedMealCount > 0 ? mealTiming : undefined,
         startDate: startDate || new Date().toISOString().split("T")[0],
         endDate: endDate || undefined,
         logs: editingId ? data.find((m) => m.id === editingId)?.logs || [] : [],
@@ -181,13 +133,28 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
     }
   };
 
-  const handleLogDose = async (medicationId: string, taken: boolean) => {
+  const handleLogDose = async (
+    medicationId: string,
+    taken: boolean,
+    slotKey?: MedicationReminderSlot["key"]
+  ) => {
     if (onLogDose) {
-      await onLogDose(medicationId, taken);
+      await onLogDose(medicationId, taken, slotKey);
     }
   };
 
   const getTodayProgress = (medication: Medication) => {
+    const doseStates = getMedicationDoseStatesForDate(medication, new Date(), reminderWindowMs);
+    if (doseStates.length > 0) {
+      const taken = doseStates.filter((dose) => dose.status === "taken").length;
+      const target = doseStates.length;
+      return {
+        taken,
+        target,
+        percentage: target > 0 ? Math.min((taken / target) * 100, 100) : 100,
+      };
+    }
+
     if (medication.timesPerDay === 0) {
       return { taken: 0, target: 0, percentage: 100 };
     }
@@ -214,6 +181,61 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
     return diffDays;
   };
 
+  const getDoseStatusClasses = (status: "taken" | "due" | "upcoming" | "missed") => {
+    switch (status) {
+      case "taken":
+        return "bg-emerald-100 text-emerald-700 border-emerald-200";
+      case "due":
+        return "bg-amber-100 text-amber-700 border-amber-200";
+      case "missed":
+        return "bg-rose-100 text-rose-700 border-rose-200";
+      default:
+        return "bg-slate-100 text-slate-600 border-slate-200";
+    }
+  };
+
+  const getDoseStatusLabel = (status: "taken" | "due" | "upcoming" | "missed") => {
+    switch (status) {
+      case "taken":
+        return "Taken";
+      case "due":
+        return "Due now";
+      case "missed":
+        return "Missed";
+      default:
+        return "Upcoming";
+    }
+  };
+
+  const formatTableDate = (value?: string) => {
+    if (!value) return "Not set";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const getEndDateDetail = (medication: Medication) => {
+    if (!medication.endDate) return "";
+    const daysRemaining = getDaysRemaining(medication);
+    if (daysRemaining === null) return "";
+    if (daysRemaining > 0) {
+      return `Ends in ${daysRemaining} day${daysRemaining === 1 ? "" : "s"}`;
+    }
+    if (daysRemaining === 0) return "Ends today";
+    return `Ended ${formatTableDate(medication.endDate)}`;
+  };
+
+  const getMealColumnLabel = (medication: Medication, meal: MedicationMealKey) => {
+    const mealTiming = deriveMedicationMealTiming(medication.mealTiming, medication.frequency);
+    const timing = mealTiming[meal];
+    if (!timing) return "-";
+    return timing === "before" ? "Before" : "After";
+  };
+
   // Split medications
   const now = new Date();
 
@@ -223,45 +245,48 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
     return now <= end;
   });
 
-  const pastMedications = data.filter((med) => {
-    if (!med.endDate) return false;
-    const end = new Date(med.endDate);
-    return now > end;
-  });
+  const dueMedicationCount = activeMedications.filter(
+    (medication) => getDueMedicationReminderSlots(medication, now, reminderWindowMs).length > 0
+  ).length;
+  const totalScheduledDoses = activeMedications.reduce(
+    (total, medication) =>
+      total +
+      Math.max(
+        resolveMedicationTimesPerDay(
+          medication.frequency,
+          medication.timesPerDay,
+          medication.mealTiming
+        ),
+        0
+      ),
+    0
+  );
 
   return (
     <>
       <div className="mb-6 flex flex-col gap-3 pr-12 sm:flex-row sm:items-start sm:justify-between">
         <h2 className="text-2xl font-bold">Medications</h2>
 
-        <button
-          onClick={() => {
-            setShowForm((v) => !v);
-            if (!showForm) resetForm();
-          }}
-          className="self-start rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 sm:self-auto"
-        >
-          {showForm ? "Close Form" : "+ Add Medication"}
-        </button>
-      </div>
-
-      {/* Reminders */}
-      {showReminders && (
-        <div className="mb-6 p-5 rounded-2xl bg-amber-50 border border-amber-200">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold text-amber-900">🔔 Medication Reminders</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          {!showForm && (
             <button
-              onClick={() => setShowReminders(false)}
-              className="text-amber-700 hover:text-amber-900 text-sm font-medium"
+              onClick={() => setShowListView(true)}
+              className="self-start rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 sm:self-auto"
             >
-              Dismiss
+              View List
             </button>
-          </div>
-          <p className="text-sm text-amber-800">
-            You have medications due today. Check your progress below.
-          </p>
+          )}
+          <button
+            onClick={() => {
+              setShowForm((v) => !v);
+              if (!showForm) resetForm();
+            }}
+            className="self-start rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 sm:self-auto"
+          >
+            {showForm ? "Close Form" : "+ Add Medication"}
+          </button>
         </div>
-      )}
+      </div>
 
       {/* Form */}
       {showForm && (
@@ -283,7 +308,7 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
             <div className="md:col-span-2 rounded-xl border border-slate-200 bg-white p-4">
               <label className="block text-sm font-medium text-slate-700 mb-3">Meal Timing</label>
               <div className="space-y-3">
-                {mealOptions.map((meal) => {
+                {MEDICATION_MEAL_OPTIONS.map((meal) => {
                   const isSelected = Boolean(mealTiming?.[meal.key]);
                   return (
                     <div key={meal.key} className="flex items-center justify-between gap-4">
@@ -332,147 +357,269 @@ export function MedicationsModal({ data, onAdd, onUpdate, onDelete, onLogDose }:
         </div>
       )}
 
-      {/* Tab / Toggle buttons */}
-      {!showForm && (
-        <div className="flex border-b border-slate-200 mb-6">
-          <button
-            onClick={() => setActiveTab("current")}
-            className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${
-              activeTab === "current"
-                ? "border-b-2 border-teal-600 text-teal-700"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Current Medications
-            {activeMedications.length > 0 && (
-              <span className="ml-2 text-sm bg-slate-100 px-2 py-0.5 rounded-full">
-                {activeMedications.length}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab("completed")}
-            className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${
-              activeTab === "completed"
-                ? "border-b-2 border-teal-600 text-teal-700"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Completed Courses
-            {pastMedications.length > 0 && (
-              <span className="ml-2 text-sm bg-slate-100 px-2 py-0.5 rounded-full">
-                {pastMedications.length}
-              </span>
-            )}
-          </button>
-        </div>
-      )}
-
       {/* Content area – only one shown at a time */}
       {!showForm && (
         <div>
-          {activeTab === "current" ? (
-            <>
-              {activeMedications.length === 0 ? (
-                <div className="text-center py-12 text-slate-500">
-                  No active medications at the moment
+          <div className="mb-5 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Current medications</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Review your active prescriptions and track each scheduled dose for today.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-sm">
+                <div className="rounded-full bg-slate-100 px-3 py-1.5 font-medium text-slate-700">
+                  {activeMedications.length} active
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  {activeMedications.map((m) => {
-                    const progress = getTodayProgress(m);
-                    const daysRemaining = getDaysRemaining(m);
-
-                    return (
-                      <div key={m.id} className="p-5 rounded-2xl bg-white border border-slate-200 hover:border-teal-300 transition shadow-sm">
-                        <div className="flex items-start justify-between gap-4 mb-4">
-                          <div className="flex-1">
-                            <p className="font-semibold text-lg">{m.name}</p>
-                            <p className="text-sm text-slate-600 mt-0.5">
-                              {m.dosage} • {m.frequency}
-                              {m.purpose && <span className="ml-1.5">• {m.purpose}</span>}
-                            </p>
-                            {daysRemaining !== null && (
-                              <p className="text-xs text-slate-500 mt-1">
-                                {daysRemaining > 0
-                                  ? `${daysRemaining} days remaining`
-                                  : daysRemaining === 0
-                                  ? "Ends today"
-                                  : "Course completed"}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex gap-2">
-                            <button onClick={() => handleEdit(m)} className="px-3 py-1.5 rounded-lg border border-teal-200 text-teal-700 text-sm font-medium hover:bg-teal-50">Edit</button>
-                            <button onClick={() => onDelete(m.id)} className="px-3 py-1.5 rounded-lg border border-red-200 text-red-700 text-sm font-medium hover:bg-red-50">Delete</button>
-                          </div>
-                        </div>
-
-                        {m.timesPerDay !== 0 && (
-                          <div className="space-y-2">
-                            <div className="flex justify-between text-sm">
-                              <span className="text-slate-600">Today&apos;s progress</span>
-                              <span className="font-medium">{progress.taken} / {progress.target}</span>
-                            </div>
-                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                              <div className={`h-full ${progress.percentage === 100 ? "bg-green-500" : "bg-teal-500"} transition-all duration-500`} style={{ width: `${progress.percentage}%` }} />
-                            </div>
-
-                            {progress.taken < progress.target && onLogDose && (
-                              <button onClick={() => handleLogDose(m.id, true)} className="w-full mt-3 py-2 rounded-xl bg-teal-600 text-white text-sm font-medium hover:bg-teal-700 transition">
-                                ✓ Mark dose taken
-                              </button>
-                            )}
-
-                            {progress.percentage === 100 && (
-                              <div className="flex items-center justify-center gap-2 text-green-600 text-sm font-medium mt-2">
-                                <span>✓</span> All doses completed today
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="rounded-full bg-amber-50 px-3 py-1.5 font-medium text-amber-700">
+                  {dueMedicationCount} due now
                 </div>
-              )}
-            </>
+                <div className="rounded-full bg-slate-100 px-3 py-1.5 font-medium text-slate-700">
+                  {totalScheduledDoses} daily doses
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {activeMedications.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-14 text-center text-slate-500">
+              No active medications at the moment
+            </div>
           ) : (
-            <>
-              {pastMedications.length === 0 ? (
-                <div className="text-center py-12 text-slate-500">
-                  No completed courses yet
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {pastMedications.map((m) => (
-                    <div key={m.id} className="p-5 rounded-2xl bg-slate-50 border border-slate-200 hover:border-slate-300 transition opacity-90 hover:opacity-100">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <p className="font-semibold text-lg text-slate-700">{m.name}</p>
-                          <p className="text-sm text-slate-600 mt-0.5">
-                            {m.dosage} • {m.frequency}
-                            {m.purpose && <span className="ml-1.5">• {m.purpose}</span>}
-                          </p>
-                          <p className="text-xs text-slate-500 mt-1">
-                            Ended on {new Date(m.endDate!).toLocaleDateString("en-IN")}
-                          </p>
+            <div className="space-y-4">
+              {activeMedications.map((m) => {
+                const progress = getTodayProgress(m);
+                const doseStates = getMedicationDoseStatesForDate(m, now, reminderWindowMs);
+                const hasStructuredDoseStates = doseStates.length > 0;
+                const remainingStructuredDoses = doseStates.filter((dose) => dose.status !== "taken");
+
+                return (
+                  <div
+                    key={m.id}
+                    className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-base font-semibold text-slate-900">{m.name}</p>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                            {formatMedicationDosage(m.dosage)}
+                          </span>
                         </div>
-                        <div className="flex gap-2 shrink-0">
-                          <button onClick={() => handleEdit(m)} className="px-3 py-1.5 rounded-lg border border-teal-200 text-teal-700 text-sm font-medium hover:bg-teal-50">View</button>
-                          <button onClick={() => onDelete(m.id)} className="px-3 py-1.5 rounded-lg border border-red-200 text-red-700 text-sm font-medium hover:bg-red-50">Delete</button>
+                        <p className="mt-1.5 text-sm text-slate-600">
+                          {formatMedicationFrequencyLabel(m.frequency, m.mealTiming)}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                          {m.purpose ? (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">
+                              {m.purpose}
+                            </span>
+                          ) : null}
                         </div>
                       </div>
-                      <div className="mt-4 text-sm text-slate-500 italic">
-                        Course completed • No active reminders
+                      <div className="flex shrink-0 gap-1.5">
+                        <button
+                          onClick={() => handleEdit(m)}
+                          className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => onDelete(m.id)}
+                          className="rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </>
+
+                    {m.timesPerDay !== 0 && (
+                      <div className="mt-3 border-t border-slate-100 pt-3">
+                        <div className="space-y-2.5">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-600">Today&apos;s progress</span>
+                            <span className="text-xs font-medium text-slate-700">
+                              {progress.taken} / {progress.target}
+                            </span>
+                          </div>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={`h-full ${
+                                progress.percentage === 100 ? "bg-emerald-500" : "bg-teal-500"
+                              } transition-all duration-500`}
+                              style={{ width: `${progress.percentage}%` }}
+                            />
+                          </div>
+
+                          {hasStructuredDoseStates ? (
+                            <div className="mt-3 space-y-1.5">
+                              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Today&apos;s doses
+                              </div>
+                              {doseStates.map((dose) => (
+                                <div
+                                  key={`${m.id}-${dose.key}`}
+                                  className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2.5"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="text-sm font-medium text-slate-800">{dose.label}</div>
+                                    <div className="text-xs text-slate-500">
+                                      {dose.context} at{" "}
+                                      {dose.slotTime.toLocaleTimeString([], {
+                                        hour: "numeric",
+                                        minute: "2-digit",
+                                      })}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getDoseStatusClasses(
+                                        dose.status
+                                      )}`}
+                                    >
+                                      {getDoseStatusLabel(dose.status)}
+                                    </span>
+                                    {dose.status !== "taken" && onLogDose ? (
+                                      <button
+                                        onClick={() => handleLogDose(m.id, true, dose.key)}
+                                        className="rounded-md bg-teal-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-teal-700"
+                                      >
+                                        Mark taken
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ))}
+                              {remainingStructuredDoses.length === 0 ? (
+                                <div className="pt-1 text-sm font-medium text-emerald-600">
+                                  All doses completed today
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : progress.taken < progress.target && onLogDose ? (
+                            <button
+                              onClick={() => handleLogDose(m.id, true)}
+                              className="mt-3 w-full rounded-lg bg-teal-600 py-2 text-sm font-medium text-white transition hover:bg-teal-700"
+                            >
+                              ✓ Mark dose taken
+                            </button>
+                          ) : null}
+
+                          {progress.percentage === 100 && !hasStructuredDoseStates && (
+                            <div className="pt-1 text-sm font-medium text-emerald-600">
+                              All doses completed today
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
+        </div>
+      )}
+
+      {showListView && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/35 p-4"
+          onClick={() => setShowListView(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Medication list view"
+        >
+          <div
+            className="flex w-full max-w-[920px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="border-b border-slate-200 px-5 py-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Current medication list</h3>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+                    <span>{activeMedications.length} active</span>
+                    <span className="text-slate-300">•</span>
+                    <span>{dueMedicationCount} due now</span>
+                    <span className="text-slate-300">•</span>
+                    <span>{totalScheduledDoses} daily doses</span>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={() => setShowListView(false)}
+                    className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {activeMedications.length === 0 ? (
+              <div className="px-6 py-16 text-center text-slate-500">
+                No active medications to show in the list.
+              </div>
+            ) : (
+              <div className="max-h-[70vh] overflow-auto">
+                <div className="overflow-x-auto">
+                  <table className="w-full table-fixed divide-y divide-slate-200 text-sm">
+                    <colgroup>
+                      <col className="w-[34%]" />
+                      <col className="w-[13%]" />
+                      <col className="w-[13%]" />
+                      <col className="w-[13%]" />
+                      <col className="w-[27%]" />
+                    </colgroup>
+                    <thead className="sticky top-0 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      <tr>
+                        <th className="px-5 py-3">Medication</th>
+                        <th className="px-5 py-3">Breakfast</th>
+                        <th className="px-5 py-3">Lunch</th>
+                        <th className="px-5 py-3">Dinner</th>
+                        <th className="px-5 py-3">Started</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {activeMedications.map((medication) => {
+                        return (
+                          <tr key={`list-${medication.id}`} className="align-top">
+                            <td className="px-5 py-3.5">
+                              <div className="font-semibold text-slate-900">{medication.name}</div>
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                <span className="rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-600">
+                                  {formatMedicationDosage(medication.dosage)}
+                                </span>
+                                {medication.purpose?.trim() ? <span>{medication.purpose.trim()}</span> : null}
+                              </div>
+                            </td>
+                            <td className="px-5 py-3.5 text-sm text-slate-700">
+                              {getMealColumnLabel(medication, "breakfast")}
+                            </td>
+                            <td className="px-5 py-3.5 text-sm text-slate-700">
+                              {getMealColumnLabel(medication, "lunch")}
+                            </td>
+                            <td className="px-5 py-3.5 text-sm text-slate-700">
+                              {getMealColumnLabel(medication, "dinner")}
+                            </td>
+                            <td className="px-5 py-3.5">
+                              <div className="text-slate-800">{formatTableDate(medication.startDate)}</div>
+                              {getEndDateDetail(medication) ? (
+                                <div className="mt-1 text-sm text-slate-500">
+                                  {getEndDateDetail(medication)}
+                                </div>
+                              ) : null}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </>

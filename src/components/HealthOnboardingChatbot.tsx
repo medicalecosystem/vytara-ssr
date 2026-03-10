@@ -5,23 +5,25 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/createClient";
 import { useAppProfile } from "@/components/AppProfileProvider";
 import { syncRememberedAccountName } from "@/lib/rememberedAccount";
+import {
+  MEDICATION_MEAL_OPTIONS,
+  countMedicationMealTiming,
+  deriveMedicationMealTiming,
+  formatMedicationDosage,
+  formatMedicationFrequencyLabel,
+  formatMedicationMealTimingSummary,
+  normalizeMedicationDosage,
+  resolveMedicationFrequency,
+  resolveMedicationTimesPerDay,
+  type MedicationLog as SharedMedicationLog,
+  type MedicationMealKey,
+  type MedicationRecord as SharedMedication,
+} from "@/lib/medications";
 
-interface MedicationLogEntry {
-  medicationId: string;
-  timestamp: string;
-  taken: boolean;
-}
+interface MedicationLogEntry extends SharedMedicationLog {}
 
-interface MedicationEntry {
-  id?: string;
-  name: string;
-  dosage: string;
+interface MedicationEntry extends SharedMedication {
   purpose: string;
-  frequency: string;
-  timesPerDay?: number;
-  startDate?: string;
-  endDate?: string;
-  logs?: MedicationLogEntry[];
 }
 
 interface PastSurgeryEntry {
@@ -95,29 +97,14 @@ const QUESTIONS: QuestionConfig[] = [
   { key: "longTermTreatments", question: "Long-term treatments (if any)?", inputType: "multi-text", placeholder: "e.g., Thyroid medication" },
 ];
 
-const MEDICATION_FREQUENCY_OPTIONS = [
-  { label: "Once daily", value: "once_daily", times: 1 },
-  { label: "Twice daily", value: "twice_daily", times: 2 },
-  { label: "Three times daily", value: "three_times_daily", times: 3 },
-  { label: "Four times daily", value: "four_times_daily", times: 4 },
-  { label: "Every 4 hours", value: "every_4_hours", times: 6 },
-  { label: "Every 6 hours", value: "every_6_hours", times: 4 },
-  { label: "Every 8 hours", value: "every_8_hours", times: 3 },
-  { label: "Every 12 hours", value: "every_12_hours", times: 2 },
-  { label: "As needed", value: "as_needed", times: 0 },
-  { label: "With meals", value: "with_meals", times: 3 },
-  { label: "Before bed", value: "before_bed", times: 1 },
-];
-
-const getTimesPerDayForFrequency = (frequency: string) =>
-  MEDICATION_FREQUENCY_OPTIONS.find((option) => option.value === frequency)?.times ?? 1;
-
 const createEmptyMedicationEntry = (): MedicationEntry => ({
   name: "",
   dosage: "",
   purpose: "",
-  frequency: "once_daily",
-  timesPerDay: 1,
+  frequency: "",
+  mealTiming: undefined,
+  timesPerDay: 0,
+  startDate: new Date().toISOString().split("T")[0],
   logs: [],
 });
 
@@ -426,32 +413,37 @@ export default function HealthOnboardingChatbot() {
     advanceStep(cleaned.length ? cleaned.join(", ") : "None");
   };
 
-  const getFrequencyLabel = (frequencyValue: string) =>
-    MEDICATION_FREQUENCY_OPTIONS.find((option) => option.value === frequencyValue)?.label ||
-    frequencyValue;
+  const getFrequencyLabel = (frequencyValue: string, mealTiming?: MedicationEntry["mealTiming"]) =>
+    formatMedicationFrequencyLabel(frequencyValue, mealTiming);
 
   const formatMedicationSummary = (items: MedicationEntry[]) =>
     items
-      .map((item) => [item.name, item.dosage, getFrequencyLabel(item.frequency)].filter(Boolean).join(" - "))
+      .map((item) =>
+        [item.name, formatMedicationDosage(item.dosage), getFrequencyLabel(item.frequency, item.mealTiming)]
+          .filter(Boolean)
+          .join(" - ")
+      )
       .join(", ");
 
   const handleMedicationNext = () => {
     const todayDate = new Date().toISOString().split("T")[0];
     const normalized = profile.currentMedication
-      .map((item) => ({
-        id: item.id?.trim() || crypto.randomUUID(),
-        name: (item.name || "").trim(),
-        dosage: (item.dosage || "").trim(),
-        purpose: (item.purpose || "").trim(),
-        frequency: (item.frequency || "").trim(),
-        timesPerDay:
-          typeof item.timesPerDay === "number" && item.timesPerDay >= 0
-            ? item.timesPerDay
-            : getTimesPerDayForFrequency((item.frequency || "").trim()),
-        startDate: item.startDate || todayDate,
-        endDate: item.endDate || undefined,
-        logs: Array.isArray(item.logs) ? item.logs : [],
-      }))
+      .map((item) => {
+        const mealTiming = deriveMedicationMealTiming(item.mealTiming, item.frequency);
+        const frequency = resolveMedicationFrequency(item.frequency, mealTiming);
+        return {
+          id: item.id?.trim() || crypto.randomUUID(),
+          name: (item.name || "").trim(),
+          dosage: normalizeMedicationDosage(item.dosage),
+          purpose: (item.purpose || "").trim(),
+          frequency,
+          mealTiming: Object.keys(mealTiming).length > 0 ? mealTiming : undefined,
+          timesPerDay: resolveMedicationTimesPerDay(frequency, item.timesPerDay, mealTiming),
+          startDate: item.startDate || todayDate,
+          endDate: item.endDate || undefined,
+          logs: Array.isArray(item.logs) ? item.logs : [],
+        };
+      })
       .filter((item) => item.name || item.dosage || item.frequency || item.purpose);
 
     if (!normalized.length) {
@@ -461,15 +453,75 @@ export default function HealthOnboardingChatbot() {
     }
 
     const hasIncomplete = normalized.some(
-      (item) => !item.name || !item.dosage || !item.frequency
+      (item) =>
+        !item.name ||
+        !item.dosage ||
+        countMedicationMealTiming(item.mealTiming, item.frequency) === 0
     );
     if (hasIncomplete) {
-      addMessage("bot", "⚠️ Please enter name, dosage, and frequency for each medication.");
+      addMessage(
+        "bot",
+        "⚠️ Please enter medication name, dosage, and at least one meal timing for each medication."
+      );
       return;
     }
 
     setProfile((prev) => ({ ...prev, currentMedication: normalized }));
     advanceStep(formatMedicationSummary(normalized));
+  };
+
+  const updateCurrentMedicationEntry = (
+    index: number,
+    updater: (item: MedicationEntry) => MedicationEntry
+  ) => {
+    setProfile((prev) => ({
+      ...prev,
+      currentMedication: prev.currentMedication.map((item, itemIndex) =>
+        itemIndex === index ? updater(item) : item
+      ),
+    }));
+  };
+
+  const handleMedicationMealSelection = (
+    index: number,
+    meal: MedicationMealKey,
+    checked: boolean
+  ) => {
+    updateCurrentMedicationEntry(index, (item) => {
+      const nextMealTiming = {
+        ...deriveMedicationMealTiming(item.mealTiming, item.frequency),
+      };
+      if (!checked) {
+        delete nextMealTiming[meal];
+      } else {
+        nextMealTiming[meal] = nextMealTiming[meal] || "before";
+      }
+      return {
+        ...item,
+        mealTiming: Object.keys(nextMealTiming).length > 0 ? nextMealTiming : undefined,
+        frequency: formatMedicationMealTimingSummary(nextMealTiming),
+        timesPerDay: countMedicationMealTiming(nextMealTiming),
+      };
+    });
+  };
+
+  const handleMedicationMealTimingChange = (
+    index: number,
+    meal: MedicationMealKey,
+    value: "before" | "after"
+  ) => {
+    updateCurrentMedicationEntry(index, (item) => {
+      const nextMealTiming = {
+        ...deriveMedicationMealTiming(item.mealTiming, item.frequency),
+        [meal]: value,
+      };
+      return {
+        ...item,
+        mealTiming: nextMealTiming,
+        frequency: formatMedicationMealTimingSummary(nextMealTiming),
+        timesPerDay: countMedicationMealTiming(nextMealTiming),
+      };
+    });
   };
 
   const handleSurgeryNext = () => {
@@ -728,20 +780,22 @@ export default function HealthOnboardingChatbot() {
         allergies: sanitizeTextList(profile.allergies),
         ongoingTreatments: sanitizeTextList(profile.ongoingTreatments),
         currentMedication: profile.currentMedication
-          .map((item) => ({
-            id: item.id?.trim() || crypto.randomUUID(),
-            name: (item.name || "").trim(),
-            dosage: (item.dosage || "").trim(),
-            purpose: (item.purpose || "").trim(),
-            frequency: (item.frequency || "").trim(),
-            timesPerDay:
-              typeof item.timesPerDay === "number" && item.timesPerDay >= 0
-                ? item.timesPerDay
-                : getTimesPerDayForFrequency((item.frequency || "").trim()),
-            startDate: item.startDate || new Date().toISOString().split("T")[0],
-            endDate: item.endDate || undefined,
-            logs: Array.isArray(item.logs) ? item.logs : [],
-          }))
+          .map((item) => {
+            const mealTiming = deriveMedicationMealTiming(item.mealTiming, item.frequency);
+            const frequency = resolveMedicationFrequency(item.frequency, mealTiming);
+            return {
+              id: item.id?.trim() || crypto.randomUUID(),
+              name: (item.name || "").trim(),
+              dosage: normalizeMedicationDosage(item.dosage),
+              purpose: (item.purpose || "").trim(),
+              frequency,
+              mealTiming: Object.keys(mealTiming).length > 0 ? mealTiming : undefined,
+              timesPerDay: resolveMedicationTimesPerDay(frequency, item.timesPerDay, mealTiming),
+              startDate: item.startDate || new Date().toISOString().split("T")[0],
+              endDate: item.endDate || undefined,
+              logs: Array.isArray(item.logs) ? item.logs : [],
+            };
+          })
           .filter((item) => item.name && item.dosage && item.frequency),
         previousDiagnosedConditions: sanitizeTextList(profile.previousDiagnosedConditions),
         pastSurgeries: profile.pastSurgeries.filter((item) => item.name && item.month && item.year),
@@ -1076,108 +1130,166 @@ export default function HealthOnboardingChatbot() {
               {currentQ.inputType === "multi-medication" && (
                 <>
                   <div style={styles.helperText}>
-                    Name, dosage, and frequency are required to match your homepage medication format.
+                    Medication name, dosage, and at least one meal timing are required.
                   </div>
                   {profile.currentMedication.map((item, index) => (
                     <div key={`med-${index}`} style={multiGroupStyle}>
-                      <div style={styles.multiLabel}>Medication {index + 1}</div>
-                      <div style={inputRowStyle}>
-                        <input
-                          style={inputStyle}
-                          value={item.name}
-                          onChange={(e) => {
-                            const next = [...profile.currentMedication];
-                            next[index] = { ...next[index], name: e.target.value };
-                            setProfile((prev) => ({ ...prev, currentMedication: next }));
-                          }}
-                          placeholder="Medication name"
-                        />
-                        {index > 0 && (
-                          <button
-                            type="button"
-                            style={removeBtnStyle}
-                            onClick={() => {
-                              const next = [...profile.currentMedication];
-                              next.splice(index, 1);
-                              setProfile((prev) => ({ ...prev, currentMedication: next }));
-                            }}
-                          >
-                            X
-                          </button>
-                        )}
-                      </div>
-                      <div style={inputRowStyle}>
-                        <input
-                          style={inputStyle}
-                          value={item.dosage}
-                          onChange={(e) => {
-                            const next = [...profile.currentMedication];
-                            next[index] = { ...next[index], dosage: e.target.value };
-                            setProfile((prev) => ({ ...prev, currentMedication: next }));
-                          }}
-                          placeholder="Dosage"
-                        />
-                      </div>
-                      <div style={inputRowStyle}>
-                        <input
-                          style={inputStyle}
-                          value={item.purpose || ""}
-                          onChange={(e) => {
-                            const next = [...profile.currentMedication];
-                            next[index] = { ...next[index], purpose: e.target.value };
-                            setProfile((prev) => ({ ...prev, currentMedication: next }));
-                          }}
-                          placeholder="Purpose (optional)"
-                        />
-                      </div>
-                      <div style={inputRowStyle}>
-                        <select
-                          style={inputStyle}
-                          value={item.frequency || "once_daily"}
-                          onWheel={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            const next = [...profile.currentMedication];
-                            const selectedFrequency = e.target.value;
-                            next[index] = {
-                              ...next[index],
-                              frequency: selectedFrequency,
-                              timesPerDay: getTimesPerDayForFrequency(selectedFrequency),
-                            };
-                            setProfile((prev) => ({ ...prev, currentMedication: next }));
-                          }}
-                        >
-                          {MEDICATION_FREQUENCY_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div style={inputRowStyle}>
-                        <input
-                          style={inputStyle}
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={
-                            item.timesPerDay ??
-                            getTimesPerDayForFrequency(item.frequency || "once_daily")
-                          }
-                          onChange={(e) => {
-                            const next = [...profile.currentMedication];
-                            const parsed = Number(e.target.value);
-                            next[index] = {
-                              ...next[index],
-                              timesPerDay:
-                                Number.isFinite(parsed) && parsed >= 0
-                                  ? parsed
-                                  : getTimesPerDayForFrequency(item.frequency || "once_daily"),
-                            };
-                            setProfile((prev) => ({ ...prev, currentMedication: next }));
-                          }}
-                          placeholder="Times per day"
-                        />
-                      </div>
+                      {(() => {
+                        const derivedMealTiming = deriveMedicationMealTiming(
+                          item.mealTiming,
+                          item.frequency
+                        );
+                        return (
+                          <>
+                            <div style={styles.multiLabel}>Medication {index + 1}</div>
+                            <div style={inputRowStyle}>
+                              <input
+                                style={inputStyle}
+                                value={item.name}
+                                onChange={(e) =>
+                                  updateCurrentMedicationEntry(index, (current) => ({
+                                    ...current,
+                                    name: e.target.value,
+                                  }))
+                                }
+                                placeholder="Medication name"
+                              />
+                              {index > 0 && (
+                                <button
+                                  type="button"
+                                  style={removeBtnStyle}
+                                  onClick={() => {
+                                    const next = [...profile.currentMedication];
+                                    next.splice(index, 1);
+                                    setProfile((prev) => ({ ...prev, currentMedication: next }));
+                                  }}
+                                >
+                                  X
+                                </button>
+                              )}
+                            </div>
+                            <div style={inputRowStyle}>
+                              <input
+                                style={inputStyle}
+                                value={item.dosage}
+                                onChange={(e) =>
+                                  updateCurrentMedicationEntry(index, (current) => ({
+                                    ...current,
+                                    dosage: e.target.value,
+                                  }))
+                                }
+                                placeholder="Dosage"
+                              />
+                            </div>
+                            <div style={inputRowStyle}>
+                              <input
+                                style={inputStyle}
+                                value={item.purpose || ""}
+                                onChange={(e) =>
+                                  updateCurrentMedicationEntry(index, (current) => ({
+                                    ...current,
+                                    purpose: e.target.value,
+                                  }))
+                                }
+                                placeholder="Purpose (optional)"
+                              />
+                            </div>
+                            <div
+                              style={{
+                                border: "1px solid rgba(148, 163, 184, 0.35)",
+                                borderRadius: 18,
+                                padding: 12,
+                                background: "rgba(255,255,255,0.7)",
+                                display: "grid",
+                                gap: 10,
+                              }}
+                            >
+                              <div style={styles.multiLabel}>Meal timing</div>
+                              {MEDICATION_MEAL_OPTIONS.map((meal) => {
+                                const isSelected = Boolean(derivedMealTiming[meal.key]);
+                                return (
+                                  <div
+                                    key={meal.key}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "space-between",
+                                      gap: 12,
+                                      flexWrap: "wrap",
+                                    }}
+                                  >
+                                    <label
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 8,
+                                        color: "#244154",
+                                        fontSize: 14,
+                                        fontWeight: 600,
+                                      }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={(e) =>
+                                          handleMedicationMealSelection(
+                                            index,
+                                            meal.key,
+                                            e.target.checked
+                                          )
+                                        }
+                                      />
+                                      {meal.label}
+                                    </label>
+                                    {isSelected ? (
+                                      <select
+                                        style={inputStyle}
+                                        value={derivedMealTiming[meal.key]}
+                                        onChange={(e) =>
+                                          handleMedicationMealTimingChange(
+                                            index,
+                                            meal.key,
+                                            e.target.value as "before" | "after"
+                                          )
+                                        }
+                                      >
+                                        <option value="before">Before</option>
+                                        <option value="after">After</option>
+                                      </select>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div style={inputRowStyle}>
+                              <input
+                                style={inputStyle}
+                                type="date"
+                                value={item.startDate || ""}
+                                onChange={(e) =>
+                                  updateCurrentMedicationEntry(index, (current) => ({
+                                    ...current,
+                                    startDate: e.target.value,
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div style={inputRowStyle}>
+                              <input
+                                style={inputStyle}
+                                type="date"
+                                value={item.endDate || ""}
+                                onChange={(e) =>
+                                  updateCurrentMedicationEntry(index, (current) => ({
+                                    ...current,
+                                    endDate: e.target.value || undefined,
+                                  }))
+                                }
+                              />
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   ))}
 
@@ -1187,10 +1299,18 @@ export default function HealthOnboardingChatbot() {
                       style={addRowBtnStyle}
                       onClick={() => {
                         const last = profile.currentMedication[profile.currentMedication.length - 1];
-                        if (!last?.name.trim() || !last?.dosage.trim() || !last?.frequency.trim()) {
+                        const lastMealTimingCount = countMedicationMealTiming(
+                          last?.mealTiming,
+                          last?.frequency
+                        );
+                        if (
+                          !last?.name.trim() ||
+                          !last?.dosage.trim() ||
+                          lastMealTimingCount === 0
+                        ) {
                           addMessage(
                             "bot",
-                            "⚠️ Please complete name, dosage, and frequency before adding another medication."
+                            "⚠️ Please complete medication name, dosage, and meal timing before adding another medication."
                           );
                           return;
                         }

@@ -19,6 +19,14 @@ export interface Medication {
   dosage: string;
   frequency: string;
   purpose?: string;
+  mealTiming?: {
+    breakfast?: "before" | "after";
+    lunch?: "before" | "after";
+    dinner?: "before" | "after";
+  };
+  timesPerDay?: number | null;
+  startDate?: string;
+  endDate?: string;
 }
 
 /* ---------- Past Surgery ---------- */

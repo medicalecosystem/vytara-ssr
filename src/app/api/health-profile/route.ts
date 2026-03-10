@@ -2,6 +2,13 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthenticatedUser } from "@/lib/auth";
+import {
+  deriveMedicationMealTiming,
+  normalizeMedicationDosage,
+  normalizeMedicationReminderSlotKey,
+  resolveMedicationFrequency,
+  resolveMedicationTimesPerDay,
+} from "@/lib/medications";
 type ProfilePayload = {
   profileId: string; // Profile ID to save data for
   displayName?: string;
@@ -19,6 +26,7 @@ type ProfilePayload = {
     dosage?: string;
     purpose?: string;
     frequency?: string;
+    mealTiming?: Record<string, unknown>;
     timesPerDay?: number | null;
     startDate?: string;
     endDate?: string;
@@ -26,6 +34,7 @@ type ProfilePayload = {
       medicationId?: string;
       timestamp?: string;
       taken?: boolean;
+      slotKey?: string;
     }[];
   }[];
 
@@ -66,34 +75,11 @@ const cleanStringList = (values: string[] | undefined) =>
 
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
-const MEDICATION_FREQUENCY_TIMES: Record<string, number> = {
-  once_daily: 1,
-  twice_daily: 2,
-  three_times_daily: 3,
-  four_times_daily: 4,
-  every_4_hours: 6,
-  every_6_hours: 4,
-  every_8_hours: 3,
-  every_12_hours: 2,
-  as_needed: 0,
-  with_meals: 3,
-  before_bed: 1,
-};
-
-const resolveTimesPerDay = (frequency: string, rawTimesPerDay: number | null | undefined) => {
-  if (typeof rawTimesPerDay === "number" && Number.isFinite(rawTimesPerDay) && rawTimesPerDay >= 0) {
-    return Math.floor(rawTimesPerDay);
-  }
-  if (frequency in MEDICATION_FREQUENCY_TIMES) {
-    return MEDICATION_FREQUENCY_TIMES[frequency];
-  }
-  return 1;
-};
-
 type MedicationLog = {
   medicationId: string;
   timestamp: string;
   taken: boolean;
+  slotKey?: string;
 };
 
 const normalizeMedicationLogs = (
@@ -101,26 +87,31 @@ const normalizeMedicationLogs = (
     medicationId?: string;
     timestamp?: string;
     taken?: boolean;
+    slotKey?: string;
   }[] | undefined,
   medicationId: string
-): MedicationLog[] =>
-  Array.isArray(logs)
-    ? logs
-      .map((log) => ({
+): MedicationLog[] => {
+  if (!Array.isArray(logs)) return [];
+
+  return logs
+    .map((log): MedicationLog | null => {
+      const timestamp =
+        typeof log.timestamp === "string" && log.timestamp.trim() ? log.timestamp.trim() : "";
+      const taken = typeof log.taken === "boolean" ? log.taken : null;
+      if (!timestamp || taken === null) return null;
+
+      return {
         medicationId:
           typeof log.medicationId === "string" && log.medicationId.trim()
             ? log.medicationId.trim()
             : medicationId,
-        timestamp:
-          typeof log.timestamp === "string" && log.timestamp.trim()
-            ? log.timestamp.trim()
-            : "",
-        taken: typeof log.taken === "boolean" ? log.taken : null,
-      }))
-      .filter(
-        (log): log is MedicationLog => Boolean(log.timestamp) && log.taken !== null
-      )
-    : [];
+        timestamp,
+        taken,
+        slotKey: normalizeMedicationReminderSlotKey(log.slotKey),
+      };
+    })
+    .filter((log): log is MedicationLog => log !== null);
+};
 
 const PROFILE_MIGRATION_HINT =
   "Profile-based DB migration is incomplete. Run supabase/migrations/20260213170000_profile_based_rls_migration.sql and ensure profile_id unique constraints exist.";
@@ -241,9 +232,10 @@ export async function POST(req: Request) {
           const id =
             typeof item.id === "string" && item.id.trim() ? item.id.trim() : randomUUID();
           const name = item.name?.trim() || "";
-          const dosage = item.dosage?.trim() || "";
+          const dosage = normalizeMedicationDosage(item.dosage);
           const purpose = item.purpose?.trim() || "";
-          const frequency = item.frequency?.trim() || "";
+          const mealTiming = deriveMedicationMealTiming(item.mealTiming, item.frequency);
+          const frequency = resolveMedicationFrequency(item.frequency, mealTiming);
           const startDate =
             typeof item.startDate === "string" && DATE_ONLY_REGEX.test(item.startDate)
               ? item.startDate
@@ -252,7 +244,11 @@ export async function POST(req: Request) {
             typeof item.endDate === "string" && DATE_ONLY_REGEX.test(item.endDate)
               ? item.endDate
               : undefined;
-          const timesPerDay = resolveTimesPerDay(frequency, item.timesPerDay);
+          const timesPerDay = resolveMedicationTimesPerDay(
+            frequency,
+            item.timesPerDay,
+            mealTiming
+          );
           const logs = normalizeMedicationLogs(item.logs, id);
           return {
             id,
@@ -260,6 +256,7 @@ export async function POST(req: Request) {
             dosage,
             purpose,
             frequency,
+            mealTiming: Object.keys(mealTiming).length > 0 ? mealTiming : undefined,
             timesPerDay,
             startDate,
             endDate,

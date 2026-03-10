@@ -11,6 +11,15 @@ import { MedicalSummaryModal } from "@/components/MedicalSummaryModal";
 import { NotificationsPanel } from "@/components/NotificationsPanel";
 import { useAppProfile } from "@/components/AppProfileProvider";
 import {
+  deriveMedicationMealTiming,
+  normalizeMedicationDosage,
+  getDueMedicationReminderSlots,
+  normalizeMedicationReminderSlotKey,
+  resolveMedicationFrequency,
+  resolveMedicationTimesPerDay,
+  type MedicationReminderSlot,
+} from "@/lib/medications";
+import {
   Calendar,
   Users,
   Stethoscope,
@@ -62,6 +71,7 @@ type RawMedicationLog = {
   medicationId?: unknown;
   timestamp?: unknown;
   taken?: unknown;
+  slotKey?: unknown;
 };
 
 type RawMedication = {
@@ -70,6 +80,7 @@ type RawMedication = {
   dosage?: unknown;
   purpose?: unknown;
   frequency?: unknown;
+  mealTiming?: unknown;
   timesPerDay?: unknown;
   startDate?: unknown;
   endDate?: unknown;
@@ -97,20 +108,6 @@ const writeHomeCache = <T,>(cacheOwnerId: string, key: string, value: T) => {
   if (!cacheOwnerId || typeof window === "undefined") return;
   const entry: CacheEntry<T> = { ts: Date.now(), value };
   window.localStorage.setItem(homeCacheKey(cacheOwnerId, key), JSON.stringify(entry));
-};
-
-const medicationFrequencyTimes: Record<string, number> = {
-  once_daily: 1,
-  twice_daily: 2,
-  three_times_daily: 3,
-  four_times_daily: 4,
-  every_4_hours: 6,
-  every_6_hours: 4,
-  every_8_hours: 3,
-  every_12_hours: 2,
-  as_needed: 0,
-  with_meals: 3,
-  before_bed: 1,
 };
 
 const APPOINTMENT_ACTIVITY_FIELD_LABELS: Record<string, string> = {
@@ -241,19 +238,6 @@ const buildMedicationActivityChanges = (
     }, []);
 };
 
-const resolveTimesPerDay = (frequency: string, value: unknown) => {
-  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
-    return Math.floor(value);
-  }
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed) && parsed >= 0) {
-      return Math.floor(parsed);
-    }
-  }
-  return medicationFrequencyTimes[frequency] ?? 1;
-};
-
 const normalizeMedicationList = (value: unknown): Medication[] => {
   if (!Array.isArray(value)) return [];
   const todayDate = new Date().toISOString().split("T")[0];
@@ -262,29 +246,34 @@ const normalizeMedicationList = (value: unknown): Medication[] => {
       const med = (entry || {}) as RawMedication;
       const id =
         typeof med.id === "string" && med.id.trim() ? med.id.trim() : crypto.randomUUID();
-      const frequency = typeof med.frequency === "string" ? med.frequency.trim() : "";
+      const frequency = resolveMedicationFrequency(med.frequency, med.mealTiming);
+      const mealTiming = deriveMedicationMealTiming(med.mealTiming, med.frequency);
       const rawLogs = Array.isArray(med.logs) ? (med.logs as RawMedicationLog[]) : [];
-      const logs = rawLogs
-        .map((log) => ({
+      const logs = rawLogs.reduce<NonNullable<Medication["logs"]>>((acc, log) => {
+        const timestamp = typeof log.timestamp === "string" ? log.timestamp.trim() : "";
+        const taken = typeof log.taken === "boolean" ? log.taken : null;
+        if (!timestamp || taken === null) return acc;
+
+        acc.push({
           medicationId:
             typeof log.medicationId === "string" && log.medicationId.trim()
               ? log.medicationId.trim()
               : id,
-          timestamp: typeof log.timestamp === "string" ? log.timestamp.trim() : "",
-          taken: typeof log.taken === "boolean" ? log.taken : null,
-        }))
-        .filter(
-          (log): log is { medicationId: string; timestamp: string; taken: boolean } =>
-            Boolean(log.timestamp) && log.taken !== null
-        );
+          timestamp,
+          taken,
+          slotKey: normalizeMedicationReminderSlotKey(log.slotKey),
+        });
+        return acc;
+      }, []);
 
       return {
         id,
         name: typeof med.name === "string" ? med.name.trim() : "",
-        dosage: typeof med.dosage === "string" ? med.dosage.trim() : "",
+        dosage: normalizeMedicationDosage(med.dosage),
         purpose: typeof med.purpose === "string" ? med.purpose.trim() : "",
         frequency,
-        timesPerDay: resolveTimesPerDay(frequency, med.timesPerDay),
+        mealTiming: Object.keys(mealTiming).length > 0 ? mealTiming : undefined,
+        timesPerDay: resolveMedicationTimesPerDay(frequency, med.timesPerDay, mealTiming),
         startDate:
           typeof med.startDate === "string" && med.startDate.trim()
             ? med.startDate.trim()
@@ -938,18 +927,33 @@ function HomePageContent() {
   const addMedication = async (medication: Medication) => {
     if (!userId || !profileId) return;
 
-    if (!medication.name.trim() || !medication.dosage.trim() || !medication.frequency.trim()) {
-      alert("Please fill Name, Dosage, and Frequency.");
+    const normalizedFrequency = resolveMedicationFrequency(
+      medication.frequency,
+      medication.mealTiming
+    );
+    const normalizedTimesPerDay = resolveMedicationTimesPerDay(
+      normalizedFrequency,
+      medication.timesPerDay,
+      medication.mealTiming
+    );
+    const normalizedMealTiming = deriveMedicationMealTiming(
+      medication.mealTiming,
+      normalizedFrequency
+    );
+
+    if (!medication.name.trim() || !medication.dosage.trim() || !normalizedFrequency) {
+      alert("Please fill Medication Name, Dosage, and select at least one meal timing.");
       return;
     }
 
     const newMedication: Medication = {
       id: crypto.randomUUID(),
       name: medication.name.trim(),
-      dosage: medication.dosage.trim(),
-      purpose: medication.purpose.trim(),
-      frequency: medication.frequency.trim(),
-      timesPerDay: medication.timesPerDay || 1,
+      dosage: normalizeMedicationDosage(medication.dosage),
+      purpose: (medication.purpose || "").trim(),
+      frequency: normalizedFrequency,
+      mealTiming: Object.keys(normalizedMealTiming).length > 0 ? normalizedMealTiming : undefined,
+      timesPerDay: normalizedTimesPerDay,
       startDate: medication.startDate || new Date().toISOString().split('T')[0],
       endDate: medication.endDate || undefined,
       logs: [], // Initialize with empty logs array
@@ -1004,8 +1008,22 @@ function HomePageContent() {
   const updateMedication = async (medication: Medication) => {
     if (!userId || !profileId) return;
 
-    if (!medication.name.trim() || !medication.dosage.trim() || !medication.frequency.trim()) {
-      alert("Please fill Name, Dosage, and Frequency.");
+    const normalizedFrequency = resolveMedicationFrequency(
+      medication.frequency,
+      medication.mealTiming
+    );
+    const normalizedTimesPerDay = resolveMedicationTimesPerDay(
+      normalizedFrequency,
+      medication.timesPerDay,
+      medication.mealTiming
+    );
+    const normalizedMealTiming = deriveMedicationMealTiming(
+      medication.mealTiming,
+      normalizedFrequency
+    );
+
+    if (!medication.name.trim() || !medication.dosage.trim() || !normalizedFrequency) {
+      alert("Please fill Medication Name, Dosage, and select at least one meal timing.");
       return;
     }
 
@@ -1019,13 +1037,11 @@ function HomePageContent() {
       ...medication,
       id: medicationId,
       name: medication.name.trim(),
-      dosage: medication.dosage.trim(),
+      dosage: normalizeMedicationDosage(medication.dosage),
       purpose: (medication.purpose || "").trim(),
-      frequency: medication.frequency.trim(),
-      timesPerDay:
-        typeof medication.timesPerDay === "number" && medication.timesPerDay >= 0
-          ? medication.timesPerDay
-          : resolveTimesPerDay(medication.frequency.trim(), medication.timesPerDay),
+      frequency: normalizedFrequency,
+      mealTiming: Object.keys(normalizedMealTiming).length > 0 ? normalizedMealTiming : undefined,
+      timesPerDay: normalizedTimesPerDay,
       startDate: medication.startDate || undefined,
       endDate: medication.endDate || undefined,
       logs: Array.isArray(medication.logs) ? medication.logs : existingMedication?.logs || [],
@@ -1142,13 +1158,35 @@ function HomePageContent() {
      MEDICATION LOG DOSE
   ======================= */
 
-  const handleLogDose = async (medicationId: string, taken: boolean) => {
+  const handleLogDose = async (
+    medicationId: string,
+    taken: boolean,
+    slotKey?: MedicationReminderSlot["key"]
+  ) => {
     if (!userId || !profileId) return;
+
+    const medication = medications.find((entry) => entry.id === medicationId) ?? null;
+    const dueSlots =
+      taken && medication
+        ? getDueMedicationReminderSlots(medication, new Date(), 90 * 60 * 1000)
+        : [];
+    const resolvedSlotKey = slotKey ?? dueSlots[0]?.key;
+
+    if (taken && medication && resolvedSlotKey) {
+      const alreadyLoggedToday = (medication.logs || []).some((log) => {
+        if (!log.taken || log.slotKey !== resolvedSlotKey) return false;
+        const parsed = new Date(log.timestamp);
+        if (Number.isNaN(parsed.getTime())) return false;
+        return parsed.toDateString() === new Date().toDateString();
+      });
+      if (alreadyLoggedToday) return;
+    }
 
     const newLog = {
       medicationId,
       timestamp: new Date().toISOString(),
       taken,
+      slotKey: resolvedSlotKey,
     };
 
     const updatedMedications = medications.map((m) => {
