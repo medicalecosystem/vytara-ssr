@@ -1,7 +1,7 @@
 const INTERNAL_API_KEY_HEADER = "x-vytara-internal-key";
 const DEFAULT_DEV_INTERNAL_API_KEY = "vytara-local-dev-internal-key";
 
-export function getBackendInternalApiKey() {
+export function getBackendInternalApiKey(): string | null {
   const configuredKey = process.env.BACKEND_INTERNAL_API_KEY?.trim();
   if (configuredKey) {
     return configuredKey;
@@ -14,7 +14,7 @@ export function getBackendInternalApiKey() {
   return null;
 }
 
-export function getBackendInternalHeaders() {
+export function getBackendInternalHeaders(): Record<string, string> {
   const apiKey = getBackendInternalApiKey();
   if (!apiKey) {
     return {};
@@ -25,6 +25,6 @@ export function getBackendInternalHeaders() {
   };
 }
 
-export function hasBackendInternalAuth() {
+export function hasBackendInternalAuth(): boolean {
   return getBackendInternalApiKey() !== null;
 }
