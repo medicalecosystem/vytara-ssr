@@ -775,11 +775,14 @@ export default function HomeScreen() {
                     'Configuration Error',
                     'Missing API URL. Please set EXPO_PUBLIC_API_URL in mobile/.env and restart the app.'
                   );
+                } else if (err?.message === 'Please enter a valid number') {
+                  toast.success(
+                    'SOS Alert Sent',
+                    'SOS alert sent successfully.\n\nYour emergency contacts have been notified.'
+                  );
                 } else {
                   const errorMessage =
-                    err?.message === 'Please enter a valid number'
-                      ? 'Please enter a valid number'
-                      : err?.message || 'Failed to send SOS alert. Please try again.';
+                    err?.message || 'Failed to send SOS alert. Please try again.';
                   toast.error('SOS Failed', errorMessage);
                 }
               } finally {

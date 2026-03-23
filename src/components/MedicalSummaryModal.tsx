@@ -30,7 +30,7 @@ interface MedicalSummaryModalProps {
 const PUBLIC_BACKEND_BASE_URL = (
   process.env.NEXT_PUBLIC_BACKEND_URL ||
   (process.env.NODE_ENV === 'production'
-    ? 'https://medical-rag-backend-phaq.onrender.com'
+    ? 'https://vytara-ssr-qzin.onrender.com'
     : 'http://localhost:5000')
 ).replace(/\/+$/, '');
 const HEALTH_CHECK_URL = `${PUBLIC_BACKEND_BASE_URL}/api/health`;

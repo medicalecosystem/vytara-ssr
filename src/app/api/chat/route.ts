@@ -4,11 +4,32 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { getBackendInternalHeaders, hasBackendInternalAuth } from '@/lib/backendInternalAuth';
 import { createRateLimiter, getClientIP } from '@/lib/rateLimit';
 
 const chatLimiter = createRateLimiter({ windowMs: 60 * 1000, maxRequests: 20 });
 
-const FLASK_API_URL = process.env.NEXT_PUBLIC_CHATBOT_URL || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5000');
+const FLASK_API_URL =
+  process.env.NEXT_PUBLIC_CHATBOT_URL ||
+  (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5000');
+
+function sanitizeBackendPayload(status: number, data: unknown): Record<string, unknown> {
+  if (status < 500 && typeof data === 'object' && data !== null) {
+    return data as Record<string, unknown>;
+  }
+
+  if (status < 500) {
+    return {
+      success: false,
+      reply: 'Assistant returned an unexpected response.',
+    };
+  }
+
+  return {
+    success: false,
+    reply: 'Assistant is unavailable. Please try again.',
+  };
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,7 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    
+
     // Validate Flask API URL is configured
     if (!FLASK_API_URL || FLASK_API_URL === '') {
       console.error('[api/chat] Flask API URL not configured');
@@ -40,16 +61,30 @@ export async function POST(request: NextRequest) {
         { status: 503 }
       );
     }
-    
+
+    if (!hasBackendInternalAuth()) {
+      console.error('[api/chat] Backend internal auth is not configured');
+      return NextResponse.json(
+        {
+          success: false,
+          reply: 'Assistant is unavailable. Backend authentication is not configured.',
+        },
+        { status: 503 }
+      );
+    }
+
     console.log('[api/chat] Calling Flask at:', FLASK_API_URL);
-    
+
     const res = await fetch(`${FLASK_API_URL}/api/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getBackendInternalHeaders(),
+      },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(30000), // 30 second timeout for chat requests
     });
-    
+
     // Get response text first to handle empty or non-JSON responses
     const responseText = await res.text();
     
@@ -67,7 +102,7 @@ export async function POST(request: NextRequest) {
     let data;
     try {
       data = JSON.parse(responseText);
-    } catch (parseError) {
+    } catch {
       console.error('[api/chat] Invalid JSON from Flask:', responseText.slice(0, 200));
       return NextResponse.json(
         {
@@ -77,10 +112,10 @@ export async function POST(request: NextRequest) {
         { status: 502 }
       );
     }
-    
+
     console.log('[api/chat] Flask response:', JSON.stringify(data));
-    
-    return NextResponse.json(data, { status: res.status });
+
+    return NextResponse.json(sanitizeBackendPayload(res.status, data), { status: res.status });
   } catch (e) {
     console.error('[api/chat] Flask backend unreachable:', e);
     return NextResponse.json(

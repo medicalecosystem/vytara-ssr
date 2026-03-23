@@ -4,11 +4,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { getBackendInternalHeaders, hasBackendInternalAuth } from '@/lib/backendInternalAuth';
 import { createRateLimiter, getClientIP } from '@/lib/rateLimit';
 
 const medicalLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, maxRequests: 5 });
 
-const PRODUCTION_BACKEND_FALLBACK = 'https://medical-rag-backend-phaq.onrender.com';
+const PRODUCTION_BACKEND_FALLBACK = 'https://vytara-ssr-qzin.onrender.com';
 const FLASK_API_URL =
   process.env.BACKEND_URL ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||
@@ -50,6 +51,25 @@ function createProxyError(message: string, status = 500) {
   const error = new Error(message) as ProxyError;
   error.status = status;
   return error;
+}
+
+function sanitizeBackendResponse(status: number, data: unknown): Record<string, unknown> {
+  if (status < 500 && typeof data === 'object' && data !== null) {
+    return data as Record<string, unknown>;
+  }
+
+  if (status < 500) {
+    return {
+      success: false,
+      error: 'Unexpected response from medical service.',
+    };
+  }
+
+  return {
+    success: false,
+    error: 'Medical service is temporarily unavailable.',
+    message: 'Medical service is temporarily unavailable. Please try again.',
+  };
 }
 
 function isTimeoutError(error: unknown) {
@@ -119,9 +139,16 @@ async function fetchBackendJson(url: string, options: RequestInit) {
 }
 
 async function callFlask(endpoint: string, method: string, disallowedHosts: Set<string>, body?: unknown) {
+  if (!hasBackendInternalAuth()) {
+    throw createProxyError('Backend internal authentication is not configured.', 500);
+  }
+
   const options: RequestInit = {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...getBackendInternalHeaders(),
+    },
     signal: AbortSignal.timeout(MEDICAL_REQUEST_TIMEOUT_MS),
   };
 
@@ -239,7 +266,10 @@ export async function POST(request: NextRequest) {
         folder_type: folder_type || 'reports',
       });
       return NextResponse.json(
-        { ...result.data, backend_url: result.backendUrl },
+        {
+          ...sanitizeBackendResponse(result.status, result.data),
+          backend_url: result.backendUrl,
+        },
         { status: result.status }
       );
     }
@@ -254,7 +284,10 @@ export async function POST(request: NextRequest) {
         max_new_structured_extractions,
       });
       return NextResponse.json(
-        { ...result.data, backend_url: result.backendUrl },
+        {
+          ...sanitizeBackendResponse(result.status, result.data),
+          backend_url: result.backendUrl,
+        },
         { status: result.status }
       );
     }
@@ -269,12 +302,22 @@ export async function POST(request: NextRequest) {
       error instanceof Error && 'status' in error && typeof error.status === 'number'
         ? error.status
         : 500;
+    const message =
+      status === 503
+        ? 'Medical service is temporarily unavailable. Please try again in a minute.'
+        : 'Medical request failed. Please try again.';
+    const payload: Record<string, unknown> = {
+      success: false,
+      error: message,
+      message,
+    };
+
+    if (process.env.NODE_ENV !== 'production') {
+      payload.details = getErrorMessage(error);
+    }
+
     return NextResponse.json(
-      {
-        success: false,
-        error: getErrorMessage(error),
-        backend_candidates: getCandidateBackendUrls(),
-      },
+      payload,
       { status }
     );
   }

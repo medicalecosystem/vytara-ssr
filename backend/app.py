@@ -1,11 +1,20 @@
 # backend/app.py
 
+from dotenv import load_dotenv
+import os
+
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from llm import get_reply
 import requests
 
+from internal_auth import authorize_internal_request
+
 app = Flask(__name__)
+
+PROTECTED_API_PATHS = {"/api/chat"}
 
 # CORS configuration
 CORS(app, resources={
@@ -24,6 +33,17 @@ CORS(app, resources={
         "supports_credentials": True
     }
 })
+
+
+@app.before_request
+def require_internal_api_auth():
+    if request.method == "OPTIONS":
+        return None
+
+    if request.path not in PROTECTED_API_PATHS:
+        return None
+
+    return authorize_internal_request()
 
 @app.route('/api/tunnel-url', methods=['GET'])
 def get_tunnel_url():

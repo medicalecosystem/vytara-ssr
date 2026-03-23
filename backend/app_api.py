@@ -18,6 +18,7 @@ from rag_pipeline.clean_chunk import clean_text, chunk_text
 from rag_pipeline.embed_store import build_faiss_index
 from rag_pipeline.rag_query import ask_rag_improved
 from rag_pipeline.extract_metadata import extract_metadata_with_llm
+from internal_auth import authorize_internal_request
 import supabase_helper as sb
 
 # Import OCR
@@ -29,6 +30,8 @@ import pdfplumber
 
 app = Flask(__name__)
 
+EXEMPT_INTERNAL_AUTH_PATHS = {"/api/health"}
+
 # CORS configuration
 CORS(app, resources={
     r"/api/*": {
@@ -38,7 +41,7 @@ CORS(app, resources={
             "https://vytara-official.vercel.app",
             "https://*.vercel.app",
             "https://sauncier-instigative-yolande.ngrok-free.dev",
-            "https://medical-rag-backend-phaq.onrender.com"
+            "https://vytara-ssr-qzin.onrender.com"
         ],
         "methods": ["GET", "POST", "DELETE", "PUT", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
@@ -62,6 +65,27 @@ def log_step(step: str, status: str = "info", details: str = None):
     if details:
         message += f": {details}"
     print(message, flush=True)
+
+
+def internal_error_response(message: str, status_code: int = 500):
+    return jsonify({
+        "success": False,
+        "error": message,
+    }), status_code
+
+
+@app.before_request
+def require_internal_api_auth():
+    if request.method == "OPTIONS":
+        return None
+
+    if not request.path.startswith("/api/"):
+        return None
+
+    if request.path in EXEMPT_INTERNAL_AUTH_PATHS:
+        return None
+
+    return authorize_internal_request()
 
 
 # ============================================
@@ -536,7 +560,7 @@ def process_files():
                 results.append({
                     "file_name": file_name,
                     "status": "failed",
-                    "error": str(e)
+                    "error": "Processing failed"
                 })
                 failed += 1
         
@@ -581,12 +605,8 @@ def process_files():
     except Exception as e:
         log_step("FATAL ERROR", "error", str(e))
         traceback.print_exc()
-        
-        return jsonify({
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
+
+        return internal_error_response("Failed to process medical files")
 
 
 # ============================================
@@ -799,10 +819,7 @@ def generate_summary():
         except Exception as e:
             log_step("Index", "error", str(e))
             traceback.print_exc()
-            return jsonify({
-                "success": False,
-                "error": f"Failed to build search index: {str(e)}"
-            }), 500
+            return internal_error_response("Failed to build medical search index")
         
         # Generate summary
         log_step("Generating summary", "start")
@@ -841,10 +858,7 @@ def generate_summary():
         except Exception as e:
             log_step("Summary", "error", str(e))
             traceback.print_exc()
-            return jsonify({
-                "success": False,
-                "error": f"Failed to generate summary: {str(e)}"
-            }), 500
+            return internal_error_response("Failed to generate medical summary")
         
         # Cache summary (with warnings included)
         log_step("Caching", "start")
@@ -886,12 +900,8 @@ def generate_summary():
     except Exception as e:
         log_step("FATAL ERROR", "error", str(e))
         traceback.print_exc()
-        
-        return jsonify({
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
+
+        return internal_error_response("Failed to generate medical summary")
     
     finally:
         try:
@@ -979,7 +989,7 @@ def health_check():
         log_step("Health check", "error", str(e))
         return jsonify({
             "status": "unhealthy",
-            "error": str(e)
+            "error": "Health check failed"
         }), 500
 
 
@@ -1042,10 +1052,7 @@ def get_reports(profile_id):
         
     except Exception as e:
         log_step("Error", "error", str(e))
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return internal_error_response("Failed to fetch processed reports")
 
 
 # ============================================
@@ -1069,10 +1076,7 @@ def clear_cache(profile_id):
         
     except Exception as e:
         log_step("Error", "error", str(e))
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return internal_error_response("Failed to clear cached summaries")
 
 
 # ============================================
@@ -1096,10 +1100,7 @@ def clear_user_data(profile_id):
         
     except Exception as e:
         log_step("Error", "error", str(e))
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return internal_error_response("Failed to clear processed medical data")
 
 
 # ============================================
@@ -1143,10 +1144,8 @@ def debug_user(profile_id):
         }), 200
         
     except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        log_step("Debug", "error", str(e))
+        return internal_error_response("Failed to fetch debug information")
 
 
 # ============================================
