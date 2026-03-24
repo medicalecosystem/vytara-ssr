@@ -317,7 +317,7 @@ export default function FeedbackPanel({ open, onClose }: FeedbackPanelProps) {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="flex h-full flex-col">
+            <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
               <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">
