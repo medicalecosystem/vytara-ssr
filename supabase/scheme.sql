@@ -40,6 +40,19 @@ CREATE TABLE public.care_emergency_cards (
   CONSTRAINT care_emergency_cards_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT fk_care_emergency_cards_profile FOREIGN KEY (profile_id) REFERENCES public.profiles(id)
 );
+CREATE TABLE public.feedback (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid,
+  type text NOT NULL CHECK (type = ANY (ARRAY['general'::text, 'bug'::text, 'feature'::text])),
+  message text NOT NULL,
+  context jsonb NOT NULL DEFAULT '{}'::jsonb,
+  attachments jsonb NOT NULL DEFAULT '[]'::jsonb,
+  steps_to_reproduce text,
+  use_case text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT feedback_pkey PRIMARY KEY (id),
+  CONSTRAINT feedback_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.health (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL DEFAULT auth.uid(),
@@ -223,10 +236,11 @@ CREATE TABLE public.user_medications (
 CREATE TABLE public.user_profile_preferences (
   user_id uuid NOT NULL,
   last_selected_profile_id uuid,
-  selected_theme text,
   updated_at timestamp with time zone DEFAULT now(),
+  has_seen_onboarding_tour boolean NOT NULL DEFAULT false,
+  onboarding_tour_seen_at timestamp with time zone,
+  selected_theme text CHECK (selected_theme IS NULL OR (selected_theme = ANY (ARRAY['default'::text, 'charcoal'::text, 'clay'::text, 'olive'::text, 'coffee'::text, 'ocean'::text, 'sunset'::text, 'lemon'::text, 'lavender'::text, 'cherryblue'::text]))),
   CONSTRAINT user_profile_preferences_pkey PRIMARY KEY (user_id),
-  CONSTRAINT user_profile_preferences_selected_theme_check CHECK (((selected_theme IS NULL) OR (selected_theme = ANY (ARRAY['default'::text, 'charcoal'::text, 'clay'::text, 'olive'::text, 'coffee'::text, 'ocean'::text, 'sunset'::text, 'lemon'::text, 'lavender'::text, 'cherryblue'::text])))),
   CONSTRAINT user_profile_preferences_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT user_profile_preferences_last_selected_profile_id_fkey FOREIGN KEY (last_selected_profile_id) REFERENCES public.profiles(id)
 );
