@@ -12,7 +12,6 @@ type UploadedAttachment = {
   path: string;
   name: string;
   type: string;
-  url: string;
 };
 
 type FeedbackPanelProps = {
@@ -185,19 +184,10 @@ export default function FeedbackPanel({ open, onClose }: FeedbackPanelProps) {
           throw new Error(error.message);
         }
 
-        const { data: signedUrlData, error: signedUrlError } = await supabaseBrowser.storage
-          .from(FEEDBACK_BUCKET)
-          .createSignedUrl(path, 31_536_000);
-
-        if (signedUrlError || !signedUrlData) {
-          throw new Error("Failed to generate attachment URL.");
-        }
-
         uploads.push({
           path,
           name: file.name,
           type: file.type,
-          url: signedUrlData.signedUrl,
         });
       }
     } catch (error) {

@@ -27,6 +27,8 @@ type FeedbackContext = {
 };
 
 const DEFAULT_TABLE = process.env.SUPABASE_FEEDBACK_TABLE || "feedback";
+const FEEDBACK_BUCKET = "feedback-attachments";
+const SIGNED_URL_EXPIRY_SECONDS = 31_536_000; // 1 year
 
 const createAdminClient = () => {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -116,11 +118,20 @@ export async function POST(request: Request) {
 
     const user = await getAuthenticatedUser(request);
 
+    const attachmentsWithUrls = await Promise.all(
+      attachments.map(async (attachment) => {
+        const { data } = await adminClient.storage
+          .from(FEEDBACK_BUCKET)
+          .createSignedUrl(attachment.path, SIGNED_URL_EXPIRY_SECONDS);
+        return { ...attachment, url: data?.signedUrl ?? null };
+      })
+    );
+
     const feedbackRow: Record<string, unknown> = {
       type,
       message,
       context,
-      attachments,
+      attachments: attachmentsWithUrls,
       user_id: user?.id ?? null,
     };
 
