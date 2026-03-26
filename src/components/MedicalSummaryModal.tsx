@@ -27,13 +27,26 @@ interface MedicalSummaryModalProps {
   onSummaryViewed?: () => void;
 }
 
-const PUBLIC_BACKEND_BASE_URL = (
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  (process.env.NODE_ENV === 'production'
-    ? 'https://vytara-ssr-qzin.onrender.com'
-    : 'http://localhost:5000')
-).replace(/\/+$/, '');
-const HEALTH_CHECK_URL = `${PUBLIC_BACKEND_BASE_URL}/api/health`;
+function getPublicBackendBaseUrl() {
+  const configuredBackendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.trim();
+  const forceLocalBackend = process.env.NEXT_PUBLIC_USE_LOCAL_FLASK === 'true';
+  const browserHost = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+  const isLocalBrowserHost = browserHost === 'localhost' || browserHost === '127.0.0.1';
+
+  if (forceLocalBackend || isLocalBrowserHost) {
+    return 'http://localhost:8000';
+  }
+
+  if (configuredBackendUrl) {
+    return configuredBackendUrl.replace(/\/+$/, '');
+  }
+
+  return (
+    process.env.NODE_ENV === 'production'
+      ? 'https://vytara-ssr-qzin.onrender.com'
+      : 'http://localhost:5000'
+  ).replace(/\/+$/, '');
+}
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown error';
@@ -83,6 +96,7 @@ export function MedicalSummaryModal({
   const [reportCount, setReportCount] = useState<number>(0);
   const [hasProcessed, setHasProcessed] = useState(false);
   const [userId, setUserId] = useState<string>('');
+  const healthCheckUrl = `${getPublicBackendBaseUrl()}/api/health`;
   const hasMarkedSummaryViewedRef = useRef(false);
   const isOpenRef = useRef(isOpen);
 
@@ -339,7 +353,7 @@ export function MedicalSummaryModal({
                   <p className="text-sm text-red-700 mb-3">{error}</p>
                   <ul className="text-xs text-red-600 space-y-1">
                     <li>• Make sure you&apos;re logged in</li>
-                    <li>• Check Flask is running: <a href={HEALTH_CHECK_URL} target="_blank" className="underline">{HEALTH_CHECK_URL}</a></li>
+                    <li>• Check Flask is running: <a href={healthCheckUrl} target="_blank" className="underline">{healthCheckUrl}</a></li>
                     <li>• Check you have medical reports uploaded in Supabase Storage</li>
                     <li>• Check browser console (F12) for detailed errors</li>
                   </ul>

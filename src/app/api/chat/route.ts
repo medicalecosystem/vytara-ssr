@@ -10,9 +10,25 @@ import { createRateLimiter, getClientIP } from '@/lib/rateLimit';
 const chatLimiter = createRateLimiter({ windowMs: 60 * 1000, maxRequests: 20 });
 
 const PRODUCTION_CHATBOT_FALLBACK = 'https://chatbot-9fsv.onrender.com';
-const FLASK_API_URL =
-  process.env.NEXT_PUBLIC_CHATBOT_URL ||
-  (process.env.NODE_ENV === 'production' ? PRODUCTION_CHATBOT_FALLBACK : 'http://localhost:5000');
+const USE_LOCAL_FLASK = process.env.USE_LOCAL_FLASK === 'true';
+
+function getChatBackendUrl(request: NextRequest) {
+  const configuredChatbotUrl = process.env.NEXT_PUBLIC_CHATBOT_URL?.trim();
+  const requestHost = request.nextUrl.hostname.toLowerCase();
+  const isLocalRequest = requestHost === 'localhost' || requestHost === '127.0.0.1';
+
+  if (USE_LOCAL_FLASK || isLocalRequest) {
+    return 'http://localhost:5000';
+  }
+
+  if (configuredChatbotUrl) {
+    return configuredChatbotUrl;
+  }
+
+  return process.env.NODE_ENV === 'production'
+    ? PRODUCTION_CHATBOT_FALLBACK
+    : 'http://localhost:5000';
+}
 
 function sanitizeBackendPayload(status: number, data: unknown): Record<string, unknown> {
   if (status < 500 && typeof data === 'object' && data !== null) {
@@ -34,6 +50,7 @@ function sanitizeBackendPayload(status: number, data: unknown): Record<string, u
 
 export async function POST(request: NextRequest) {
   try {
+    const flaskApiUrl = getChatBackendUrl(request);
     const ip = getClientIP(request);
     const block = chatLimiter.check(ip);
     if (block) return block;
@@ -52,7 +69,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // Validate Flask API URL is configured
-    if (!FLASK_API_URL || FLASK_API_URL === '') {
+    if (!flaskApiUrl || flaskApiUrl === '') {
       console.error('[api/chat] Flask API URL not configured');
       return NextResponse.json(
         {
@@ -74,9 +91,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('[api/chat] Calling Flask at:', FLASK_API_URL);
+    console.log('[api/chat] Calling Flask at:', flaskApiUrl);
 
-    const res = await fetch(`${FLASK_API_URL}/api/chat`, {
+    const res = await fetch(`${flaskApiUrl}/api/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
