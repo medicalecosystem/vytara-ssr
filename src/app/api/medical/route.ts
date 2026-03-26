@@ -15,21 +15,25 @@ const DEFAULT_BACKEND_URLS = process.env.NODE_ENV === 'production' ? [] : ['http
 const BACKEND_ENV_KEYS = ['BACKEND_URL', 'NEXT_PUBLIC_BACKEND_URL'] as const;
 const MEDICAL_REQUEST_TIMEOUT_MS = Number(process.env.MEDICAL_REQUEST_TIMEOUT_MS || 150000);
 const BACKEND_WAKEUP_TIMEOUT_MS = Number(process.env.MEDICAL_WAKEUP_TIMEOUT_MS || 70000);
+const USE_LOCAL_FLASK = process.env.USE_LOCAL_FLASK === 'true';
 
 type ProxyError = Error & { status?: number };
 
 const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, '');
 
-function getCandidateBackendUrls() {
+function getCandidateBackendUrls(preferLocalBackend: boolean) {
+  const localUrls = ['http://127.0.0.1:8000', 'http://localhost:8000'].map(normalizeBaseUrl);
   const envUrls = BACKEND_ENV_KEYS.map((key) => process.env[key])
     .filter((value): value is string => Boolean(value && value.trim()))
     .map((value) => normalizeBaseUrl(value.trim()));
 
+  const orderedUrls = preferLocalBackend
+    ? [...localUrls, normalizeBaseUrl(FLASK_API_URL), ...envUrls, ...DEFAULT_BACKEND_URLS.map(normalizeBaseUrl)]
+    : [normalizeBaseUrl(FLASK_API_URL), ...envUrls, ...DEFAULT_BACKEND_URLS.map(normalizeBaseUrl)];
+
   return Array.from(
     new Set([
-      normalizeBaseUrl(FLASK_API_URL),
-      ...envUrls,
-      ...DEFAULT_BACKEND_URLS.map(normalizeBaseUrl),
+      ...orderedUrls,
     ])
   );
 }
@@ -96,6 +100,12 @@ function getSelfHosts(request: NextRequest) {
   return hosts;
 }
 
+function shouldPreferLocalBackend(request: NextRequest) {
+  if (USE_LOCAL_FLASK) return true;
+  const hostname = request.nextUrl.hostname.toLowerCase();
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
 async function wakeBackend(baseUrl: string) {
   try {
     await fetch(`${baseUrl}/api/health`, {
@@ -135,7 +145,13 @@ async function fetchBackendJson(url: string, options: RequestInit) {
   );
 }
 
-async function callFlask(endpoint: string, method: string, disallowedHosts: Set<string>, body?: unknown) {
+async function callFlask(
+  endpoint: string,
+  method: string,
+  disallowedHosts: Set<string>,
+  preferLocalBackend: boolean,
+  body?: unknown
+) {
   if (!hasBackendInternalAuth()) {
     throw createProxyError('Backend internal authentication is not configured.', 500);
   }
@@ -153,7 +169,7 @@ async function callFlask(endpoint: string, method: string, disallowedHosts: Set<
     options.body = JSON.stringify(body);
   }
 
-  const candidateUrls = getCandidateBackendUrls();
+  const candidateUrls = getCandidateBackendUrls(preferLocalBackend);
   const attemptErrors: string[] = [];
 
   for (const baseUrl of candidateUrls) {
@@ -219,6 +235,7 @@ export async function POST(request: NextRequest) {
     }
 
     const disallowedHosts = getSelfHosts(request);
+    const preferLocalBackend = shouldPreferLocalBackend(request);
 
     const body = await request.json();
     const {
@@ -253,7 +270,7 @@ export async function POST(request: NextRequest) {
     console.log(`📋 [Next.js API] Action: ${action}, Profile: ${normalizedProfileId}`);
 
     if (action === 'process') {
-      const result = await callFlask('/api/process-files', 'POST', disallowedHosts, {
+      const result = await callFlask('/api/process-files', 'POST', disallowedHosts, preferLocalBackend, {
         profile_id: normalizedProfileId,
         user_id: normalizedProfileId,
         folder_type: folder_type || 'reports',
@@ -268,7 +285,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'generate-summary') {
-      const result = await callFlask('/api/generate-summary', 'POST', disallowedHosts, {
+      const result = await callFlask('/api/generate-summary', 'POST', disallowedHosts, preferLocalBackend, {
         profile_id: normalizedProfileId,
         user_id: normalizedProfileId,
         folder_type,
