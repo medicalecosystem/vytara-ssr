@@ -405,8 +405,8 @@ export default function LoginClient({ returnTo }: LoginClientProps) {
   };
 
   return (
-    <main className="min-h-screen w-full flex items-center justify-center relative bg-slate-950 overflow-hidden">
-      <Plasma />
+    <main className="min-h-screen w-full flex items-center justify-center relative bg-gradient-to-br from-teal-900 via-cyan-900 to-slate-900 overflow-hidden">
+      
 
       <div className="relative z-10 w-full max-w-md px-4">
         <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl overflow-hidden border border-white/20">

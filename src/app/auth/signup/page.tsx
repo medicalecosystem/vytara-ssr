@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ChevronDown } from "lucide-react";
 import { supabase } from "@/lib/createClient";
-import Plasma from "@/components/Plasma";
+
 import {
   pickRememberedAccountName,
   type RememberedAccount,
@@ -280,8 +280,8 @@ export default function SignupPage() {
   };
 
   return (
-    <main className="min-h-screen w-full flex items-center justify-center relative bg-slate-950 overflow-hidden py-12">
-      <Plasma />
+    <main className="min-h-screen w-full flex items-center justify-center relative bg-gradient-to-br from-teal-900 via-cyan-900 to-slate-900 overflow-hidden py-12">
+      
 
       <div className="relative z-10 w-full max-w-md px-4">
         <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl overflow-hidden border border-white/20">
