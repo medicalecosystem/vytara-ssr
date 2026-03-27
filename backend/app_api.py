@@ -21,11 +21,16 @@ from rag_pipeline.extract_metadata import extract_metadata_with_llm
 from internal_auth import authorize_internal_request
 import supabase_helper as sb
 
-# Import OCR
-import cv2
-import numpy as np
-from PIL import Image
-import pdfplumber
+# ---------------------------------------------------------------------------
+# OCR — import the superior standalone extractor instead of the old inline
+# pytesseract-based extract_text_from_bytes that used to live in this file.
+#
+# extract_text_from_bytes(file_bytes, file_extension, ...) is a drop-in
+# replacement: same signature, same return type (str), works entirely in
+# memory (no disk I/O), and now uses the full PaddleOCR → EasyOCR pipeline
+# with CLAHE preprocessing and multi-version API parsing.
+# ---------------------------------------------------------------------------
+from rag_pipeline.extractor_OCR import extract_text_from_bytes
 
 
 app = Flask(__name__)
@@ -86,108 +91,6 @@ def require_internal_api_auth():
         return None
 
     return authorize_internal_request()
-
-
-# ============================================
-# IN-MEMORY OCR FUNCTIONS
-# ============================================
-
-def extract_text_from_bytes(file_bytes: bytes, file_extension: str) -> str:
-    """Extract text from file bytes (NO file I/O)"""
-    log_step("OCR", "start", f"Processing {file_extension}")
-    
-    try:
-        # PDF files
-        if file_extension.lower() == '.pdf':
-            # Try pdfplumber first
-            try:
-                bytes_io = io.BytesIO(file_bytes)
-                
-                with pdfplumber.open(bytes_io) as pdf:
-                    text = ""
-                    for page in pdf.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text += page_text + "\n\n"
-                    
-                    if text.strip() and len(text.strip()) > 50:
-                        log_step("PDF text", "success", f"{len(text)} chars")
-                        return text.strip()
-                    else:
-                        log_step("PDF", "warning", "Insufficient text - might be scanned")
-                        
-            except Exception as e:
-                log_step("pdfplumber", "warning", f"Failed: {e}")
-            
-            # For scanned PDFs
-            try:
-                from pdf2image import convert_from_bytes
-                import pytesseract
-                
-                images = convert_from_bytes(file_bytes, dpi=300)
-                log_step("PDF images", "success", f"{len(images)} pages")
-                
-                all_text = []
-                for i, img in enumerate(images, 1):
-                    img_array = np.array(img)
-                    
-                    if len(img_array.shape) == 3:
-                        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-                    else:
-                        gray = img_array
-                    
-                    page_text = pytesseract.image_to_string(
-                        gray,
-                        lang='eng',
-                        config='--oem 3 --psm 6'
-                    )
-                    
-                    if page_text.strip():
-                        all_text.append(page_text.strip())
-                
-                combined = "\n\n".join(all_text)
-                
-                if combined.strip():
-                    log_step("PDF OCR", "success", f"{len(combined)} chars")
-                    return combined
-                    
-            except Exception as e:
-                log_step("PDF OCR", "error", str(e))
-        
-        # Image files
-        elif file_extension.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']:
-            try:
-                import pytesseract
-                
-                bytes_io = io.BytesIO(file_bytes)
-                img = Image.open(bytes_io)
-                img_array = np.array(img)
-                
-                if len(img_array.shape) == 3:
-                    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-                else:
-                    gray = img_array
-                
-                text = pytesseract.image_to_string(
-                    gray,
-                    lang='eng',
-                    config='--oem 3 --psm 6'
-                )
-                
-                if text.strip():
-                    log_step("Image OCR", "success", f"{len(text)} chars")
-                    return text.strip()
-                    
-            except Exception as e:
-                log_step("Image OCR", "error", str(e))
-        
-        log_step("OCR", "error", "No text extracted")
-        return ""
-        
-    except Exception as e:
-        log_step("OCR", "error", str(e))
-        traceback.print_exc()
-        return ""
 
 
 def calculate_name_similarity(name1: str, name2: str) -> float:
@@ -431,7 +334,7 @@ def process_files():
                 file_bytes = sb.get_file_bytes(file_path)
                 log_step("Fetched", "success", f"{len(file_bytes)} bytes")
                 
-                # Extract text
+                # Extract text using the superior PaddleOCR-based extractor
                 file_ext = os.path.splitext(file_name)[1]
                 log_step("OCR", "start")
                 
