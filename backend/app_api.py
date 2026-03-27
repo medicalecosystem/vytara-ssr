@@ -3,6 +3,7 @@
 # Load environment variables FIRST before any imports that depend on them
 from dotenv import load_dotenv
 import os
+import re
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 from flask import Flask, request, jsonify
@@ -31,6 +32,11 @@ import supabase_helper as sb
 # with CLAHE preprocessing and multi-version API parsing.
 # ---------------------------------------------------------------------------
 from rag_pipeline.extractor_OCR import extract_text_from_bytes
+from rag_pipeline.profile_checker import (
+    verify_patient_name,
+    filter_reports_by_name,
+    INVALID_NAME_TOKENS,
+)
 
 
 app = Flask(__name__)
@@ -93,52 +99,13 @@ def require_internal_api_auth():
     return authorize_internal_request()
 
 
-def calculate_name_similarity(name1: str, name2: str) -> float:
-    """Calculate name similarity (0.0 to 1.0)"""
-    if not name1 or not name2:
-        return 0.0
-    
-    # Normalize
-    n1 = name1.strip().lower()
-    n2 = name2.strip().lower()
-    
-    # Remove common prefixes/suffixes
-    import re
-    prefixes = ['mr', 'mrs', 'ms', 'dr', 'prof']
-    suffixes = ['jr', 'sr', 'ii', 'iii']
-    
-    for prefix in prefixes:
-        n1 = re.sub(f'^{prefix}\\.?\\s+', '', n1)
-        n2 = re.sub(f'^{prefix}\\.?\\s+', '', n2)
-    
-    for suffix in suffixes:
-        n1 = re.sub(f'\\s+{suffix}\\.?$', '', n1)
-        n2 = re.sub(f'\\s+{suffix}\\.?$', '', n2)
-    
-    # Exact match
-    if n1 == n2:
-        return 1.0
-    
-    # One contains the other
-    if n1 in n2 or n2 in n1:
-        return 0.85
-    
-    # Word overlap
-    words1 = set(n1.split())
-    words2 = set(n2.split())
-    
-    if words1 and words2:
-        overlap = len(words1 & words2)
-        total = len(words1 | words2)
-        if overlap > 0:
-            word_sim = overlap / total
-            # Check if first or last name matches
-            if words1 & words2:  # Has common words
-                return 0.6 + (word_sim * 0.35)  # 0.6 to 0.95
-    
-    # Character similarity (Levenshtein-like)
-    from difflib import SequenceMatcher
-    return SequenceMatcher(None, n1, n2).ratio()
+
+# ---------------------------------------------------------------------------
+# Name similarity / patient verification
+# ---------------------------------------------------------------------------
+# All name-matching logic lives in rag_pipeline/profile_checker.py.
+# Imported above:  verify_patient_name, filter_reports_by_name, INVALID_NAME_TOKENS
+# ---------------------------------------------------------------------------
 
 
 # ============================================
@@ -360,66 +327,82 @@ def process_files():
                 log_step("Metadata", "success", 
                         f"Patient: {report_patient_name}, Age: {age}, Type: {report_type}")
                 
-                # IMPROVED Name verification with better fallback
+                # ── Name verification ────────────────────────────────────────
+                # Delegated entirely to profile_checker.verify_patient_name.
+                # threshold=0.4 preserves the original partial-match behaviour:
+                #   confidence ≥ 0.7  → strong match  (logged as success)
+                #   confidence 0.4–0.7 → partial match (logged as warning, still 'matched')
+                #   confidence < 0.4  → mismatched
+                # ──────────────────────────────────────────────────────────────
                 name_match_status = 'pending'
                 name_match_confidence = 0.0
-                
-                # Try to extract patient name from report text if metadata extraction failed
-                if not report_patient_name or report_patient_name.lower() in ['unknown', 'patient', 'name', 'sex', 'age', 'none']:
+
+                # Regex fallback: if LLM metadata extraction did not yield a
+                # usable name, attempt to pull it from the raw text.
+                if not report_patient_name or str(report_patient_name).lower() in INVALID_NAME_TOKENS:
                     log_step("Name extraction", "warning", "Metadata extraction failed, trying text patterns...")
-                    
-                    # Look for patterns like "MR. VEDANT DHOKE" or "Patient: Vedant Dhoke"
-                    import re
+
                     name_patterns = [
                         r"(?:MR\.|MRS\.|MS\.|DR\.)\s+([A-Z]+(?:\s+[A-Z]+)+)",
                         r"Patient\s*Name\s*:?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)",
                         r"Name\s*:?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)",
                     ]
-                    
                     for pattern in name_patterns:
-                        match = re.search(pattern, extracted_text[:500], re.IGNORECASE)
-                        if match:
-                            report_patient_name = match.group(1).strip()
+                        m = re.search(pattern, extracted_text[:500], re.IGNORECASE)
+                        if m:
+                            report_patient_name = m.group(1).strip()
                             log_step("Name extraction", "success", f"Found from text: {report_patient_name}")
                             break
-                
-                # Now do the verification
-                if report_patient_name and report_patient_name.lower() not in ['unknown', 'patient', 'name', 'sex', 'age', 'none']:
-                    similarity = calculate_name_similarity(report_patient_name, user_display_name)
-                    name_match_confidence = similarity
-                    
-                    if similarity >= 0.7:
-                        name_match_status = 'matched'
+
+                # Core verification via profile_checker (false-positive bug fixed).
+                verification = verify_patient_name(
+                    report_name=report_patient_name,
+                    profile_name=user_display_name,
+                    threshold=0.4,
+                )
+
+                if verification['status'] in ('matched', 'mismatched'):
+                    name_match_status    = verification['status']
+                    name_match_confidence = verification['confidence']
+
+                    if verification['confidence'] >= 0.7:
                         matched_reports += 1
-                        log_step("Name verification", "success", f"MATCH: {similarity:.2f} - '{report_patient_name}' vs '{user_display_name}'")
-                    elif similarity >= 0.4:
-                        # PARTIAL MATCH: Still include in summary but with lower confidence
-                        name_match_status = 'matched'  # Include partial matches
+                        log_step("Name verification", "success",
+                                 f"MATCH: {verification['confidence']:.2f} - "
+                                 f"'{report_patient_name}' vs '{user_display_name}'")
+                    elif verification['status'] == 'matched':
+                        # Partial match (0.4–0.7): include in summary with warning
                         matched_reports += 1
-                        log_step("Name verification", "warning", 
-                                f"PARTIAL MATCH: {similarity:.2f} - '{report_patient_name}' vs '{user_display_name}' (including in summary)")
+                        log_step("Name verification", "warning",
+                                 f"PARTIAL MATCH: {verification['confidence']:.2f} - "
+                                 f"'{report_patient_name}' vs '{user_display_name}' (including in summary)")
                     else:
-                        name_match_status = 'mismatched'
                         mismatched_reports += 1
-                        log_step("Name verification", "warning", 
-                                f"MISMATCH: {similarity:.2f} - Report '{report_patient_name}' vs User '{user_display_name}'")
+                        log_step("Name verification", "warning",
+                                 f"MISMATCH: {verification['confidence']:.2f} - "
+                                 f"Report '{report_patient_name}' vs User '{user_display_name}'")
+
                 else:
-                    # NO NAME FOUND: Check if display_name appears in the file name
+                    # 'unknown': no usable patient name even after regex fallback.
+                    # Last resort: check whether the user's name appears in the filename.
                     log_step("Name verification", "warning", "No patient name found in text")
-                    
-                    file_name_lower = file_name.lower()
-                    user_name_parts = user_display_name.lower().split()
-                    
-                    # If user's name (or any part) is in the filename, assume it's theirs
-                    name_in_filename = any(part in file_name_lower for part in user_name_parts if len(part) > 2)
-                    
+
+                    file_name_lower  = file_name.lower()
+                    user_name_parts  = user_display_name.lower().split()
+                    name_in_filename = any(
+                        part in file_name_lower for part in user_name_parts if len(part) > 2
+                    )
+
                     if name_in_filename:
-                        name_match_status = 'matched'
+                        name_match_status    = 'matched'
                         name_match_confidence = 0.6
                         matched_reports += 1
-                        log_step("Name verification", "success", f"FILENAME MATCH: User name '{user_display_name}' found in filename (including in summary)")
+                        log_step("Name verification", "success",
+                                 f"FILENAME MATCH: User name '{user_display_name}' found in filename "
+                                 f"(including in summary)")
                     else:
-                        log_step("Name verification", "info", "Patient name unclear and not in filename - marked as pending")
+                        log_step("Name verification", "info",
+                                 "Patient name unclear and not in filename - marked as pending")
                 
                 # Save to database
                 log_step("Saving", "start")
