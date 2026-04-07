@@ -1,6 +1,3 @@
-# backend/app_api.py
-
-# Load environment variables FIRST before any imports that depend on them
 from dotenv import load_dotenv
 import os
 import re
@@ -15,7 +12,6 @@ from datetime import datetime
 import io
 from concurrent.futures import ThreadPoolExecutor
 
-# Import RAG pipeline
 from rag_pipeline.clean_chunk import clean_text, chunk_text, chunk_text_with_metadata
 from rag_pipeline.embed_store import build_faiss_index
 from rag_pipeline.rag_query import ask_rag_improved
@@ -23,15 +19,6 @@ from rag_pipeline.extract_metadata import extract_metadata_batch
 from internal_auth import authorize_internal_request
 import supabase_helper as sb
 
-# ---------------------------------------------------------------------------
-# OCR — import the superior standalone extractor instead of the old inline
-# pytesseract-based extract_text_from_bytes that used to live in this file.
-#
-# extract_text_from_bytes(file_bytes, file_extension, ...) is a drop-in
-# replacement: same signature, same return type (str), works entirely in
-# memory (no disk I/O), and now uses the full PaddleOCR → EasyOCR pipeline
-# with CLAHE preprocessing and multi-version API parsing.
-# ---------------------------------------------------------------------------
 from rag_pipeline.extractor_OCR import extract_text_from_bytes
 from rag_pipeline.profile_checker import (
     verify_patient_name,
@@ -44,7 +31,6 @@ app = Flask(__name__)
 
 EXEMPT_INTERNAL_AUTH_PATHS = {"/api/health"}
 
-# CORS configuration
 CORS(app, resources={
     r"/api/*": {
         "origins": [
@@ -63,7 +49,7 @@ CORS(app, resources={
 
 
 def log_step(step: str, status: str = "info", details: str = None):
-    """Consistent logging"""
+    """Consistent logging utility"""
     symbols = {
         "start": "🔄",
         "success": "✅",
@@ -99,18 +85,6 @@ def require_internal_api_auth():
     return authorize_internal_request()
 
 
-# ---------------------------------------------------------------------------
-# Name similarity / patient verification
-# ---------------------------------------------------------------------------
-# All name-matching logic lives in rag_pipeline/profile_checker.py.
-# Imported above:  verify_patient_name, filter_reports_by_name, INVALID_NAME_TOKENS
-# ---------------------------------------------------------------------------
-
-
-# ============================================
-# PROFILE LOOKUPS
-# ============================================
-
 def resolve_profile_id(data: dict) -> str:
     """Resolve profile ID from request payload."""
     if not data:
@@ -124,10 +98,6 @@ def resolve_profile_id(data: dict) -> str:
     return profile_id or None
 
 
-# ============================================
-# NAME VERIFICATION HELPER
-# ============================================
-
 def _verify_and_build_record(
     file_info: dict,
     file_path: str,
@@ -139,19 +109,7 @@ def _verify_and_build_record(
 ) -> dict:
     """
     Run name verification against the profile display name and return a
-    fully-populated record dict ready for sb.save_extracted_data().
-
-    Encapsulates the entire name-matching logic that was previously inlined
-    inside the per-file for-loop in process_files(). Extracting it here makes
-    the batch verification step clean and testable.
-
-    Returns:
-        {
-          "save_kwargs"    : kwargs dict  → passed directly to sb.save_extracted_data()
-          "result_entry"   : dict         → appended to the HTTP response 'results' list
-          "match_status"   : str          → 'matched' | 'mismatched' | 'pending'
-          "match_confidence": float       → similarity score 0.0–1.0
-        }
+    fully-populated record dict ready for database insertion.
     """
     file_name = file_info.get('name')
 
@@ -166,10 +124,7 @@ def _verify_and_build_record(
     name_match_status     = 'pending'
     name_match_confidence = 0.0
 
-    # ------------------------------------------------------------------
-    # Regex fallback: if LLM metadata extraction did not yield a usable
-    # name, attempt to pull it from the raw text header.
-    # ------------------------------------------------------------------
+    # Regex fallback for patient name if LLM extraction fails
     if not report_patient_name or str(report_patient_name).lower() in INVALID_NAME_TOKENS:
         name_patterns = [
             r"(?:MR\.|MRS\.|MS\.|DR\.)\s+([A-Z]+(?:\s+[A-Z]+)+)",
@@ -182,12 +137,7 @@ def _verify_and_build_record(
                 report_patient_name = m.group(1).strip()
                 break
 
-    # ------------------------------------------------------------------
-    # Core verification via profile_checker (false-positive bug fixed).
-    #   confidence ≥ 0.7  → strong match
-    #   confidence 0.4–0.7 → partial match (still 'matched')
-    #   confidence < 0.4  → mismatched
-    # ------------------------------------------------------------------
+    # Verify patient name against profile
     verification = verify_patient_name(
         report_name=report_patient_name,
         profile_name=user_display_name,
@@ -198,8 +148,7 @@ def _verify_and_build_record(
         name_match_status     = verification['status']
         name_match_confidence = verification['confidence']
     else:
-        # 'unknown': no usable patient name even after regex fallback.
-        # Last resort: check whether the user's name appears in the filename.
+        # Fallback: Check if user's name appears in the filename
         file_name_lower  = file_name.lower()
         user_name_parts  = user_display_name.lower().split()
         name_in_filename = any(
@@ -228,7 +177,7 @@ def _verify_and_build_record(
 
     result_entry = dict(
         file_name=file_name,
-        status="success",           # populated here; overwritten to "failed" on DB error
+        status="success",
         folder_type=folder_type,
         patient_name=report_patient_name,
         report_date=report_date,
@@ -246,22 +195,9 @@ def _verify_and_build_record(
     )
 
 
-# ============================================
-# PROCESS FILES
-# ============================================
-
 @app.route("/api/process-files", methods=["POST"])
 def process_files():
-    """
-    Process user files with name matching.
-
-    Execution pipeline (all phases run in order):
-      Phase 1 — Concurrent file downloads  (ThreadPoolExecutor, max_workers=4)
-      Phase 2 — Sequential OCR             (CPU-bound; PaddleOCR saturates all cores)
-      Phase 3 — Batch LLM metadata         (asyncio.gather via extract_metadata_batch)
-      Phase 4 — Sequential name verify     (pure Python, microseconds per file)
-      Phase 5 — Concurrent DB saves        (ThreadPoolExecutor, max_workers=4)
-    """
+    """Process user files with name matching."""
     print("\n" + "="*80, flush=True)
     log_step("PROCESS FILES", "start")
     print("="*80, flush=True)
@@ -276,7 +212,7 @@ def process_files():
         folder_type = data.get("folder_type", "reports")
         log_step("Config", "info", f"Profile: {profile_id}, Folder: {folder_type}")
 
-        # ── Get profile info ──────────────────────────────────────────────────
+        # Get profile info
         log_step("Fetching profile info", "start")
         user_info = sb.get_profile_info(profile_id)
 
@@ -298,7 +234,7 @@ def process_files():
         user_display_name = user_info.get('display_name')
         log_step("Profile info", "success", f"User: {user_display_name}")
 
-        # ── List files in storage ─────────────────────────────────────────────
+        # List files in storage
         log_step("Fetching files", "start")
         files = sb.list_user_files(profile_id, folder_type)
 
@@ -314,14 +250,14 @@ def process_files():
 
         log_step("Files found", "success", f"{len(files)} files")
 
-        # ── Check existing processed records ──────────────────────────────────
+        # Check existing processed records
         log_step("Checking processed", "start")
         existing_records = sb.get_processed_reports(profile_id, folder_type)
 
         storage_paths  = {f"{profile_id}/{folder_type}/{f.get('name')}" for f in files}
         existing_paths = {r['file_path'] for r in existing_records}
 
-        # Delete orphaned records (files removed from storage but still in DB)
+        # Delete orphaned records
         orphaned = [r for r in existing_records if r['file_path'] not in storage_paths]
         deleted_count = 0
         if orphaned:
@@ -334,14 +270,14 @@ def process_files():
             except Exception as e:
                 log_step("Bulk delete failed", "error", str(e))
 
-        # ── Partition into already-processed and new files ────────────────────
+        # Partition into already-processed and new files
         results            = []
         skipped            = 0
         failed             = 0
         matched_reports    = 0
         mismatched_reports = 0
 
-        new_files = []   # list of (file_info, file_path)
+        new_files = []
         for file_info in files:
             file_name = file_info.get('name')
             file_path = f"{profile_id}/{folder_type}/{file_name}"
@@ -360,14 +296,7 @@ def process_files():
                  f"{len(new_files)} new / {skipped} already skipped")
 
         if new_files:
-            # =================================================================
-            # PHASE 1 — Concurrent file downloads
-            # =================================================================
-            # Network I/O is the bottleneck here. Fetching files one at a time
-            # leaves the CPU idle. A ThreadPoolExecutor lets up to 4 downloads
-            # run concurrently, hiding the round-trip latency of each signed-URL
-            # request. Files are kept as raw bytes in memory — no disk I/O.
-            # =================================================================
+            # Phase 1: Concurrent file downloads
             log_step("Download phase", "start",
                      f"Fetching {len(new_files)} files concurrently (max_workers=4)")
 
@@ -386,16 +315,9 @@ def process_files():
             log_step("Download phase", "success",
                      f"{dl_ok} succeeded, {dl_err} failed")
 
-            # =================================================================
-            # PHASE 2 — Sequential OCR
-            # =================================================================
-            # OCR is CPU-bound and PaddleOCR already saturates all available
-            # CPU cores internally via its C extensions. Running multiple OCR
-            # jobs in parallel threads would cause resource contention and
-            # *increase* latency. Keep this sequential.
-            # =================================================================
+            # Phase 2: Sequential OCR
             log_step("OCR phase", "start")
-            ocr_results = []   # (file_info, file_path, extracted_text)
+            ocr_results = []
 
             for idx, (fi, fp, file_bytes, dl_exc) in enumerate(download_results, 1):
                 file_name = fi.get('name')
@@ -436,15 +358,7 @@ def process_files():
                     })
                     failed += 1
 
-            # =================================================================
-            # PHASE 3 — Batch LLM metadata extraction
-            # =================================================================
-            # extract_metadata_batch() uses asyncio.gather internally to fire
-            # all OpenAI API calls concurrently. For N files this is
-            # N × (round-trip latency) → 1 × (round-trip latency), a 4–8×
-            # speedup on typical batches. This is 100 % I/O-bound and uses
-            # almost zero additional RAM.
-            # =================================================================
+            # Phase 3: Batch LLM metadata extraction
             if ocr_results:
                 log_step("Metadata batch", "start",
                          f"Extracting metadata for {len(ocr_results)} "
@@ -459,14 +373,9 @@ def process_files():
                 log_step("Metadata batch", "success",
                          f"{len(metadata_list)} results received")
 
-                # =============================================================
-                # PHASE 4 — Sequential name verification
-                # =============================================================
-                # verify_patient_name() is pure Python string comparison — it
-                # completes in microseconds per file. No concurrency needed.
-                # =============================================================
+                # Phase 4: Sequential name verification
                 log_step("Name verification phase", "start")
-                verified_records = []   # list of _verify_and_build_record() dicts
+                verified_records = []
 
                 for (fi, fp, extracted_text), metadata in zip(ocr_results, metadata_list):
                     file_name = fi.get('name')
@@ -509,21 +418,12 @@ def process_files():
 
                     verified_records.append(record)
 
-                # =============================================================
-                # PHASE 5 — Concurrent DB saves
-                # =============================================================
-                # save_extracted_data() is a pure network call (Supabase REST).
-                # Running saves concurrently rather than sequentially eliminates
-                # N × (DB round-trip latency) and collapses it to ~1 ×.
-                # The Supabase Python client uses requests under the hood, which
-                # is thread-safe, so concurrent ThreadPoolExecutor calls are safe.
-                # =============================================================
+                # Phase 5: Concurrent DB saves
                 log_step("DB save phase", "start",
                          f"Saving {len(verified_records)} records concurrently "
                          f"(max_workers=4)")
 
                 def _save(record: dict):
-                    """Thread-safe wrapper: catches per-record exceptions."""
                     try:
                         record_id = sb.save_extracted_data(**record['save_kwargs'])
                         return (record_id, None)
@@ -548,10 +448,9 @@ def process_files():
                 log_step("DB save phase", "success",
                          f"{sum(1 for _, e in save_outcomes if e is None)} records saved")
 
-        # ── Derive final counters from results list ────────────────────────────
         successful_count = sum(1 for r in results if r.get('status') == 'success')
 
-        # ── Clear cache if anything changed ───────────────────────────────────
+        # Clear cache if anything changed
         if deleted_count > 0 or successful_count > 0:
             log_step("Clearing cache", "start")
             try:
@@ -560,7 +459,6 @@ def process_files():
             except Exception as e:
                 log_step("Cache clear failed", "error", str(e))
 
-        # ── Final summary log ─────────────────────────────────────────────────
         print(f"\n{'='*80}", flush=True)
         log_step("COMPLETE", "success")
         print(f"{'='*80}", flush=True)
@@ -595,13 +493,9 @@ def process_files():
         return internal_error_response("Failed to process medical files")
 
 
-# ============================================
-# GENERATE SUMMARY (SMART FILTERING + WARNINGS)
-# ============================================
-
 @app.route("/api/generate-summary", methods=["POST"])
 def generate_summary():
-    """Generate summary for matched reports + show warnings for mismatched"""
+    """Generate summary for matched reports and display warnings for mismatches."""
     print("\n" + "="*80, flush=True)
     log_step("GENERATE SUMMARY (SMART FILTERING)", "start")
     print("="*80, flush=True)
@@ -625,7 +519,7 @@ def generate_summary():
         log_step("Config", "info", f"Profile: {profile_id}, Folder: {folder_type}")
         log_step("Temp dir", "info", temp_dir)
 
-        # ── Get profile info ──────────────────────────────────────────────────
+        # Get profile info
         log_step("Fetching profile info", "start")
         user_info = sb.get_profile_info(profile_id)
 
@@ -646,7 +540,7 @@ def generate_summary():
         user_display_name = user_info.get('display_name')
         log_step("Profile info", "success", f"User: {user_display_name}")
 
-        # ── Get all processed reports ─────────────────────────────────────────
+        # Get all processed reports
         log_step("Fetching reports", "start")
         all_reports = sb.get_processed_reports(profile_id, folder_type='reports')
 
@@ -660,7 +554,7 @@ def generate_summary():
 
         log_step("Reports found", "success", f"{len(all_reports)} total reports")
 
-        # ── Separate matched vs mismatched ────────────────────────────────────
+        # Separate matched vs mismatched
         matched_reports    = []
         mismatched_reports = []
         pending_reports    = []
@@ -679,7 +573,7 @@ def generate_summary():
                  f"Mismatched: {len(mismatched_reports)}, "
                  f"Pending: {len(pending_reports)}")
 
-        # ── Guard: no matched reports ─────────────────────────────────────────
+        # Guard: no matched reports
         if len(matched_reports) == 0:
             log_step("Matched reports", "error", "No matched reports found")
 
@@ -751,7 +645,7 @@ def generate_summary():
         log_step("Using reports", "success",
                  f"{len(reports)} matched reports for '{user_display_name}'")
 
-        # ── Compute signature & check cache ───────────────────────────────────
+        # Compute signature & check cache
         log_step("Computing signature", "start")
         current_signature = sb.compute_signature_from_reports(reports)
         log_step("Signature", "success", current_signature[:16] + "...")
@@ -785,25 +679,10 @@ def generate_summary():
 
             log_step("Cache", "info", "Cache miss – generating new summary")
 
-        # =====================================================================
-        # CONCURRENT CHUNKING
-        # =====================================================================
-        # Text chunking (clean_text + spaCy sentence splitting) is CPU-bound.
-        # With 4 available vCPUs and spaCy's C-extension sentence boundaries
-        # releasing the GIL, running chunking in a ThreadPoolExecutor cuts
-        # total chunking time by ~3–4× on a multi-report workload.
-        #
-        # Results are re-sorted by original report index so FAISS index order
-        # matches document order (important for reading-flow preservation in
-        # smart_context_assembly).
-        # =====================================================================
+        # Concurrent text chunking
         log_step("Creating chunks (concurrent)", "start")
 
         def _chunk_report(args):
-            """
-            Chunk a single report. Designed to be called inside a thread pool.
-            Returns (original_idx, report, chunks_list).
-            """
             idx, report = args
             extracted = report.get('extracted_text') or ""
             if not extracted.strip():
@@ -821,7 +700,6 @@ def generate_summary():
         with ThreadPoolExecutor(max_workers=4) as pool:
             chunk_results = list(pool.map(_chunk_report, enumerate(reports, 1)))
 
-        # Restore document order (map() preserves order; sort is a safety net)
         chunk_results.sort(key=lambda x: x[0])
 
         all_chunks = []
@@ -852,7 +730,7 @@ def generate_summary():
                 "error": "Could not create chunks from reports"
             }), 500
 
-        # ── Build FAISS index ─────────────────────────────────────────────────
+        # Build FAISS index
         log_step("Building index", "start")
         try:
             index, chunks, vectorizer = build_faiss_index(all_chunks, temp_dir)
@@ -862,7 +740,7 @@ def generate_summary():
             traceback.print_exc()
             return internal_error_response("Failed to build medical search index")
 
-        # ── Generate summary ──────────────────────────────────────────────────
+        # Generate summary
         log_step("Generating summary", "start")
         try:
             patient_metadata = {
@@ -890,7 +768,6 @@ def generate_summary():
 
             log_step("Summary", "success", f"{len(summary)} chars")
 
-            # Add mismatched warnings to the TOP of summary
             if mismatched_reports:
                 mismatch_warning = build_mismatch_warning(
                     mismatched_reports, user_display_name
@@ -904,7 +781,7 @@ def generate_summary():
             traceback.print_exc()
             return internal_error_response("Failed to generate medical summary")
 
-        # ── Cache summary (with warnings included) ────────────────────────────
+        # Cache summary
         log_step("Caching", "start")
         try:
             sb.save_summary_cache(
@@ -918,7 +795,6 @@ def generate_summary():
         except Exception as e:
             log_step("Cache save", "warning", f"Failed: {str(e)}")
 
-        # ── Final log ─────────────────────────────────────────────────────────
         print(f"\n{'='*80}", flush=True)
         log_step("COMPLETE", "success")
         print(f"{'='*80}", flush=True)
@@ -956,8 +832,7 @@ def generate_summary():
 
 
 def build_mismatch_warning(mismatched_reports: list, user_display_name: str) -> str:
-    """Build a user-friendly warning about mismatched reports"""
-
+    """Build a user-friendly warning string about mismatched reports."""
     warning = (
         f"# ⚠️ Important Notice\n\n"
         f"**Summary generated for:** {user_display_name}\n\n"
@@ -994,13 +869,9 @@ def build_mismatch_warning(mismatched_reports: list, user_display_name: str) -> 
     return warning
 
 
-# ============================================
-# HEALTH CHECK
-# ============================================
-
 @app.route("/api/health", methods=["GET"])
 def health_check():
-    """API health check"""
+    """API health check endpoint."""
     log_step("Health check", "start")
 
     try:
@@ -1030,13 +901,9 @@ def health_check():
         }), 500
 
 
-# ============================================
-# GET REPORTS LIST
-# ============================================
-
 @app.route("/api/reports/<profile_id>", methods=["GET"])
 def get_reports(profile_id):
-    """Get list of processed reports with name match status"""
+    """Get list of processed reports with name match status."""
     log_step("GET REPORTS", "start", profile_id)
 
     try:
@@ -1095,13 +962,9 @@ def get_reports(profile_id):
         return internal_error_response("Failed to fetch processed reports")
 
 
-# ============================================
-# CLEAR CACHE
-# ============================================
-
 @app.route("/api/clear-cache/<profile_id>", methods=["DELETE"])
 def clear_cache(profile_id):
-    """Clear cached summaries"""
+    """Clear cached summaries."""
     log_step("CLEAR CACHE", "start", profile_id)
 
     try:
@@ -1119,13 +982,9 @@ def clear_cache(profile_id):
         return internal_error_response("Failed to clear cached summaries")
 
 
-# ============================================
-# CLEAR ALL DATA
-# ============================================
-
 @app.route("/api/clear/<profile_id>", methods=["DELETE"])
 def clear_user_data(profile_id):
-    """Clear all processed data"""
+    """Clear all processed data for a user."""
     log_step("CLEAR DATA", "start", profile_id)
 
     try:
@@ -1143,13 +1002,9 @@ def clear_user_data(profile_id):
         return internal_error_response("Failed to clear processed medical data")
 
 
-# ============================================
-# DEBUG ENDPOINT
-# ============================================
-
 @app.route("/api/debug/<profile_id>", methods=["GET"])
 def debug_user(profile_id):
-    """Debug endpoint to check profile info and reports"""
+    """Debug endpoint to check profile info and reports."""
     log_step("DEBUG", "start", profile_id)
 
     try:
@@ -1184,10 +1039,6 @@ def debug_user(profile_id):
         return internal_error_response("Failed to fetch debug information")
 
 
-# ============================================
-# ERROR HANDLERS
-# ============================================
-
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({"success": False, "error": "Endpoint not found"}), 404
@@ -1197,10 +1048,6 @@ def not_found(error):
 def internal_error(error):
     return jsonify({"success": False, "error": "Internal server error"}), 500
 
-
-# ============================================
-# MAIN
-# ============================================
 
 if __name__ == "__main__":
     print("\n" + "="*80, flush=True)

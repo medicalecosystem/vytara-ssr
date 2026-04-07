@@ -1,5 +1,3 @@
-# backend/rag_pipeline/extractor_OCR.py
-
 import gc
 import io
 import os
@@ -17,11 +15,8 @@ paddle_ocr = None
 try:
     from paddleocr import PaddleOCR
 
-    # IMPORTANT: use PP-OCRv5_mobile_det, NOT the default server det model.
-    # PP-OCRv5_server_det tries to allocate ~11 GB for a single page image and
-    # will instantly OOM-kill WSL on a 6 GB RAM budget.
-    # The mobile model is equally accurate for receipts/documents.
-    _new_kwargs = {                         # paddleocr >= 2.10
+    # Use mobile_det to prevent OOM issues on limited RAM environments
+    _new_kwargs = {
         "use_textline_orientation": True,
         "lang": "en",
         "text_det_thresh": 0.3,
@@ -31,7 +26,7 @@ try:
         "enable_mkldnn": False,
         "text_detection_model_name": "PP-OCRv5_mobile_det",
     }
-    _legacy_kwargs = {                      # paddleocr < 2.10
+    _legacy_kwargs = {
         "use_angle_cls": True,
         "lang": "en",
         "det_db_thresh": 0.3,
@@ -62,16 +57,13 @@ except Exception as e:
 _easyocr_reader  = None
 _easyocr_checked = False
 
-# Maximum pixel dimension (longest side) fed to any OCR engine.
-# Receipts are fully readable at 1600 px; this cap prevents the det model
-# from requesting gigabytes of working memory for larger scans.
 _OCR_MAX_DIM = 1600
 
 
-# ── Image helpers ─────────────────────────────────────────────────────────────
+# --- Image Helpers ---
 
 def _cap_image_size(img_array: np.ndarray, max_dim: int = _OCR_MAX_DIM) -> np.ndarray:
-    """Downscale so the longest side is at most max_dim pixels."""
+    """Downscale image so the longest side does not exceed max_dim."""
     if img_array is None or img_array.size == 0:
         return img_array
     h, w    = img_array.shape[:2]
@@ -85,7 +77,7 @@ def _cap_image_size(img_array: np.ndarray, max_dim: int = _OCR_MAX_DIM) -> np.nd
 
 
 def preprocess_image(img_array: np.ndarray, verbose: bool = False) -> np.ndarray:
-    """Grayscale → denoise → CLAHE → adaptive threshold (for EasyOCR)."""
+    """Grayscale → denoise → CLAHE → adaptive threshold."""
     if verbose:
         print("  🔧 Preprocessing image...", flush=True)
     if img_array is None or img_array.size == 0:
@@ -102,21 +94,21 @@ def preprocess_image(img_array: np.ndarray, verbose: bool = False) -> np.ndarray
 
 
 def ensure_color(img_array: np.ndarray) -> np.ndarray:
-    """Guarantee uint8 3-channel (H, W, 3) BGR — PaddleOCR crashes otherwise."""
+    """Ensure image is uint8 3-channel BGR for PaddleOCR compatibility."""
     if img_array is None or img_array.size == 0:
         return img_array
     if img_array.dtype != np.uint8:
         img_array = img_array.astype(np.uint8)
-    if len(img_array.shape) == 3 and img_array.shape[2] == 3:
+    if len(img_array.shape) == 3 and img_array.shape == 3:
         return img_array
-    if len(img_array.shape) == 3 and img_array.shape[2] == 4:
+    if len(img_array.shape) == 3 and img_array.shape == 4:
         return cv2.cvtColor(img_array, cv2.COLOR_RGBA2BGR)
     if len(img_array.shape) == 2:
         return cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR)
     return img_array
 
 
-# ── PaddleOCR result parser ───────────────────────────────────────────────────
+# --- PaddleOCR Result Parser ---
 
 def _parse_paddle_result(result_raw, conf_threshold: float = 0.3) -> list[str]:
     texts = []
@@ -144,11 +136,11 @@ def _parse_paddle_result(result_raw, conf_threshold: float = 0.3) -> list[str]:
                 try:
                     if not isinstance(item, (list, tuple)) or len(item) < 2:
                         continue
-                    text_info = item[1]
+                    text_info = item
                     if not isinstance(text_info, (list, tuple)) or len(text_info) < 2:
                         continue
-                    text = str(text_info[0])
-                    conf = float(text_info[1])
+                    text = str(text_info)
+                    conf = float(text_info)
                     if text.strip() and conf >= conf_threshold:
                         texts.append(text.strip())
                 except (IndexError, TypeError, ValueError):
@@ -157,7 +149,7 @@ def _parse_paddle_result(result_raw, conf_threshold: float = 0.3) -> list[str]:
     return texts
 
 
-# ── OCR engines ───────────────────────────────────────────────────────────────
+# --- OCR Engines ---
 
 def extract_with_paddle(img_array: np.ndarray, verbose: bool = False) -> str:
     if not PADDLE_AVAILABLE:
@@ -165,7 +157,6 @@ def extract_with_paddle(img_array: np.ndarray, verbose: bool = False) -> str:
     if verbose:
         print("    → PaddleOCR (primary)...", flush=True)
 
-    # Cap size BEFORE passing to PaddleOCR — this is the main OOM guard
     img_array = _cap_image_size(img_array)
     color_img = ensure_color(img_array)
 
@@ -228,7 +219,7 @@ def extract_with_easyocr(img_array: np.ndarray, verbose: bool = False) -> str:
             print("    → EasyOCR (fallback)...", flush=True)
         img_array = _cap_image_size(img_array)
         result    = reader.readtext(img_array)
-        texts     = [item[1] for item in result if item[2] > 0.3]
+        texts     = [item for item in result if item > 0.3]
         extracted = "\n".join(texts)
         if verbose and extracted:
             print(f"      ✓ {len(extracted)} chars extracted", flush=True)
@@ -239,7 +230,7 @@ def extract_with_easyocr(img_array: np.ndarray, verbose: bool = False) -> str:
         return ""
 
 
-# ── Post-processing ───────────────────────────────────────────────────────────
+# --- Post-processing ---
 
 def postprocess_text(text: str) -> str:
     if not text:
@@ -260,7 +251,7 @@ def postprocess_text(text: str) -> str:
     return text.strip()
 
 
-# ── Shared internal helpers ───────────────────────────────────────────────────
+# --- Shared Internal Helpers ---
 
 def _prepare_for_easyocr_array(img_array, use_preprocessing=True, verbose=False):
     if use_preprocessing:
@@ -271,7 +262,7 @@ def _prepare_for_easyocr_array(img_array, use_preprocessing=True, verbose=False)
 
 
 def _ocr_best_from_array(raw_img, use_preprocessing=True, verbose=False):
-    """PaddleOCR first; EasyOCR fallback. Size capping done inside each engine."""
+    """Attempts OCR with PaddleOCR first, falling back to EasyOCR on failure."""
     paddle_text = extract_with_paddle(raw_img, verbose=verbose)
     if paddle_text:
         if verbose:
@@ -289,7 +280,7 @@ def _ocr_best_from_array(raw_img, use_preprocessing=True, verbose=False):
     return ""
 
 
-# ── Main extraction entry points ──────────────────────────────────────────────
+# --- Main Extraction Entry Points ---
 
 def extract_text_universal(file_path, use_preprocessing=True, verbose=False):
     if not os.path.exists(file_path):
@@ -327,7 +318,6 @@ def extract_text_universal(file_path, use_preprocessing=True, verbose=False):
         if verbose:
             print("📄 PDF file detected", flush=True)
 
-        # Step 1: selectable text via pdfplumber
         try:
             if verbose:
                 print("  → Trying pdfplumber...", flush=True)
@@ -345,7 +335,6 @@ def extract_text_universal(file_path, use_preprocessing=True, verbose=False):
             if verbose:
                 print(f"  ⚠️ pdfplumber failed: {e}", flush=True)
 
-        # Step 2: image-based PDF — ONE page at a time to avoid RAM exhaustion
         if verbose:
             print("  → Image-based PDF — OCR one page at a time...", flush=True)
         try:
@@ -366,7 +355,7 @@ def extract_text_universal(file_path, use_preprocessing=True, verbose=False):
                 pages = convert_from_path(file_path, dpi=150, first_page=i, last_page=i)
                 if not pages:
                     continue
-                img_array = np.array(pages[0].convert("RGB"))
+                img_array = np.array(pages.convert("RGB"))
                 del pages; gc.collect()
                 if verbose:
                     print(f"     raw shape: {img_array.shape}", flush=True)
@@ -435,7 +424,7 @@ def extract_text_from_bytes(file_bytes, file_extension, use_preprocessing=True, 
                 pages = convert_from_bytes(file_bytes, dpi=150, first_page=i, last_page=i)
                 if not pages:
                     continue
-                img_array = np.array(pages[0].convert("RGB"))
+                img_array = np.array(pages.convert("RGB"))
                 del pages; gc.collect()
                 if verbose:
                     print(f"     raw shape: {img_array.shape}", flush=True)
@@ -483,11 +472,10 @@ def extract_text_from_bytes(file_bytes, file_extension, use_preprocessing=True, 
     raise ValueError(f"Unsupported file extension: {file_extension}")
 
 
-# ── CLI entry point ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
-        test_file = sys.argv[1]
+        test_file = sys.argv
         print(f"\nTesting OCR on: {test_file}\n")
         result = extract_text_universal(test_file, use_preprocessing=True, verbose=True)
         print(f"\n{'='*80}\nEXTRACTED TEXT:\n{'='*80}\n{result}\n{'='*80}\n")

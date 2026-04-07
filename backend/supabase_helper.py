@@ -1,5 +1,3 @@
-# backend/supabase_helper.py
-
 import os
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -21,10 +19,6 @@ print(f"✅ Supabase client initialized: {SUPABASE_URL}")
 BUCKET_NAME = "medical-vault"
 
 
-# ============================================
-# FILE LISTING
-# ============================================
-
 def list_user_files(profile_id: str, folder_type: str = None):
     """List files from Supabase Storage for a profile."""
     print(f"\n📂 Listing files for profile: {profile_id}")
@@ -39,7 +33,6 @@ def list_user_files(profile_id: str, folder_type: str = None):
         
         response = supabase.storage.from_(BUCKET_NAME).list(folder_path)
         
-        # Filter out folders, keep only files
         files = [f for f in response if f.get('metadata')]
         
         print(f"✅ Found {len(files)} files")
@@ -53,28 +46,16 @@ def list_user_files(profile_id: str, folder_type: str = None):
         return []
 
 
-# ============================================
-# IN-MEMORY FILE ACCESS (NO LOCAL STORAGE)
-# ============================================
-
 def get_file_bytes(file_path: str) -> bytes:
     """
-    Get file content as bytes directly from Supabase Storage.
-    NEVER downloads to disk.
-
-    Args:
-        file_path: Full path in storage (e.g., "user_id/reports/file.pdf")
-
-    Returns:
-        File content as bytes (in memory)
+    Fetch file content as bytes directly from storage, bypassing local disk writing.
     """
     print(f"📥 Fetching file bytes: {file_path}")
     
     try:
-        # Get signed URL
         response = supabase.storage.from_(BUCKET_NAME).create_signed_url(
             file_path,
-            3600  # 1 hour expiry
+            3600
         )
         
         if 'signedURL' not in response:
@@ -82,7 +63,6 @@ def get_file_bytes(file_path: str) -> bytes:
         
         signed_url = response['signedURL']
         
-        # Fetch file content directly into memory
         file_response = requests.get(signed_url, timeout=30)
         file_response.raise_for_status()
         
@@ -96,22 +76,14 @@ def get_file_bytes(file_path: str) -> bytes:
         raise
 
 
-# ============================================
-# PROFILE LOOKUPS
-# ============================================
-
 def get_profile_info(profile_id: str) -> dict:
     """
-    Get profile info using profile_id.
-    Preferred source: profiles table  (display_name / name columns).
-    Fallback source:  personal table  (profile_id foreign key).
-    Returns a dict with at least a 'display_name' key on success,
-    or None if the profile cannot be found in either table.
+    Retrieve profile info.
+    Prefers the 'profiles' table for display_name, falling back to the 'personal' table.
     """
     if not profile_id:
         return None
 
-    # Preferred source: profiles table (profile-scoped display_name)
     try:
         profile_result = (
             supabase
@@ -136,7 +108,6 @@ def get_profile_info(profile_id: str) -> dict:
     except Exception as e:
         print(f"⚠️ Get profile info: profiles lookup failed: {e}")
 
-    # Fallback source: personal table by profile_id
     try:
         personal_result = (
             supabase
@@ -159,10 +130,6 @@ def get_profile_info(profile_id: str) -> dict:
     return None
 
 
-# ============================================
-# DATABASE OPERATIONS - FIXED VERSION
-# ============================================
-
 def save_extracted_data(profile_id: str, file_path: str, file_name: str, 
                        folder_type: str, extracted_text: str, 
                        patient_name: str = None, report_date: str = None,
@@ -172,11 +139,8 @@ def save_extracted_data(profile_id: str, file_path: str, file_name: str,
                        name_match_status: str = 'pending',
                        name_match_confidence: float = None):
     """
-    Save extracted text and metadata to database.
-    FIXED: Removed undefined structured_data_json reference.
-
-    NOTE: profile_id is the owner ID used for storage/report isolation.
-    Legacy compatibility: user_id (TEXT) is still populated with profile_id.
+    Save extracted metadata.
+    Maintains legacy schema compatibility by populating 'user_id' with 'profile_id'.
     """
     print(f"\n💾 Saving to database: {file_name}")
     
@@ -184,7 +148,7 @@ def save_extracted_data(profile_id: str, file_path: str, file_name: str,
         profile_id_str = str(profile_id)
 
         data = {
-            'user_id': profile_id_str,  # legacy compatibility
+            'user_id': profile_id_str,
             'profile_id': profile_id_str,
             'file_path': file_path,
             'file_name': file_name,
@@ -202,7 +166,6 @@ def save_extracted_data(profile_id: str, file_path: str, file_name: str,
             'processing_status': 'completed'
         }
         
-        # Use profile-scoped conflict target first; fallback for legacy schemas.
         try:
             result = supabase.table('medical_reports_processed').upsert(
                 data,
@@ -234,10 +197,7 @@ def save_extracted_data(profile_id: str, file_path: str, file_name: str,
 
 
 def get_processed_reports(profile_id: str, folder_type: str = None):
-    """
-    Get all processed reports for a profile from database.
-    Strictly scoped to profile_id.
-    """
+    """Retrieve strictly profile-scoped processed reports."""
     print(f"\n📊 Fetching processed reports for profile: {profile_id}")
     
     try:
@@ -269,12 +229,7 @@ def get_processed_reports(profile_id: str, folder_type: str = None):
 
 
 def delete_orphaned_report_records(profile_id: str, folder_type: str = None):
-    """
-    Delete all processed report records for a profile/folder that no longer
-    have a corresponding file in storage (bulk delete by profile scope).
-    Used when storage shows zero files — cleans up the entire DB scope.
-    Returns the number of deleted records.
-    """
+    """Bulk cleanup for DB records that lack corresponding storage files."""
     print(f"\n🗑️  Deleting orphaned records for profile: {profile_id}")
 
     try:
@@ -300,10 +255,6 @@ def delete_orphaned_report_records(profile_id: str, folder_type: str = None):
 
 
 def delete_report_record_by_id(record_id: str):
-    """
-    Delete a single processed report record by its primary-key ID.
-    Used for incremental cleanup.
-    """
     print(f"🗑️  Deleting report record: {record_id}")
 
     try:
@@ -316,9 +267,6 @@ def delete_report_record_by_id(record_id: str):
 
 
 def delete_report_records_bulk(record_ids: list) -> int:
-    """
-    Delete multiple processed report records by their primary-key IDs in a single network request.
-    """
     if not record_ids:
         return 0
 
@@ -334,7 +282,7 @@ def delete_report_records_bulk(record_ids: list) -> int:
 
 
 def compute_signature_from_reports(reports: list) -> str:
-    """Compute a stable signature for a list of processed reports."""
+    """Compute a stable hash signature for cache validation."""
     try:
         items = []
         for r in reports:
@@ -358,18 +306,15 @@ def compute_signature_from_reports(reports: list) -> str:
 def save_summary_cache(profile_id: str, folder_type: str, summary: str, 
                       report_count: int, reports_signature: str = None):
     """
-    Cache generated summary with signature.
-
-    NOTE: profile_id is the owner key.
-    user_id is populated with profile_id
-    for legacy compatibility with existing unique constraints.
+    Cache generated summary.
+    Maintains legacy schema compatibility by populating 'user_id' with 'profile_id'.
     """
     print(f"\n💾 Caching summary for profile: {profile_id}")
     
     try:
         profile_id_str = str(profile_id)
         payload = {
-            'user_id': profile_id_str,  # legacy compatibility
+            'user_id': profile_id_str,
             'profile_id': profile_id_str,
             'folder_type': folder_type,
             'summary_text': summary,
@@ -377,7 +322,6 @@ def save_summary_cache(profile_id: str, folder_type: str, summary: str,
             'reports_signature': reports_signature
         }
 
-        # Use profile-scoped conflict target first; fallback for legacy schemas.
         try:
             result = supabase.table('medical_summaries_cache').upsert(
                 payload,
@@ -402,10 +346,7 @@ def save_summary_cache(profile_id: str, folder_type: str, summary: str,
 
 
 def get_cached_summary(profile_id: str, folder_type: str = None, expected_signature: str = None):
-    """
-    Get cached summary if it exists and its signature is still valid.
-    Strictly scoped to profile_id.
-    """
+    """Retrieve cached summary if the content signature matches."""
     print(f"\n🔍 Checking for cached summary...")
     
     try:
@@ -423,7 +364,6 @@ def get_cached_summary(profile_id: str, folder_type: str = None, expected_signat
             record = rows[0]
             stored_sig = record.get('reports_signature') or ''
             
-            # Check signature match
             if expected_signature:
                 if stored_sig != expected_signature:
                     print("⚠️  Cache signature mismatch - reports changed")
@@ -448,10 +388,6 @@ def get_cached_summary(profile_id: str, folder_type: str = None, expected_signat
 
 
 def clear_user_cache(profile_id: str, folder_type: str = None):
-    """
-    Clear cached summaries for a profile.
-    Strictly scoped to profile_id.
-    """
     print(f"\n🗑️  Clearing cache for profile: {profile_id}")
     
     try:
@@ -473,10 +409,6 @@ def clear_user_cache(profile_id: str, folder_type: str = None):
 
 
 def clear_user_data(profile_id: str):
-    """
-    Clear all processed data for a profile.
-    Strictly scoped to profile_id.
-    """
     print(f"\n🗑️  Clearing ALL data for profile: {profile_id}")
     
     try:
@@ -506,19 +438,11 @@ def clear_user_data(profile_id: str):
         raise
 
 
-# ============================================
-# HEALTH CHECK
-# ============================================
-
 def test_connection():
-    """Test Supabase connection."""
     print("\n🧪 Testing Supabase connection...")
     
     try:
-        # Test database
         supabase.table('medical_reports_processed').select('id').limit(1).execute()
-        
-        # Test storage
         buckets = supabase.storage.list_buckets()
         
         print("✅ Supabase connection successful")

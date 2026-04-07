@@ -1,41 +1,6 @@
-# backend/rag_pipeline/extract_metadata.py
 """
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-extract_metadata.py  —  Phase 1 + Phase 2 Upgrade  (v2 — singleton bug fixed)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-PHASE 1 — Structured Outputs via Pydantic + OpenAI SDK
-  • validate_metadata() GUTTED — replaced by Pydantic field validators
-  • Switched from `requests` library → official `openai` Python SDK
-  • Uses client.beta.chat.completions.parse with MedicalMetadata(BaseModel)
-  • OpenAI guarantees JSON schema; Pydantic validates semantics automatically
-  • Eliminates: manual type-checking, regex extraction, blocklist loops
-
-PHASE 2 — Async Execution + Smart Concurrency
-  • Uses AsyncOpenAI and asyncio.gather under the hood
-  • Single-doc entry point extract_metadata_with_llm() is 100% backward-compatible
-    (sync Flask routes call asyncio.run() — zero API surface change)
-  • NEW: extract_metadata_batch() processes N documents concurrently
-
-BUG FIX (v2) — AsyncOpenAI Client Lifecycle
-  • Original v1 used a module-level singleton AsyncOpenAI client.
-  • Flask calls asyncio.run() once per request, which creates AND destroys
-    a new event loop on every call. httpx.AsyncClient (used internally by
-    AsyncOpenAI) binds its async transport to the event loop at first-use.
-    Re-using the same client across different asyncio.run() calls causes
-    "Event loop is closed" / httpx connection errors from the 2nd request on.
-  • FIX: AsyncOpenAI client is now created INSIDE each asyncio.run() context
-    (_run_single / _run_batch coroutines) and explicitly closed when done,
-    so its lifetime exactly matches the event loop that owns it.
-
-BACKWARD COMPATIBILITY
-  • extract_metadata_with_llm(text, file_name, retry_count) — identical signature
-  • Return dict shape is identical (age as str, extraction_confidence float)
-  • extract_metadata_fallback(text) — preserved unchanged
-  • standardize_date(date_str) — UPGRADED: dateutil.parser replaces hand-rolled
-                                  regex; 2-digit years rejected (not guessed)
-  • validate_metadata() — REMOVED (gutted by design, not called by pipeline)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Medical metadata extraction module utilizing OpenAI Structured Outputs 
+with a regex-based fallback for redundancy.
 """
 
 import os
@@ -49,37 +14,23 @@ from dateutil.parser import ParserError
 from pydantic import BaseModel, field_validator
 from openai import AsyncOpenAI
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CONFIGURATION
-# ─────────────────────────────────────────────────────────────────────────────
+# --- Configuration ---
 
 OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
 MODEL_NAME: str = "gpt-4.1-nano"
-
-# Max concurrent OpenAI calls in a batch — tunable via env var.
-# Default 8: safe for Tier-1 OpenAI accounts; raise to 16+ for Tier-2+.
 _MAX_CONCURRENT: int = int(os.getenv("METADATA_MAX_CONCURRENT", "8"))
 
 
 def _make_client() -> AsyncOpenAI:
-    """
-    Create a fresh AsyncOpenAI client.
-
-    IMPORTANT — called INSIDE each asyncio.run() context, never at module
-    level.  This guarantees the client's underlying httpx.AsyncClient binds
-    to the currently-running event loop, so it is always valid for the
-    duration of the coroutine and is safely closed before the loop exits.
-    """
+    """Creates a new AsyncOpenAI client bound to the active event loop."""
     return AsyncOpenAI(
         api_key=OPENAI_API_KEY,
-        timeout=25.0,    # slightly above original 20 s for one retry headroom
-        max_retries=2,   # SDK-level retries on 429 / 5xx — replaces manual retry_count
+        timeout=25.0,
+        max_retries=2,
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# BLOCKLISTS  (shared by Pydantic validators + fallback)
-# ─────────────────────────────────────────────────────────────────────────────
+# --- Blocklists ---
 
 _INVALID_NAMES: frozenset = frozenset(
     ["name", "patient", "sex", "age", "gender", "male", "female",
@@ -97,32 +48,18 @@ _INVALID_HOSPITAL_NAMES: frozenset = frozenset(
 )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PYDANTIC SCHEMA  (Phase 1 core)
-# ─────────────────────────────────────────────────────────────────────────────
+# --- Pydantic Schema ---
 
 class MedicalMetadata(BaseModel):
-    """
-    Strict schema for medical report metadata.
-
-    OpenAI Structured Outputs guarantees the *shape* of the JSON.
-    Pydantic field validators guarantee the *semantics* — no manual type-
-    checking, regex loops, or blocklist scans needed downstream.
-
-    age is Optional[int] here (OpenAI enforces the int type), then converted
-    back to Optional[str] in to_pipeline_dict() so the rest of the pipeline
-    (supabase_helper.save_extracted_data) receives the same types it always has.
-    """
-
+    """Structured schema mapping for LLM metadata extraction."""
     patient_name:  Optional[str] = None
-    age:           Optional[int] = None   # int enforced by OpenAI schema
-    gender:        Optional[str] = None   # normalised to "Male" / "Female" / None
-    report_date:   Optional[str] = None   # normalised to DD/MM/YYYY
+    age:           Optional[int] = None
+    gender:        Optional[str] = None
+    report_date:   Optional[str] = None
     report_type:   Optional[str] = None
     doctor_name:   Optional[str] = None
     hospital_name: Optional[str] = None
 
-    # ── patient_name ─────────────────────────────────────────────────────────
     @field_validator("patient_name", mode="before")
     @classmethod
     def clean_patient_name(cls, v):
@@ -135,14 +72,9 @@ class MedicalMetadata(BaseModel):
             return None
         return v
 
-    # ── age ──────────────────────────────────────────────────────────────────
     @field_validator("age", mode="before")
     @classmethod
     def clean_age(cls, v):
-        """
-        LLM sometimes returns "45 years" or 45.0 despite the int schema.
-        Belt-and-suspenders normalisation.
-        """
         if v is None:
             return None
         if isinstance(v, str):
@@ -154,7 +86,6 @@ class MedicalMetadata(BaseModel):
             return v if 0 < v < 150 else None
         return None
 
-    # ── gender ───────────────────────────────────────────────────────────────
     @field_validator("gender", mode="before")
     @classmethod
     def clean_gender(cls, v):
@@ -167,7 +98,6 @@ class MedicalMetadata(BaseModel):
             return "Male"
         return None
 
-    # ── report_date ──────────────────────────────────────────────────────────
     @field_validator("report_date", mode="before")
     @classmethod
     def clean_date(cls, v):
@@ -176,7 +106,6 @@ class MedicalMetadata(BaseModel):
         standardised = standardize_date(v.strip())
         return standardised if standardised else None
 
-    # ── report_type ──────────────────────────────────────────────────────────
     @field_validator("report_type", mode="before")
     @classmethod
     def clean_report_type(cls, v):
@@ -187,7 +116,6 @@ class MedicalMetadata(BaseModel):
             return None
         return v
 
-    # ── doctor_name ──────────────────────────────────────────────────────────
     @field_validator("doctor_name", mode="before")
     @classmethod
     def clean_doctor_name(cls, v):
@@ -198,7 +126,6 @@ class MedicalMetadata(BaseModel):
             return None
         return v
 
-    # ── hospital_name ─────────────────────────────────────────────────────────
     @field_validator("hospital_name", mode="before")
     @classmethod
     def clean_hospital_name(cls, v):
@@ -209,17 +136,8 @@ class MedicalMetadata(BaseModel):
             return None
         return v
 
-    # ── to_pipeline_dict ──────────────────────────────────────────────────────
     def to_pipeline_dict(self) -> dict:
-        """
-        Serialise to the exact dict the existing pipeline has always consumed.
-
-        Contract:
-          • age  → str or None   (supabase_helper stores it as TEXT column)
-          • All other fields are str or None
-          • extraction_confidence is NOT included here; _attach_confidence()
-            appends it after this call so the logic is shared with the fallback.
-        """
+        """Serializes model back to the pipeline's expected dict structure."""
         return {
             "patient_name":  self.patient_name,
             "age":           str(self.age) if self.age is not None else None,
@@ -231,9 +149,7 @@ class MedicalMetadata(BaseModel):
         }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PROMPT TEMPLATES
-# ─────────────────────────────────────────────────────────────────────────────
+# --- Prompt Templates ---
 
 _SYSTEM_PROMPT: str = (
     "You are a medical metadata extractor. Extract patient info from reports.\n\n"
@@ -257,26 +173,19 @@ def _build_user_prompt(text_sample: str) -> str:
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CONFIDENCE HELPER  (shared by LLM path + fallback)
-# ─────────────────────────────────────────────────────────────────────────────
+# --- Confidence Helper ---
 
-_TOTAL_FIELDS: int = 7   # patient_name, age, gender, date, type, doctor, hospital
+_TOTAL_FIELDS: int = 7
 
 
 def _attach_confidence(result: dict, max_confidence: float = 1.0) -> dict:
-    """
-    Compute and attach extraction_confidence to a metadata dict in-place.
-    max_confidence lets the fallback cap at 0.6 (regex is less reliable).
-    Returns the same dict for chaining.
-    """
+    """Calculates extraction completeness confidence metrics."""
     fields_found = sum(
         1 for k, v in result.items()
         if k != "extraction_confidence" and v is not None and v != "Unknown"
     )
     confidence = min(fields_found / _TOTAL_FIELDS, max_confidence)
 
-    # Boost: if we have a real patient name, floor confidence at 0.5
     name = result.get("patient_name")
     if name and name not in ("Unknown", None):
         confidence = max(confidence, 0.5)
@@ -285,24 +194,16 @@ def _attach_confidence(result: dict, max_confidence: float = 1.0) -> dict:
     return result
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ASYNC CORE  (Phase 2)
-# ─────────────────────────────────────────────────────────────────────────────
+# --- Async Core ---
 
 async def _async_extract_single(
     text: str,
     file_name: str,
     semaphore: asyncio.Semaphore,
-    client: AsyncOpenAI,          # injected per asyncio.run() context
+    client: AsyncOpenAI,
 ) -> dict:
-    """
-    Core async worker — one document, one API call, returns pipeline-ready dict.
-
-    The client is passed in (not created here) so a batch of N concurrent
-    tasks can share the same client within a single event loop context without
-    creating N handshakes. Falls back to regex silently on any failure.
-    """
-    text_sample = text[:800]   # headers contain all metadata; 800 chars is enough
+    """Worker handling single-document extraction via LLM with fallback handling."""
+    text_sample = text[:800]
 
     async with semaphore:
         try:
@@ -314,12 +215,12 @@ async def _async_extract_single(
                     {"role": "system", "content": _SYSTEM_PROMPT},
                     {"role": "user",   "content": _build_user_prompt(text_sample)},
                 ],
-                response_format=MedicalMetadata,  # guarantees JSON schema
+                response_format=MedicalMetadata,
                 temperature=0.05,
                 max_tokens=300,
             )
 
-            parsed: Optional[MedicalMetadata] = response.choices[0].message.parsed
+            parsed: Optional[MedicalMetadata] = response.choices.message.parsed
 
             if parsed is None:
                 print(f"   ⚠️  Parsed result is None for {file_name} — using fallback")
@@ -343,28 +244,15 @@ async def _async_extract_single(
 
 
 async def _run_single(text: str, file_name: str) -> dict:
-    """
-    Coroutine entry-point for a single-document extraction.
-
-    Creates its own client and closes it on exit so the client lifetime
-    exactly matches the event loop created by asyncio.run().
-    """
     client = _make_client()
     semaphore = asyncio.Semaphore(_MAX_CONCURRENT)
     try:
         return await _async_extract_single(text, file_name, semaphore, client)
     finally:
-        await client.close()   # release httpx connection pool before loop exits
+        await client.close()
 
 
 async def _run_batch(items: List[Tuple[str, str]]) -> List[dict]:
-    """
-    Coroutine entry-point for concurrent batch extraction.
-
-    Creates ONE shared client for all tasks — all tasks share the same
-    event loop so sharing the client is safe. Closes the client after
-    asyncio.gather() completes.
-    """
     client = _make_client()
     semaphore = asyncio.Semaphore(_MAX_CONCURRENT)
     tasks = [
@@ -374,43 +262,17 @@ async def _run_batch(items: List[Tuple[str, str]]) -> List[dict]:
     try:
         return await asyncio.gather(*tasks)
     finally:
-        await client.close()   # release httpx connection pool before loop exits
+        await client.close()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PUBLIC API — SYNC WRAPPERS  (backward-compatible)
-# ─────────────────────────────────────────────────────────────────────────────
+# --- Public API Sync Wrappers ---
 
 def extract_metadata_with_llm(
     text: str,
     file_name: str = None,
-    retry_count: int = 0,  # kept for signature compatibility; SDK retries replace it
+    retry_count: int = 0,
 ) -> dict:
-    """
-    Extract metadata from a single medical report text.
-
-    ┌─ BACKWARD COMPATIBLE ─────────────────────────────────────────────────┐
-    │  Identical signature and return shape to the original function.       │
-    │  Safe to call from sync Flask routes — uses asyncio.run() internally. │
-    └───────────────────────────────────────────────────────────────────────┘
-
-    Args:
-        text:        Extracted text from medical report.
-        file_name:   Original filename — used for logging only.
-        retry_count: Ignored. The OpenAI SDK handles retries (max_retries=2).
-
-    Returns:
-        {
-            "patient_name":          str | None,
-            "age":                   str | None,   <- str, not int
-            "gender":                str | None,   <- "Male" / "Female" / None
-            "report_date":           str | None,   <- DD/MM/YYYY
-            "report_type":           str | None,
-            "doctor_name":           str | None,
-            "hospital_name":         str | None,
-            "extraction_confidence": float,        <- 0.0 to 1.0
-        }
-    """
+    """Extract metadata synchronously from a single document text payload."""
     print(f"\n🔍 Extracting metadata with LLM ({MODEL_NAME})...")
 
     if not OPENAI_API_KEY:
@@ -423,7 +285,6 @@ def extract_metadata_with_llm(
         )
 
     except RuntimeError as exc:
-        # "This event loop is already running" — Jupyter / pytest-asyncio context
         print(f"   ⚠️  Active event loop detected ({exc}) — using regex fallback")
         return extract_metadata_fallback(text)
 
@@ -435,38 +296,7 @@ def extract_metadata_with_llm(
 def extract_metadata_batch(
     items: List[Tuple[str, str]],
 ) -> List[dict]:
-    """
-    NEW — Concurrent batch extraction for multi-file uploads.
-
-    Process N documents in parallel (up to _MAX_CONCURRENT simultaneous API
-    calls) instead of waiting for each one sequentially.  On a 10-file upload
-    this is typically 4-8x faster than calling extract_metadata_with_llm()
-    in a loop.
-
-    ┌─ HOW TO USE IN process-files (app_api.py) ────────────────────────────┐
-    │                                                                        │
-    │  # 1. Collect (text, filename) pairs for all NEW (unprocessed) files  │
-    │  batch_items = [(texts[f], f) for f in new_files]                    │
-    │                                                                        │
-    │  # 2. One call processes all concurrently                             │
-    │  batch_results = extract_metadata_batch(batch_items)                  │
-    │                                                                        │
-    │  # 3. Build a lookup map                                              │
-    │  metadata_map = {fname: meta                                          │
-    │                  for (_, fname), meta                                 │
-    │                  in zip(batch_items, batch_results)}                  │
-    │                                                                        │
-    │  # 4. Inside the existing per-file loop, replace the API call with:  │
-    │  metadata = metadata_map[file_name]                                   │
-    └───────────────────────────────────────────────────────────────────────┘
-
-    Args:
-        items: List of (extracted_text, file_name) tuples.
-
-    Returns:
-        List of metadata dicts in the same order as input.
-        Each dict has the identical shape as extract_metadata_with_llm().
-    """
+    """Execute concurrent batch metadata extraction for multiple documents."""
     if not items:
         return []
 
@@ -489,35 +319,14 @@ def extract_metadata_batch(
         return [extract_metadata_with_llm(t, n) for t, n in items]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# DATE STANDARDISATION  (upgraded: dateutil replaces hand-rolled regex)
-# ─────────────────────────────────────────────────────────────────────────────
+# --- Date Standardization ---
 
 def standardize_date(date_str: str) -> str:
-    """
-    Normalise an arbitrary date string to DD/MM/YYYY.
-    Returns the original string unchanged if no pattern matches.
-    Called by the Pydantic validator AND the regex fallback.
-
-    Uses dateutil.parser for robust parsing instead of hand-rolled regex.
-
-    dayfirst=True  — matches the DD/MM/YYYY convention used throughout
-                     the pipeline and consistent with the South Asian medical
-                     records this system processes.
-    yearfirst=False — defers to dayfirst for ambiguous inputs.
-
-    2-digit years: dateutil applies the same <50 / >=50 heuristic by default,
-    BUT medical records with ambiguous 2-digit years should be rejected rather
-    than silently guessed. We therefore require a 4-digit year in the raw
-    string; if only 2 digits are found we return the original unchanged so the
-    caller can treat it as unparseable and store None rather than a wrong date.
-    """
+    """Normalizes dates to DD/MM/YYYY. Requires 4-digit years to avoid guessing."""
     date_str = date_str.strip()
 
-    # Reject 2-digit years explicitly — do not guess century for medical data.
-    # A 4-digit year must appear somewhere in the string.
     if not re.search(r"\d{4}", date_str):
-        return date_str  # caller treats a non-normalised return as unparseable
+        return date_str
 
     try:
         parsed = _dateutil_parser.parse(date_str, dayfirst=True, yearfirst=False)
@@ -526,22 +335,10 @@ def standardize_date(date_str: str) -> str:
         return date_str
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# REGEX FALLBACK  (preserved from original — safety net, never removed)
-# ─────────────────────────────────────────────────────────────────────────────
+# --- Regex Fallback ---
 
 def extract_metadata_fallback(text: str) -> dict:
-    """
-    Regex-based metadata extraction.
-
-    Used when:
-      - OPENAI_API_KEY is absent
-      - API call times out or raises any exception
-      - Parsed result from OpenAI is None
-
-    Max confidence capped at 0.6 — reflects lower regex reliability.
-    Return shape is identical to the LLM path.
-    """
+    """Pattern matching fallback for when the API is inaccessible or fails."""
     print("   ⚠️  Using fallback regex extraction")
 
     metadata: dict = {
@@ -554,7 +351,6 @@ def extract_metadata_fallback(text: str) -> dict:
         "hospital_name": None,
     }
 
-    # ── Patient name ─────────────────────────────────────────────────────────
     name_patterns = [
         r"Patient\s*Name\s*[:\-]?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
         r"Name\s*[:\-]?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
@@ -568,18 +364,15 @@ def extract_metadata_fallback(text: str) -> dict:
                 metadata["patient_name"] = name
                 break
 
-    # ── Age ──────────────────────────────────────────────────────────────────
     m = re.search(r"Age\s*[:\-]?\s*(\d+)", text, re.IGNORECASE)
     if m:
         metadata["age"] = m.group(1)
 
-    # ── Gender ───────────────────────────────────────────────────────────────
     if re.search(r"\b(Female|F)\b", text, re.IGNORECASE):
         metadata["gender"] = "Female"
     elif re.search(r"\b(Male|M)\b", text, re.IGNORECASE):
         metadata["gender"] = "Male"
 
-    # ── Report date ──────────────────────────────────────────────────────────
     date_patterns = [
         r"Date\s*[:\-]?\s*(\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4})",
         r"(\d{1,2}[/\-]\d{1,2}[/\-]\d{4})",
@@ -590,7 +383,6 @@ def extract_metadata_fallback(text: str) -> dict:
             metadata["report_date"] = standardize_date(m.group(1))
             break
 
-    # ── Report type ──────────────────────────────────────────────────────────
     type_patterns = [
         r"(Complete Blood Count|CBC|Blood Test|Lipid Profile|"
         r"Kidney Function|Liver Function|Thyroid|X-Ray|MRI|CT Scan|Ultrasound)",
@@ -602,15 +394,10 @@ def extract_metadata_fallback(text: str) -> dict:
             metadata["report_type"] = m.group(1).strip()
             break
 
-    # ── Confidence (max 0.6 for regex) ───────────────────────────────────────
     _attach_confidence(metadata, max_confidence=0.6)
 
     return metadata
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SMOKE TEST  (python -m rag_pipeline.extract_metadata)
-# ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     _sample = """
