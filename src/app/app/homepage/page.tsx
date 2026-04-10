@@ -1316,12 +1316,6 @@ function HomePageContent() {
         console.error("SOS error:", error);
       }
       const message = getErrorMessage(error, "Failed to send SOS alert. Please try again.");
-      if (message === "Please enter a valid number") {
-        alert(
-          "✅ SOS Alert Sent Successfully!\n\nSOS alert sent successfully.\n\nYour emergency contacts have been notified."
-        );
-        return;
-      }
       alert(`❌ ${message}`);
     } finally {
       setIsSendingSOS(false);
