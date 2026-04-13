@@ -9,20 +9,12 @@ import traceback
 import tempfile
 import shutil
 from datetime import datetime
-import io
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 
-from rag_pipeline.clean_chunk import clean_text, chunk_text, chunk_text_with_metadata
-from rag_pipeline.embed_store import build_faiss_index
-from rag_pipeline.rag_query import ask_rag_improved
-from rag_pipeline.extract_metadata import extract_metadata_batch
 from internal_auth import authorize_internal_request
-import supabase_helper as sb
-
-from rag_pipeline.extractor_OCR import extract_text_from_bytes
 from rag_pipeline.profile_checker import (
     verify_patient_name,
-    filter_reports_by_name,
     INVALID_NAME_TOKENS,
 )
 
@@ -69,6 +61,43 @@ def internal_error_response(message: str, status_code: int = 500):
         "success": False,
         "error": message,
     }), status_code
+
+
+# Delay OCR/RAG imports until a route actually needs them so Gunicorn can bind fast.
+@lru_cache(maxsize=1)
+def _get_supabase_helper():
+    import supabase_helper as supabase_helper_module
+
+    return supabase_helper_module
+
+
+@lru_cache(maxsize=1)
+def _get_extract_text_from_bytes():
+    from rag_pipeline.extractor_OCR import extract_text_from_bytes
+
+    return extract_text_from_bytes
+
+
+@lru_cache(maxsize=1)
+def _get_extract_metadata_batch():
+    from rag_pipeline.extract_metadata import extract_metadata_batch
+
+    return extract_metadata_batch
+
+
+@lru_cache(maxsize=1)
+def _get_chunking_helpers():
+    from rag_pipeline.clean_chunk import clean_text, chunk_text_with_metadata
+
+    return clean_text, chunk_text_with_metadata
+
+
+@lru_cache(maxsize=1)
+def _get_summary_helpers():
+    from rag_pipeline.embed_store import build_faiss_index
+    from rag_pipeline.rag_query import ask_rag_improved
+
+    return build_faiss_index, ask_rag_improved
 
 
 @app.before_request
@@ -203,6 +232,7 @@ def process_files():
     print("="*80, flush=True)
 
     try:
+        sb = _get_supabase_helper()
         data = request.get_json()
 
         profile_id = resolve_profile_id(data)
@@ -318,6 +348,7 @@ def process_files():
             # Phase 2: Sequential OCR
             log_step("OCR phase", "start")
             ocr_results = []
+            extract_text_from_bytes = _get_extract_text_from_bytes()
 
             for idx, (fi, fp, file_bytes, dl_exc) in enumerate(download_results, 1):
                 file_name = fi.get('name')
@@ -363,6 +394,7 @@ def process_files():
                 log_step("Metadata batch", "start",
                          f"Extracting metadata for {len(ocr_results)} "
                          f"files concurrently")
+                extract_metadata_batch = _get_extract_metadata_batch()
 
                 batch_inputs = [
                     (text, fi.get('name'))
@@ -503,6 +535,7 @@ def generate_summary():
     temp_dir = tempfile.mkdtemp(prefix="rag_")
 
     try:
+        sb = _get_supabase_helper()
         data = request.get_json()
 
         profile_id = resolve_profile_id(data)
@@ -681,6 +714,7 @@ def generate_summary():
 
         # Concurrent text chunking
         log_step("Creating chunks (concurrent)", "start")
+        clean_text, chunk_text_with_metadata = _get_chunking_helpers()
 
         def _chunk_report(args):
             idx, report = args
@@ -732,6 +766,7 @@ def generate_summary():
 
         # Build FAISS index
         log_step("Building index", "start")
+        build_faiss_index, ask_rag_improved = _get_summary_helpers()
         try:
             index, chunks, vectorizer = build_faiss_index(all_chunks, temp_dir)
             log_step("Index", "success", "FAISS index ready")
@@ -875,11 +910,16 @@ def health_check():
     log_step("Health check", "start")
 
     try:
-        openai_ok  = bool(os.getenv("OPENAI_API_KEY"))
-        supabase_ok = sb.test_connection()
+        openai_ok = bool((os.getenv("OPENAI_API_KEY") or "").strip())
+        supabase_ok = bool(
+            (os.getenv("SUPABASE_URL") or "").strip()
+            and (os.getenv("SUPABASE_SERVICE_KEY") or "").strip()
+        )
 
         if not openai_ok:
             log_step("OpenAI API", "warning", "API key not set")
+        if not supabase_ok:
+            log_step("Supabase", "warning", "Supabase config not set")
 
         status = "healthy" if (supabase_ok and openai_ok) else "degraded"
 
@@ -907,6 +947,7 @@ def get_reports(profile_id):
     log_step("GET REPORTS", "start", profile_id)
 
     try:
+        sb = _get_supabase_helper()
         folder_type = request.args.get('folder_type')
         reports     = sb.get_processed_reports(profile_id, folder_type)
 
@@ -968,6 +1009,7 @@ def clear_cache(profile_id):
     log_step("CLEAR CACHE", "start", profile_id)
 
     try:
+        sb = _get_supabase_helper()
         deleted = sb.clear_user_cache(profile_id)
         log_step("Cache cleared", "success", f"{deleted} entries")
 
@@ -988,6 +1030,7 @@ def clear_user_data(profile_id):
     log_step("CLEAR DATA", "start", profile_id)
 
     try:
+        sb = _get_supabase_helper()
         deleted = sb.clear_user_data(profile_id)
         log_step("Data cleared", "success", f"{deleted} records")
 
@@ -1008,6 +1051,7 @@ def debug_user(profile_id):
     log_step("DEBUG", "start", profile_id)
 
     try:
+        sb = _get_supabase_helper()
         user_info = sb.get_profile_info(profile_id)
         reports   = sb.get_processed_reports(profile_id)
 
