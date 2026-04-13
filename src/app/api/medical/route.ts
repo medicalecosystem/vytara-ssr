@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getBackendInternalHeaders, hasBackendInternalAuth } from '@/lib/backendInternalAuth';
 
-const PRODUCTION_BACKEND_FALLBACK = 'https://vytara-ssr-qzin.onrender.com';
+const PRODUCTION_BACKEND_FALLBACK = 'https://carevie.onrender.com';
 const FLASK_API_URL =
   process.env.BACKEND_URL ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||

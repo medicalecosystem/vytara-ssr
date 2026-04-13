@@ -31,7 +31,7 @@ CORS(app, resources={
             "https://vytara-official.vercel.app",
             "https://*.vercel.app",
             "https://sauncier-instigative-yolande.ngrok-free.dev",
-            "https://vytara-ssr-qzin.onrender.com"
+            "https://carevie.onrender.com"
         ],
         "methods": ["GET", "POST", "DELETE", "PUT", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],

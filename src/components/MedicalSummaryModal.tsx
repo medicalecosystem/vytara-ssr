@@ -43,7 +43,7 @@ function getPublicBackendBaseUrl() {
 
   return (
     process.env.NODE_ENV === 'production'
-      ? 'https://vytara-ssr-qzin.onrender.com'
+      ? 'https://carevie.onrender.com'
       : 'http://localhost:5000'
   ).replace(/\/+$/, '');
 }
