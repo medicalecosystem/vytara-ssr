@@ -8,11 +8,16 @@ import pickle
 import numpy as np
 import faiss
 from typing import List
-
+from functools import lru_cache
 from sentence_transformers import SentenceTransformer
 
 EMBEDDING_DIM = 384
 _MODEL_NAME   = "all-MiniLM-L6-v2"
+@lru_cache(maxsize=1)
+def _get_global_sentence_transformer(model_name: str) -> SentenceTransformer:
+    """Loads the model exactly once per process and holds it in memory."""
+    print(f"   🤖 [COLD START] Loading sentence-transformer globally: {model_name} (device: cpu)", flush=True)
+    return SentenceTransformer(model_name, device="cpu")
 
 class _DenseMatrix:
     """Wraps a float32 ndarray to expose the sklearn .toarray() interface."""
@@ -31,11 +36,7 @@ class SentenceTransformerVectorizer:
         self._model: SentenceTransformer | None = None
 
     def _get_model(self) -> SentenceTransformer:
-        if self._model is None:
-            print(f"   🤖 Loading sentence-transformer: {self.model_name} (device: cpu)", flush=True)
-            # Force CPU to avoid CUDA capability mismatch on older GPUs (e.g., sm_61)
-            self._model = SentenceTransformer(self.model_name, device="cpu")
-        return self._model
+        return _get_global_sentence_transformer(self.model_name)
 
     def fit_transform(self, texts: List[str]) -> _DenseMatrix:
         return self._encode(texts)

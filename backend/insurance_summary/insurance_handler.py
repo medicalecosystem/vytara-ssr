@@ -7,108 +7,316 @@ Public API
 ----------
     handle_insurance_query(profile_id: str, user_question: str) -> dict
 
-The intent detector calls this function when it identifies an
-insurance-related query.  The function orchestrates the full pipeline:
-
-  1. Validate inputs.
-  2. Fetch insurance document metadata from Supabase.
-  3. Download raw file bytes for any document that lacks pre-extracted text
-     (needed by extractor_OCR for on-demand OCR during the first index build).
-  4. Delegate to ``insurance_rag_query.run_insurance_rag()`` for vector
-     search and LLM answer generation.
-  5. Return a structured result dict to the intent detector / chatbot layer.
-
 Return contract
 ---------------
 Success:
-    {
-      "answer":           str,        # answer to surface to the user
-      "sources":          list[str],  # doc UUIDs whose chunks were used
-      "chunks_retrieved": int,
-      "chunks_total":     int,
-      "index_rebuilt":    bool,
-    }
+    {"success": True,  "message": "<LLM answer>"}
 
-Handled error (non-fatal — safe to display a friendly message):
-    {
-      "answer": "<user-friendly message>",
-      "error":  "<exception string for logging>",
-    }
+Handled error (safe to display to the user):
+    {"success": False, "message": "<user-friendly error string>"}
+
+Design decisions
+----------------
+* **Cached imports** — ``_load_modules()`` wraps all heavy dependencies in
+  ``@lru_cache(maxsize=1)``.  The ImportError surface is hit only on the
+  very first request; every subsequent call (including concurrent ones) pays
+  zero import overhead.
+
+* **Incremental delta check** — ``get_docs_delta()`` (from insurance_rag_query)
+  returns only the documents that are new or have changed.  The handler
+  downloads *only those files*, not the entire vault on every query.
+
+* **Concurrent downloads to temp files** — files are fetched in parallel via
+  ``ThreadPoolExecutor`` and written straight to ``tempfile.NamedTemporaryFile``
+  objects on disk.  Raw bytes are never held in the Python heap longer than
+  needed for a single write, eliminating the OOM risk from the old in-memory
+  ``file_contents`` dict.  A ``_temp_file_context`` context manager guarantees
+  all temp files are removed after the RAG pipeline returns, even on exception.
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
-from typing import Optional
+import os
 import sys
+import tempfile
+from contextlib import contextmanager
+from functools import lru_cache
 from pathlib import Path
+from typing import Iterator
+
 logger = logging.getLogger(__name__)
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+# Maximum parallel download workers (tune via env var for your infra)
+_MAX_DOWNLOAD_WORKERS: int = int(os.getenv("INSURANCE_DOWNLOAD_WORKERS", "4"))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cached module loader
+# ─────────────────────────────────────────────────────────────────────────────
+
+@lru_cache(maxsize=1)
+def _load_modules() -> dict:
+    """
+    Import all runtime dependencies once and cache them for the lifetime of
+    the process.  ``lru_cache(maxsize=1)`` means:
+
+      • The first call pays the full import cost and may raise ``ImportError``.
+      • Every subsequent call (even from many concurrent request threads)
+        returns the cached dict instantly with zero I/O.
+      • There is no module-level import that could crash the process at startup
+        if an optional dependency is missing.
+    """
+    from supabase_helper import list_user_files, get_file_bytes, get_profile_info
+    from insurance_rag_query import run_insurance_rag, get_docs_delta
+
+    return {
+        "list_user_files":   list_user_files,
+        "get_file_bytes":    get_file_bytes,
+        "get_profile_info":  get_profile_info,
+        "run_insurance_rag": run_insurance_rag,
+        "get_docs_delta":    get_docs_delta,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Temp-file download helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _download_one(
+    doc: dict,
+    get_file_bytes_fn,
+) -> tuple[str, str]:
+    """
+    Download a single document to a named temp file on disk.
+
+    Streams raw bytes from ``get_file_bytes_fn`` directly into the file,
+    so at most one document's worth of bytes lives in memory at any time
+    per thread.
+
+    Returns
+    -------
+    (logical_file_path, temp_file_path)
+        The caller maps logical → temp so the RAG pipeline can open the file
+        by its logical path key.
+
+    Notes
+    -----
+    The temp file is NOT deleted here.  The caller is responsible for cleanup
+    via ``_temp_file_context``.
+    """
+    logical_path: str = doc["file_path"]
+    ext: str = os.path.splitext(doc.get("file_name", ""))[-1] or ".pdf"
+
+    raw_bytes: bytes = get_file_bytes_fn(logical_path)
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+    try:
+        tmp.write(raw_bytes)
+    finally:
+        tmp.close()
+
+    logger.debug(
+        "Downloaded '%s' → temp '%s' (%d bytes)",
+        logical_path, tmp.name, len(raw_bytes),
+    )
+    return logical_path, tmp.name
+
+
+@contextmanager
+def _temp_file_context(temp_paths: list[str]) -> Iterator[None]:
+    """
+    Context manager that unconditionally removes every path in *temp_paths*
+    on exit, whether the block succeeded or raised.
+    """
+    try:
+        yield
+    finally:
+        for path in temp_paths:
+            try:
+                os.unlink(path)
+                logger.debug("Deleted temp file: %s", path)
+            except OSError:
+                pass  # Already gone or permission issue — not fatal
+
+
+def _concurrent_download(
+    docs_to_fetch: list[dict],
+    get_file_bytes_fn,
+) -> dict[str, str]:
+    """
+    Download *docs_to_fetch* in parallel.
+
+    Parameters
+    ----------
+    docs_to_fetch:
+        Document metadata dicts (must contain ``file_path`` and ``file_name``).
+    get_file_bytes_fn:
+        Callable that accepts a logical file path and returns raw bytes.
+
+    Returns
+    -------
+    dict[logical_file_path, temp_file_path]
+        Only successfully downloaded documents appear in the result.
+        Failed downloads are logged at ERROR level and silently skipped so
+        that the pipeline can still use any documents that did succeed.
+    """
+    file_paths: dict[str, str] = {}
+
+    if not docs_to_fetch:
+        return file_paths
+
+    workers = min(_MAX_DOWNLOAD_WORKERS, len(docs_to_fetch))
+    logger.info(
+        "Downloading %d file(s) with up to %d worker(s)…",
+        len(docs_to_fetch), workers,
+    )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        future_to_doc = {
+            pool.submit(_download_one, doc, get_file_bytes_fn): doc
+            for doc in docs_to_fetch
+        }
+
+        for future in concurrent.futures.as_completed(future_to_doc):
+            doc = future_to_doc[future]
+            try:
+                logical, tmp = future.result()
+                file_paths[logical] = tmp
+            except Exception as exc:
+                logger.error(
+                    "Failed to download '%s': %s",
+                    doc.get("file_name"), exc,
+                )
+
+    logger.info(
+        "Concurrent download complete: %d/%d succeeded.",
+        len(file_paths), len(docs_to_fetch),
+    )
+    return file_paths
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
-def handle_insurance_query(profile_id: str, user_question: str) -> str:
+def handle_insurance_query(profile_id: str, user_question: str) -> dict:
+    """
+    Orchestrate the insurance RAG pipeline for a single user query.
+
+    Parameters
+    ----------
+    profile_id:
+        Supabase profile UUID (string or UUID object).
+    user_question:
+        Raw question text from the user.
+
+    Returns
+    -------
+    dict
+        ``{"success": True,  "message": "<answer>"}``  on success.
+        ``{"success": False, "message": "<error>"}``   on any handled failure.
+    """
     log_prefix = f"[insurance_handler | profile={profile_id}]"
     logger.info("%s Received query: %.120s", log_prefix, user_question)
 
+    # ── Input validation ──────────────────────────────────────────────────────
+
     if not profile_id or not str(profile_id).strip():
         logger.error("%s profile_id is empty or None", log_prefix)
-        return "An internal error occurred: the profile identifier is missing. Please refresh and try again."
+        return {
+            "success": False,
+            "message": (
+                "An internal error occurred: the profile identifier is missing. "
+                "Please refresh and try again."
+            ),
+        }
 
     if not user_question or not user_question.strip():
         logger.warning("%s Received empty user_question", log_prefix)
-        return "Please type a question about your insurance documents."
+        return {
+            "success": False,
+            "message": "Please type a question about your insurance documents.",
+        }
 
-    profile_id = str(profile_id).strip()
+    profile_id    = str(profile_id).strip()
     user_question = user_question.strip()
 
+    # ── Load modules (free after first call) ─────────────────────────────────
+
     try:
-        from supabase_helper import list_user_files, get_file_bytes,get_profile_info
-        from insurance_rag_query import run_insurance_rag,compute_docs_signature,is_index_valid
+        mods = _load_modules()
     except ImportError as exc:
         logger.critical("%s Critical import failure: %s", log_prefix, exc, exc_info=True)
-        return "An internal configuration error occurred. Please contact support if this persists."
+        return {
+            "success": False,
+            "message": (
+                "An internal configuration error occurred. "
+                "Please contact support if this persists."
+            ),
+        }
+
+    list_user_files   = mods["list_user_files"]
+    get_file_bytes    = mods["get_file_bytes"]
+    get_profile_info  = mods["get_profile_info"]
+    run_insurance_rag = mods["run_insurance_rag"]
+    get_docs_delta    = mods["get_docs_delta"]
+
+    # ── Fetch user display name ───────────────────────────────────────────────
+
     user_name = "the user"
     try:
-        profile_info = get_profile_info(profile_id)
-        if profile_info:
-            user_name = profile_info.get("display_name") or profile_info.get("name") or "the user"
-            logger.info("%s Fetched user name: %s", log_prefix, user_name)
+        info = get_profile_info(profile_id)
+        if info:
+            user_name = info.get("display_name") or info.get("name") or "the user"
+            logger.info("%s User name resolved: %s", log_prefix, user_name)
     except Exception as exc:
         logger.warning("%s Failed to fetch profile info: %s", log_prefix, exc)
-    # Fetch files
+
+    # ── List storage files ────────────────────────────────────────────────────
+
     try:
         storage_files = list_user_files(profile_id, folder_type="insurance") or []
     except Exception as exc:
-        logger.error("%s Failed to list storage files: %s", log_prefix, exc, exc_info=True)
-        return "I was unable to retrieve your insurance files at this time. Please try again in a moment."
+        logger.error(
+            "%s Failed to list storage files: %s", log_prefix, exc, exc_info=True
+        )
+        return {
+            "success": False,
+            "message": (
+                "I was unable to retrieve your insurance files at this time. "
+                "Please try again in a moment."
+            ),
+        }
 
     if not storage_files:
-        return (
-            "No insurance files were found for your profile. "
-            "Please upload your insurance policy, health card, or related documents "
-            "to the Insurance folder of your Vault, then try again."
-        )
+        return {
+            "success": False,
+            "message": (
+                "No insurance files were found for your profile. "
+                "Please upload your insurance policy, health card, or related documents "
+                "to the Insurance folder of your Vault, then try again."
+            ),
+        }
 
-    docs = []
+    # ── Build doc metadata list ───────────────────────────────────────────────
 
-    # Step 1: Build the metadata list (No downloading yet)
+    docs: list[dict] = []
     for f in storage_files:
         file_name = (f.get("name") or "").strip()
         if not file_name:
             continue
-
         file_path = f"{profile_id}/insurance/{file_name}".replace("//", "/")
-
         docs.append({
-            "id": file_path,
-            "file_path": file_path,
-            "file_name": file_name,
-            "extracted_text": "",
+            "id":               file_path,
+            "file_path":        file_path,
+            "file_name":        file_name,
+            "extracted_text":   "",
             "source_file_hash": (
                 (f.get("metadata") or {}).get("etag")
                 if isinstance(f.get("metadata"), dict)
@@ -117,43 +325,65 @@ def handle_insurance_query(profile_id: str, user_question: str) -> str:
         })
 
     if not docs:
-        return "I found insurance files, but none could be prepared for processing."
+        return {
+            "success": False,
+            "message": "I found insurance files, but none could be prepared for processing.",
+        }
 
-    file_contents = {}
+    # ── Incremental delta check — download only what actually changed ─────────
+    # get_docs_delta compares each doc's per-file signature against the stored
+    # manifest and returns only the subset that needs (re-)embedding.  Unchanged
+    # documents are skipped entirely: no download, no OCR, no re-embedding.
 
-    # Step 2: Check if the index is valid BEFORE downloading files
-    current_sig = compute_docs_signature(docs)
-    
-    if is_index_valid(profile_id, current_sig):
-        logger.info("%s Valid index found. Skipping file downloads and OCR.", log_prefix)
-        # file_contents remains empty. run_insurance_rag won't need it because 
-        # it will load the existing index from disk.
-    else:
-        logger.info("%s Index is missing/stale. Downloading files for OCR extraction...", log_prefix)
-        # Step 3: Only download bytes if we actually need to rebuild the index
-        for doc in docs:
-            try:
-                file_contents[doc["file_path"]] = get_file_bytes(doc["file_path"])
-            except Exception as exc:
-                logger.error("%s Failed to download '%s': %s", log_prefix, doc["file_name"], exc)
-
-    # Step 4: Run the RAG pipeline
     try:
-        answer: str = run_insurance_rag(
-            profile_id=profile_id,
-            user_question=user_question,
-            docs=docs,
-            file_contents=file_contents,
-            user_name=user_name,
-        )
-        return answer
-
+        to_add, _to_remove = get_docs_delta(profile_id, docs)
     except Exception as exc:
-        logger.exception("%s Unexpected RAG pipeline error: %s", log_prefix, exc)
-        return (
-            "An unexpected error occurred while answering your insurance question. "
-            "Please try again in a moment."
+        logger.warning(
+            "%s get_docs_delta failed (%s); falling back to full fetch.", log_prefix, exc
         )
-    
+        to_add = docs  # Safe fallback: treat everything as new
+
+    # ── Concurrent download to temp files (only new/changed docs) ────────────
+
+    file_paths: dict[str, str] = {}
+    temp_files: list[str]       = []
+
+    if to_add:
+        file_paths = _concurrent_download(to_add, get_file_bytes)
+        temp_files = list(file_paths.values())
+    else:
+        logger.info("%s All documents unchanged. No downloads required.", log_prefix)
+
+    # ── Run RAG pipeline; clean up temp files regardless of outcome ───────────
+
+    with _temp_file_context(temp_files):
+        try:
+            answer: str = run_insurance_rag(
+                profile_id=profile_id,
+                user_question=user_question,
+                docs=docs,
+                file_paths=file_paths,      # {logical_path: temp_path}
+                user_name=user_name,
+            )
+            return {"success": True, "message": answer}
+
+        except Exception as exc:
+            logger.exception("%s Unexpected RAG pipeline error: %s", log_prefix, exc)
+            return {
+                "success": False,
+                "message": (
+                    "An unexpected error occurred while answering your insurance question. "
+                    "Please try again in a moment."
+                ),
+            }
+
+
 if __name__ == "__main__":
-    print(handle_insurance_query(profile_id='e18af8f2-9c0e-4a92-b6b5-84e8ad019186',user_question='what coverage does my health incurance documents give to me and also what is the actual expiry of my insurance.'))
+    import json
+    result = handle_insurance_query(
+        profile_id="e18af8f2-9c0e-4a92-b6b5-84e8ad019186",
+        user_question=(
+            "how many people are being covered in the insurance"
+        ),
+    )
+    print(json.dumps(result, indent=2))
