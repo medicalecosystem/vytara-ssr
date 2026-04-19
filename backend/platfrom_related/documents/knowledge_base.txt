@@ -1,0 +1,259 @@
+Category: Platform Overview
+Q: What is Carevie?
+A: Carevie is an AI-powered healthcare platform designed to simplify personal health management. It provides secure and centralized storage with privacy and role-based access control.
+
+Category: Platform Overview
+Q: What can I do on Carevie platform?
+A: On Carevie, you can store and manage medical records, upload lab reports, prescriptions, insurance documents and bills, track health status and medical history, manage appointments and medications, add emergency contacts, invite family members and friends with role-based access, and use AI to generate summaries of medical reports.
+
+Category: Platform Overview
+Q: Is Carevie an AI-powered platform?
+A: Yes, Carevie is an AI-powered healthcare platform. It uses AI to generate summaries of your medical reports and help you understand your health data better.
+
+Category: Platform Overview
+Q: What types of documents can I store on Carevie?
+A: You can store lab reports, prescriptions, insurance documents, bills and receipts, and other medical records on Carevie.
+
+Category: Platform Overview
+Q: Does Carevie provide medical advice?
+A: No, Carevie is not a healthcare provider and does not provide medical advice. It is a platform for managing and storing your personal health information.
+
+Category: Platform Overview
+Q: Is Carevie a centralized platform?
+A: Yes, Carevie provides secure and centralized storage for all your health data, including medical records, appointments, medications, and more — all in one place.
+
+Category: Platform Overview
+Q: Can I track my medical history on Carevie?
+A: Yes, Carevie allows you to track your health status and complete medical history from within the platform.
+
+Category: AI Summary
+Q: How do I get an AI summary of my medical reports?
+A: To get an AI summary: 1. Go to the Home Page, 2. Click on 'Get Summary', 3. Ensure the required medical files are uploaded. The system will then generate a concise summary to help you understand your reports.
+
+Category: AI Summary
+Q: Where is the 'Get Summary' button located?
+A: The 'Get Summary' button is located on the Home Page of the Carevie platform.
+
+Category: AI Summary
+Q: What does the AI summary feature do?
+A: The AI summary feature generates a concise and easy-to-understand summary of your uploaded medical reports, helping you better understand your health data without needing medical expertise.
+
+Category: AI Summary
+Q: Do I need to upload files before getting an AI summary?
+A: Yes, you need to ensure your required medical files are uploaded before requesting an AI summary. The system uses your uploaded documents to generate the summary.
+
+Category: AI Summary
+Q: Can AI help me understand my medical reports?
+A: Yes, Carevie's AI summary feature generates a concise summary of your medical reports to help you understand them more easily.
+
+Category: AI Summary
+Q: What happens after I click 'Get Summary'?
+A: After clicking 'Get Summary' on the Home Page, the system will process your uploaded medical files and generate a concise AI-powered summary of your reports.
+
+Category: Appointments
+Q: How do I manage my appointments on Carevie?
+A: To manage appointments: 1. Go to the Home Page, 2. Click on 'Appointments Card', 3. Add or manage your tasks or appointments, 4. Save changes. You can view, update, and manage both upcoming and past appointments.
+
+Category: Appointments
+Q: Where can I find the Appointments section?
+A: You can find the Appointments section by going to the Home Page and clicking on the 'Appointments Card'.
+
+Category: Appointments
+Q: Can I view past appointments on Carevie?
+A: Yes, Carevie allows you to view, update, and manage both upcoming and past appointments from the Appointments Card on the Home Page.
+
+Category: Appointments
+Q: Can I add new appointments on Carevie?
+A: Yes, you can add new appointments by going to the Home Page, clicking on the 'Appointments Card', adding the appointment details, and saving the changes.
+
+Category: Appointments
+Q: Can I update or edit an existing appointment?
+A: Yes, you can update or edit an existing appointment by going to the Home Page, clicking the 'Appointments Card', making your changes, and saving them.
+
+Category: Appointments
+Q: How do I save an appointment after adding it?
+A: After adding the appointment details in the Appointments Card, click 'Save Changes' to save your appointment.
+
+Category: Care Circle
+Q: What is Care Circle in Carevie?
+A: Care Circle is a feature that allows you to invite family members and friends to access your health data on Carevie, with different levels of access based on their role.
+
+Category: Care Circle
+Q: How do I invite someone to my Care Circle?
+A: To invite someone: 1. Go to Care Circle, 2. Click 'Invite Member', 3. Send the invitation. The invited person will get access based on whether they are added as family or friend.
+
+Category: Care Circle
+Q: What access do family members have in Care Circle?
+A: Family members in Care Circle have full access to your health data. They can manage appointments and view your medical reports.
+
+Category: Care Circle
+Q: What access do friends have in Care Circle?
+A: Friends in Care Circle have limited access. They can only view basic profile information and cannot access full health data or manage appointments.
+
+Category: Care Circle
+Q: Can friends view my medical reports in Care Circle?
+A: No, friends in Care Circle have limited access and can only view basic profile information. Only family members have full access to health data and reports.
+
+Category: Care Circle
+Q: Can family members manage my appointments?
+A: Yes, family members added to your Care Circle have full access and can manage your appointments and view your medical reports.
+
+Category: Care Circle
+Q: What is the difference between family and friends in Care Circle?
+A: Family members have full access to health data including managing appointments and viewing reports. Friends have limited access and can only view basic profile information.
+
+Category: Emergency
+Q: How do I add or edit emergency contacts?
+A: You can manage emergency contacts in two ways. From Home: Go to Home Page → Click 'Emergency Card' → Edit contact details. From Care Circle: Go to Care Circle → Click Emergency Card → Click Edit.
+
+Category: Emergency
+Q: Where is the Emergency Card located?
+A: The Emergency Card is available in two places: on the Home Page and within the Care Circle section.
+
+Category: Emergency
+Q: Can I manage emergency contacts from Care Circle?
+A: Yes, you can manage emergency contacts from Care Circle by going to Care Circle, clicking the Emergency Card, and then clicking Edit.
+
+Category: Emergency
+Q: How do I edit an emergency contact from the Home Page?
+A: To edit an emergency contact from the Home Page: 1. Go to Home Page, 2. Click on 'Emergency Card', 3. Edit the contact details.
+
+Category: Emergency
+Q: Can I have emergency contacts on Carevie?
+A: Yes, Carevie allows you to add and manage emergency contacts through the Emergency Card available on both the Home Page and in Care Circle.
+
+Category: Medication
+Q: How do I manage my medications on Carevie?
+A: To manage medications: 1. Go to the Home Page, 2. Click on 'Medications Card', 3. Add your medication details. Make sure device notifications are enabled to receive medication reminders.
+
+Category: Medication
+Q: Where can I find the Medications section?
+A: The Medications section is accessible from the Home Page by clicking on the 'Medications Card'.
+
+Category: Medication
+Q: Does Carevie send medication reminders?
+A: Yes, Carevie provides medication reminders. However, reminders depend on your device's notification settings, so you need to ensure notifications are enabled on your device.
+
+Category: Medication
+Q: Why am I not receiving medication reminders?
+A: Medication reminders depend on your device's notification settings. Please ensure that notifications are enabled for the Carevie app on your device.
+
+Category: Medication
+Q: Can I add multiple medications on Carevie?
+A: Yes, you can add multiple medications by going to the Home Page, clicking on the 'Medications Card', and adding each medication's details one by one.
+
+Category: Medication
+Q: How do I enable medication reminders?
+A: To receive medication reminders, ensure notifications are enabled for the Carevie app in your device's notification settings. The app will then send reminders based on the medication details you added.
+
+Category: Upload Documents
+Q: How do I upload medical documents on Carevie?
+A: To upload medical documents: 1. Go to Vault, 2. Click on Upload, 3. Select your file (PDF, JPG, or PNG), 4. Confirm the upload.
+
+Category: Upload Documents
+Q: What types of files can I upload on Carevie?
+A: You can upload files in PDF, JPG, and PNG formats on Carevie.
+
+Category: Upload Documents
+Q: What documents can I upload on Carevie?
+A: You can upload Lab Reports, Prescriptions, Insurance Documents, Bills and Receipts, and other medical documents on Carevie.
+
+Category: Upload Documents
+Q: Where do I upload my documents on Carevie?
+A: You can upload documents by going to the Vault section and clicking on the Upload button.
+
+Category: Upload Documents
+Q: Can I upload prescriptions on Carevie?
+A: Yes, you can upload prescriptions on Carevie. Go to Vault, click Upload, select your prescription file (PDF, JPG, or PNG), and confirm the upload.
+
+Category: Upload Documents
+Q: Can I upload insurance documents on Carevie?
+A: Yes, Carevie supports uploading insurance documents. Go to Vault, click Upload, select your file, and confirm.
+
+Category: Upload Documents
+Q: What should I do if my file upload fails?
+A: Ensure that your file format is supported (PDF, JPG, or PNG) and that the file size is within the supported limit. If the issue persists, check your internet connection or contact support.
+
+Category: Upload Documents
+Q: Can I upload lab reports on Carevie?
+A: Yes, you can upload lab reports on Carevie. Go to Vault, click Upload, select your lab report file in PDF, JPG, or PNG format, and confirm the upload.
+
+Category: Privacy
+Q: How does Carevie protect my data?
+A: Carevie protects your data using encryption, secure authentication, and access control. Your data is stored securely and is never sold to third parties.
+
+Category: Privacy
+Q: Does Carevie sell my personal or medical data?
+A: No, Carevie does not sell your personal or medical data. Your data is stored securely and used only within the platform.
+
+Category: Privacy
+Q: What data does Carevie store?
+A: Carevie stores medical reports and prescriptions, user profile data, and usage and technical data.
+
+Category: Privacy
+Q: What are my rights regarding my data on Carevie?
+A: You have the right to access your data, correct your data, delete your data, and withdraw your consent at any time on Carevie.
+
+Category: Privacy
+Q: Can I delete my data from Carevie?
+A: Yes, you have the right to delete your data from Carevie. You can also go to Settings and select 'Delete Account' to permanently remove your account and associated data.
+
+Category: Privacy
+Q: Is my medical data encrypted on Carevie?
+A: Yes, Carevie uses encryption as one of its security measures to keep your medical data safe and protected.
+
+Category: Privacy
+Q: Can I withdraw my consent on Carevie?
+A: Yes, users have the right to withdraw their consent at any time on Carevie.
+
+Category: Privacy
+Q: What security measures does Carevie use?
+A: Carevie uses encryption, secure authentication, and access control to ensure the security of your data.
+
+Category: Profile
+Q: How do I edit my profile on Carevie?
+A: To edit your profile: 1. Go to Profile, 2. Click Edit, 3. Update your details, 4. Save changes.
+
+Category: Profile
+Q: How do I switch to another profile on Carevie?
+A: To switch profiles: 1. Click 'Switch Profile', 2. Select the profile you want to switch to.
+
+Category: Profile
+Q: How do I delete my account on Carevie?
+A: To delete your account: 1. Go to Settings, 2. Select 'Delete Account', 3. Confirm the deletion. Please note this action is permanent.
+
+Category: Profile
+Q: Can I have multiple profiles on Carevie?
+A: Yes, Carevie supports multiple profiles. You can switch between profiles using the 'Switch Profile' option.
+
+Category: Profile
+Q: Where do I go to update my personal details?
+A: Go to Profile, click Edit, update your personal details, and save the changes.
+
+Category: Profile
+Q: Is deleting my account on Carevie permanent?
+A: Yes, deleting your account is permanent. To delete: Go to Settings → Select 'Delete Account' → Confirm deletion.
+
+Category: System Help
+Q: What should I do if the Carevie app is slow or not loading?
+A: If the app is slow or not loading, check your internet connection and try again later. The server may be temporarily busy.
+
+Category: System Help
+Q: Why is the Carevie server not working?
+A: If the server is not working, it may be under maintenance. Please try again after some time.
+
+Category: System Help
+Q: What should I do if the chatbot is not helpful?
+A: If the chatbot is not able to help you, please contact the Carevie support team for further assistance.
+
+Category: System Help
+Q: How do I contact Carevie support?
+A: If the chatbot is not helpful or you face any issues, you can contact the Carevie support team directly for assistance.
+
+Category: System Help
+Q: The app is not responding. What should I do?
+A: If the app is not responding, first check your internet connection. If the connection is fine, the server may be under maintenance — please try again later. If the issue continues, contact support.
+
+Category: System Help
+Q: Why is Carevie under maintenance?
+A: Carevie may occasionally go under maintenance for updates and improvements. During this time the server may not be accessible. Please try again after some time.
