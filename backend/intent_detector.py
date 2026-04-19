@@ -135,10 +135,12 @@ IMPORTANT:
 If the question is "how to add / how to use / what is" → ALWAYS platform  
 
 8. unknown  
-Gibberish or unrelated input  
+Gibberish, empty input, or completely unrelated questions not connected to healthcare or this app. 
 Examples:  
 "asdfgh"  
-"12345"  
+"12345"
+
+
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STRICT DECISION LOGIC

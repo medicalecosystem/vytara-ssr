@@ -23,6 +23,13 @@ def handle_platform_query(user_question: str) -> dict:
     try:
         answer = run_platform_rag(user_question.strip())
         return {"success": True, "message": answer}
+    
+    except FileNotFoundError as exc:
+        logger.error("Vector store not found. Please run platform_rag_query.py first: %s", exc)
+        return {
+            "success": False,
+            "message": "System is not ready yet. Please contact support."
+        }    
 
     except Exception as exc:
         logger.exception("handle_platform_query error: %s", exc)
