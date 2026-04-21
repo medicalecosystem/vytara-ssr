@@ -5,6 +5,7 @@ import { getAuthenticatedUser } from '@/lib/auth';
 type LinkRow = {
   id: string;
   profile_id: string | null;
+  requester_id: string;
 };
 
 type ActivityRow = {
@@ -63,25 +64,50 @@ export async function GET(request: Request) {
 
     const { data: linkRows, error: linksError } = await adminClient
       .from('care_circle_links')
-      .select('id, profile_id')
+      .select('id, profile_id, requester_id')
       .eq('recipient_id', user.id)
       .eq('status', 'accepted')
-      .eq('relationship', 'family')
       .not('profile_id', 'is', null);
 
     if (linksError) {
       return NextResponse.json({ message: linksError.message }, { status: 500 });
     }
 
+    const incomingLinks = (linkRows ?? []) as LinkRow[];
+    const ownerIds = Array.from(new Set(incomingLinks.map((row) => row.requester_id)));
+
+    if (ownerIds.length === 0) {
+      return NextResponse.json({ logs: [] });
+    }
+
+    const { data: permRows, error: permsError } = await adminClient
+      .from('care_circle_permissions')
+      .select('owner_user_id, perm_activity_log')
+      .eq('recipient_id', user.id)
+      .in('owner_user_id', ownerIds)
+      .eq('perm_activity_log', true);
+
+    if (permsError) {
+      return NextResponse.json({ message: permsError.message }, { status: 500 });
+    }
+
+    const allowedOwnerIds = new Set(
+      ((permRows ?? []) as Array<{ owner_user_id: string }>).map((row) => row.owner_user_id)
+    );
+
+    const allowedLinks = incomingLinks.filter(
+      (row) => row.profile_id && allowedOwnerIds.has(row.requester_id)
+    );
+
     const sharedProfileIds = Array.from(
       new Set(
-        ((linkRows ?? []) as LinkRow[])
+        allowedLinks
           .map((row) => row.profile_id)
           .filter((profileId): profileId is string => Boolean(profileId))
       )
     );
     const linkIdByProfileId = new Map<string, string>();
-    ((linkRows ?? []) as LinkRow[]).forEach((row) => {
+    allowedLinks.forEach((row) => {
       if (!row.profile_id || !row.id || linkIdByProfileId.has(row.profile_id)) return;
       linkIdByProfileId.set(row.profile_id, row.id);
     });

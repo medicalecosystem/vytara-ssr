@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { logCareCircleActivity } from '@/lib/careCircleActivityLogs';
+import { authorizeCareCircleMemberAccess } from '@/lib/careCirclePermissions';
 
 const CARE_CIRCLE_FOLDERS = ['reports', 'prescriptions', 'insurance', 'bills'] as const;
 type CareCircleFolder = (typeof CARE_CIRCLE_FOLDERS)[number];
-type CareCircleRole = 'family' | 'friend';
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_EXTENSIONS = new Set([
   'jpg',
@@ -22,15 +22,6 @@ const ALLOWED_IMAGE_EXTENSIONS = new Set([
   'avif',
   'ico',
 ]);
-
-type LinkRow = {
-  id: string;
-  requester_id: string;
-  recipient_id: string;
-  status: 'pending' | 'accepted' | 'declined';
-  relationship: string | null;
-  profile_id: string | null;
-};
 
 type VaultFile = {
   name: string;
@@ -59,17 +50,6 @@ type DeletePayload = {
   folder?: string;
   name?: string;
 };
-
-const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRole => {
-  const normalized = (value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[-\s]+/g, '_');
-  if (normalized === 'family') return 'family';
-  return 'friend';
-};
-
-const canReadMedicalData = (role: CareCircleRole) => role === 'family';
 
 const isMissingAuthColumnError = (error: { code?: string; message?: string } | null) =>
   error?.code === 'PGRST204' || error?.message?.toLowerCase().includes('auth_id');
@@ -194,53 +174,25 @@ const getAuthorizedVaultAccess = async (
     };
   }
 
-  const { data: linkRow, error: linkError } = await adminClient
-    .from('care_circle_links')
-    .select('id, requester_id, recipient_id, status, relationship, profile_id')
-    .eq('id', linkId)
-    .maybeSingle();
+  const result = await authorizeCareCircleMemberAccess({
+    adminClient,
+    user,
+    linkId,
+    requiredPermission: 'vault',
+  });
 
-  if (linkError && linkError.code !== 'PGRST116') {
+  if (!result.ok) {
     return {
       access: null,
-      response: NextResponse.json({ message: linkError.message }, { status: 500 }),
-    };
-  }
-
-  const link = linkRow as LinkRow | null;
-  if (!link) {
-    return {
-      access: null,
-      response: NextResponse.json({ message: 'Care circle link not found.' }, { status: 404 }),
-    };
-  }
-
-  const role = normalizeCareCircleRole(link.relationship);
-  const isAuthorizedRecipient =
-    link.recipient_id === user.id && link.status === 'accepted' && canReadMedicalData(role);
-
-  if (!isAuthorizedRecipient) {
-    return {
-      access: null,
-      response: NextResponse.json(
-        { message: 'Not allowed for this care circle member.' },
-        { status: 403 }
-      ),
-    };
-  }
-
-  if (!link.profile_id) {
-    return {
-      access: null,
-      response: NextResponse.json({ message: 'Owner profile is not available.' }, { status: 404 }),
+      response: NextResponse.json({ message: result.message }, { status: result.status }),
     };
   }
 
   return {
     access: {
       adminClient,
-      ownerProfileId: link.profile_id,
-      actorUserId: user.id,
+      ownerProfileId: result.access.ownerProfileId,
+      actorUserId: result.access.actorUserId,
     },
     response: null,
   };

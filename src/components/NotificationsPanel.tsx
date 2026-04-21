@@ -104,7 +104,15 @@ type FamilyMemberDetailsResponse = {
 type CareCircleLinkRow = {
   id: string;
   status: string;
-  role: string;
+  permissions?: {
+    emergency_card?: boolean;
+    appointments?: boolean;
+    medications?: boolean;
+    vault?: boolean;
+    personal_info?: boolean;
+    activity_log?: boolean;
+  };
+  hasAnyAccess?: boolean;
   displayName: string;
   createdAt: string;
   updatedAt: string | null;
@@ -716,14 +724,13 @@ export function NotificationsPanel({
             typeof link.id === "string" &&
             link.id.trim().length > 0 &&
             link.status === "accepted" &&
-            link.role === "family"
+            Boolean(link.hasAnyAccess)
         );
         const outgoingFamilyLinks = (linksPayload.outgoing ?? []).filter(
           (link) =>
             typeof link.id === "string" &&
             link.id.trim().length > 0 &&
-            link.status === "accepted" &&
-            link.role === "family"
+            link.status === "accepted"
         );
 
         const appointmentNotifications: FamilyAppointmentNotification[] = [];

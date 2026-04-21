@@ -1,8 +1,8 @@
 import { apiRequest } from '@/api/client';
+import type { CareCirclePermissions } from '@/lib/careCirclePermissions';
 import type { MedicationMealTiming, MedicationReminderSlot } from '@/lib/medications';
 
 export type CareCircleStatus = 'pending' | 'accepted' | 'declined';
-export type CareCircleRole = 'family' | 'friend';
 
 export type CareCircleLink = {
   id: string;
@@ -11,7 +11,8 @@ export type CareCircleLink = {
   profileId?: string | null;
   ownerProfileIsPrimary?: boolean;
   status: CareCircleStatus;
-  role?: CareCircleRole | string | null;
+  permissions: CareCirclePermissions;
+  hasAnyAccess?: boolean;
   displayName: string;
   createdAt: string;
   updatedAt?: string | null;
@@ -66,9 +67,19 @@ export type MemberDetailsMedication = {
   }[];
 };
 
+export type MemberDetailsMedicalTeamEntry = {
+  name?: string;
+  specialty?: string;
+  phone?: string;
+  address?: string;
+  [key: string]: unknown;
+};
+
 export type MemberDetailsPayload = {
+  permissions: CareCirclePermissions;
   personal: MemberDetailsPersonal;
   health: MemberDetailsHealth;
+  medicalTeam?: MemberDetailsMedicalTeamEntry[];
   appointments: MemberDetailsAppointment[];
   medications: MemberDetailsMedication[];
 };
@@ -114,10 +125,14 @@ export const careCircleApi = {
       `/api/care-circle/links${profileId ? `?profileId=${encodeURIComponent(profileId)}` : ''}`
     ),
 
-  inviteByContact: (contact: string, profileId: string) =>
+  inviteByContact: (
+    contact: string,
+    profileId: string,
+    permissions?: CareCirclePermissions
+  ) =>
     apiRequest<{ recipientId: string }>('/api/care-circle/invite', {
       method: 'POST',
-      body: { contact, profileId },
+      body: { contact, profileId, permissions },
     }),
 
   respondToInvite: (linkId: string, decision: 'accepted' | 'declined') =>
@@ -126,10 +141,15 @@ export const careCircleApi = {
       body: { linkId, decision },
     }),
 
-  updateRole: (linkId: string, role: CareCircleRole) =>
-    apiRequest<{ linkId: string; role: CareCircleRole; updatedCount: number }>(
-      '/api/care-circle/role',
-      { method: 'PATCH', body: { linkId, role } }
+  getPermissions: (linkId: string) =>
+    apiRequest<{ linkId: string; recipientId: string; permissions: CareCirclePermissions }>(
+      `/api/care-circle/permissions?linkId=${encodeURIComponent(linkId)}`
+    ),
+
+  updatePermissions: (linkId: string, permissions: Partial<CareCirclePermissions>) =>
+    apiRequest<{ linkId: string; recipientId: string; permissions: CareCirclePermissions }>(
+      '/api/care-circle/permissions',
+      { method: 'PATCH', body: { linkId, permissions } }
     ),
 
   getMemberDetails: (linkId: string) =>

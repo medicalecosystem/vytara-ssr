@@ -1,8 +1,25 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ChevronRight, CircleHelp, UserPlus, Trash2, X } from 'lucide-react';
+import {
+  Activity,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  CircleHelp,
+  FileText,
+  FolderOpen,
+  Image as ImageIcon,
+  HeartPulse,
+  Pill,
+  ShieldCheck,
+  Trash2,
+  User,
+  UserPlus,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { supabase } from '@/lib/createClient';
 import { useAppProfile } from '@/components/AppProfileProvider';
 import {
@@ -25,16 +42,23 @@ import {
   type MedicationMealKey,
   type MedicationMealTiming,
 } from '@/lib/medications';
+import {
+  CARE_CIRCLE_DEFAULT_PERMISSIONS,
+  CARE_CIRCLE_PERMISSION_DESCRIPTIONS,
+  CARE_CIRCLE_PERMISSION_KEYS,
+  CARE_CIRCLE_PERMISSION_LABELS,
+  type CareCirclePermissionKey,
+  type CareCirclePermissions,
+} from '@/lib/careCirclePermissions';
 
 type CareCircleStatus = 'pending' | 'accepted' | 'declined';
-type CareCircleRole = 'family' | 'friend';
 
 type CareCircleMember = {
   linkId: string;
   id: string;
   name: string;
   status: CareCircleStatus;
-  role: CareCircleRole;
+  permissions: CareCirclePermissions;
   memberProfileId: string | null;
   profileId: string | null;
   ownerProfileIsPrimary: boolean;
@@ -257,10 +281,111 @@ const emptyAppointmentForm: AppointmentFormState = {
   type: '',
 };
 
-const roleLabels: Record<CareCircleRole, string> = {
-  family: 'Family',
-  friend: 'Friend',
+const sanitizePermissionsFromApi = (input: unknown): CareCirclePermissions => {
+  const base: CareCirclePermissions = { ...CARE_CIRCLE_DEFAULT_PERMISSIONS };
+  if (!input || typeof input !== 'object') return base;
+  const record = input as Record<string, unknown>;
+  for (const key of CARE_CIRCLE_PERMISSION_KEYS) {
+    const value = record[key];
+    if (typeof value === 'boolean') base[key] = value;
+  }
+  return base;
 };
+
+const permissionsEqual = (a: CareCirclePermissions, b: CareCirclePermissions) =>
+  CARE_CIRCLE_PERMISSION_KEYS.every((key) => a[key] === b[key]);
+
+const countGrantedPermissions = (perms: CareCirclePermissions) =>
+  CARE_CIRCLE_PERMISSION_KEYS.reduce((sum, key) => (perms[key] ? sum + 1 : sum), 0);
+
+const formatPermissionsSummary = (perms: CareCirclePermissions): string => {
+  const granted = CARE_CIRCLE_PERMISSION_KEYS.filter((key) => perms[key]);
+  if (granted.length === 0) return 'No access granted';
+  return granted.map((key) => CARE_CIRCLE_PERMISSION_LABELS[key]).join(', ');
+};
+
+const formatAccessSummary = (perms: CareCirclePermissions): string => {
+  const granted = CARE_CIRCLE_PERMISSION_KEYS.filter((key) => perms[key]);
+  if (granted.length === 0) return 'No sections shared yet';
+  const labels = granted.map((key) => CARE_CIRCLE_PERMISSION_LABELS[key].toLowerCase());
+  if (labels.length === 1) return `Sharing ${labels[0]} only`;
+  if (labels.length === 2) return `Sharing ${labels[0]} and ${labels[1]}`;
+  return `Sharing ${labels[0]}, ${labels[1]} and ${labels.length - 2} more`;
+};
+
+const formatAccessSummaryForViewer = (perms: CareCirclePermissions): string => {
+  const granted = CARE_CIRCLE_PERMISSION_KEYS.filter((key) => perms[key]);
+  if (granted.length === 0) return 'No sections shared with you yet';
+  const labels = granted.map((key) => CARE_CIRCLE_PERMISSION_LABELS[key].toLowerCase());
+  if (labels.length === 1) return `You can view their ${labels[0]}`;
+  if (labels.length === 2) return `You can view their ${labels[0]} and ${labels[1]}`;
+  return `You can view their ${labels[0]}, ${labels[1]} and ${labels.length - 2} more`;
+};
+
+const MEMBER_TAB_DESCRIPTIONS: Record<
+  'personal' | 'appointments' | 'medications' | 'vault',
+  { label: string; description: string }
+> = {
+  personal: {
+    label: 'Personal',
+    description: 'Profile details, health context, and medical team contacts.',
+  },
+  appointments: {
+    label: 'Appointments',
+    description: 'Upcoming and past appointments shared with you.',
+  },
+  medications: {
+    label: 'Medications',
+    description: 'Active prescriptions, dosage schedule, and purpose notes.',
+  },
+  vault: {
+    label: 'Vault',
+    description: 'Reports, prescriptions, insurance, and bills uploaded to this profile.',
+  },
+};
+
+const hasDataAccess = (perms: CareCirclePermissions): boolean =>
+  CARE_CIRCLE_PERMISSION_KEYS.some((key) => key !== 'emergency_card' && perms[key]);
+
+const MONTH_ABBRS = [
+  'JAN',
+  'FEB',
+  'MAR',
+  'APR',
+  'MAY',
+  'JUN',
+  'JUL',
+  'AUG',
+  'SEP',
+  'OCT',
+  'NOV',
+  'DEC',
+];
+
+const parseDateTile = (
+  value: string | null | undefined
+): { month: string; day: string } | null => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return {
+    month: MONTH_ABBRS[parsed.getMonth()],
+    day: String(parsed.getDate()).padStart(2, '0'),
+  };
+};
+
+const PERMISSION_META: Record<
+  CareCirclePermissionKey,
+  { icon: LucideIcon; short: string }
+> = {
+  emergency_card: { icon: HeartPulse, short: 'Emergency' },
+  personal_info: { icon: User, short: 'Personal' },
+  appointments: { icon: Calendar, short: 'Appointments' },
+  medications: { icon: Pill, short: 'Medications' },
+  vault: { icon: FolderOpen, short: 'Vault' },
+  activity_log: { icon: Activity, short: 'Activity' },
+};
+
 
 const appointmentTypeFields = {
   'Doctor Visit': [
@@ -339,17 +464,6 @@ const emptyTimeParts: TimeParts = {
   minute: '',
   period: '',
 };
-
-const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRole => {
-  const normalized = (value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[-\s]+/g, '_');
-  if (normalized === 'family') return 'family';
-  return 'friend';
-};
-
-const isElevatedCareCircleRole = (role: CareCircleRole) => role === 'family';
 
 const formatLocalDate = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
@@ -548,10 +662,22 @@ const writeCareCircleCache = <T,>(cacheOwnerId: string, key: string, value: T) =
 type SectionHelpButtonProps = {
   id: string;
   label: string;
-  description: string;
+  description?: string;
+  eyebrow?: string;
+  size?: 'sm' | 'md';
+  tone?: 'light' | 'inverse';
+  children?: ReactNode;
 };
 
-function SectionHelpButton({ id, label, description }: SectionHelpButtonProps) {
+function SectionHelpButton({
+  id,
+  label,
+  description,
+  eyebrow = 'Quick help',
+  size = 'md',
+  tone = 'light',
+  children,
+}: SectionHelpButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -625,8 +751,15 @@ function SectionHelpButton({ id, label, description }: SectionHelpButtonProps) {
     };
   }, [isOpen, updatePopoverPosition]);
 
+  const triggerSize = size === 'sm' ? 'h-5 w-5' : 'h-7 w-7';
+  const iconSize = size === 'sm' ? 'h-3 w-3' : 'h-4 w-4';
+  const triggerClass =
+    tone === 'inverse'
+      ? 'border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white focus:ring-teal-400/40'
+      : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 focus:ring-teal-200';
+
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative inline-flex">
       <button
         type="button"
         onClick={() => {
@@ -635,16 +768,16 @@ function SectionHelpButton({ id, label, description }: SectionHelpButtonProps) {
         aria-label={label}
         aria-expanded={isOpen}
         aria-controls={id}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-200"
+        className={`inline-flex ${triggerSize} items-center justify-center rounded-full transition focus:outline-none focus:ring-2 ${triggerClass}`}
       >
-        <CircleHelp className="h-4 w-4" />
+        <CircleHelp className={iconSize} />
       </button>
       {isOpen ? (
         <div
           ref={popoverRef}
           id={id}
           role="dialog"
-          className="fixed z-40 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-lg shadow-slate-900/10"
+          className="fixed z-[90] rounded-xl border border-slate-200 bg-white p-3.5 text-left shadow-[0_20px_50px_-15px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/5 animate-[helpPopIn_140ms_cubic-bezier(0.2,0.8,0.2,1)] origin-top"
           style={
             popoverPosition
               ? {
@@ -655,10 +788,14 @@ function SectionHelpButton({ id, label, description }: SectionHelpButtonProps) {
               : undefined
           }
         >
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-teal-600">
-            Quick help
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-teal-600">
+            {eyebrow}
           </p>
-          <p className="mt-1 text-xs text-slate-600">{description}</p>
+          {children ? (
+            <div className="mt-1.5">{children}</div>
+          ) : description ? (
+            <p className="mt-1.5 text-xs leading-relaxed text-slate-600">{description}</p>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -686,6 +823,9 @@ export default function CareCirclePage() {
   const inviteCountryTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [isSavingInvite, setIsSavingInvite] = useState(false);
+  const [invitePermissions, setInvitePermissions] = useState<CareCirclePermissions>({
+    ...CARE_CIRCLE_DEFAULT_PERMISSIONS,
+  });
   const [showMyPendingInvites, setShowMyPendingInvites] = useState(false);
   const [showIncomingPendingInvites, setShowIncomingPendingInvites] = useState(false);
   const [incomingInviteError, setIncomingInviteError] = useState<string | null>(null);
@@ -701,8 +841,8 @@ export default function CareCirclePage() {
   const [emergencyError, setEmergencyError] = useState<string | null>(null);
   const [isEmergencyLoading, setIsEmergencyLoading] = useState(false);
   const [isSavingEmergency, setIsSavingEmergency] = useState(false);
-  const [roleUpdatingLinkId, setRoleUpdatingLinkId] = useState<string | null>(null);
-  const [roleError, setRoleError] = useState<string | null>(null);
+  const [permissionsUpdatingLinkId, setPermissionsUpdatingLinkId] = useState<string | null>(null);
+  const [permissionsError, setPermissionsError] = useState<string | null>(null);
 
   const [selectedMember, setSelectedMember] = useState<CareCircleMember | null>(null);
   const [memberDetails, setMemberDetails] = useState<MemberDetailsPayload | null>(null);
@@ -934,7 +1074,7 @@ export default function CareCirclePage() {
         profileId: string | null;
         ownerProfileIsPrimary: boolean;
         status: CareCircleStatus;
-        role?: string | null;
+        permissions?: Record<string, unknown> | null;
         displayName: string;
         createdAt: string;
         updatedAt?: string | null;
@@ -946,7 +1086,7 @@ export default function CareCirclePage() {
         profileId: string | null;
         ownerProfileIsPrimary: boolean;
         status: CareCircleStatus;
-        role?: string | null;
+        permissions?: Record<string, unknown> | null;
         displayName: string;
         createdAt: string;
         updatedAt?: string | null;
@@ -958,7 +1098,7 @@ export default function CareCirclePage() {
       id: link.memberId,
       name: link.displayName,
       status: link.status,
-      role: normalizeCareCircleRole(link.role),
+      permissions: sanitizePermissionsFromApi(link.permissions),
       memberProfileId: link.memberProfileId,
       profileId: link.profileId,
       ownerProfileIsPrimary: link.ownerProfileIsPrimary,
@@ -969,7 +1109,7 @@ export default function CareCirclePage() {
       id: link.memberId,
       name: link.displayName,
       status: link.status,
-      role: normalizeCareCircleRole(link.role),
+      permissions: sanitizePermissionsFromApi(link.permissions),
       memberProfileId: link.memberProfileId,
       profileId: link.profileId,
       ownerProfileIsPrimary: link.ownerProfileIsPrimary,
@@ -997,6 +1137,24 @@ export default function CareCirclePage() {
 
   useEffect(() => {
     loadCareCircle();
+  }, [loadCareCircle]);
+
+  // Refresh care circle data when the tab regains focus so permission changes
+  // made elsewhere (e.g. the owner toggling access) propagate without a reload.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadCareCircle();
+      }
+    };
+    const handleFocus = () => loadCareCircle();
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [loadCareCircle]);
 
   useEffect(() => {
@@ -1071,7 +1229,11 @@ export default function CareCirclePage() {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ contact: fullContact, profileId }),
+      body: JSON.stringify({
+        contact: fullContact,
+        profileId,
+        permissions: invitePermissions,
+      }),
     });
 
     if (!response.ok) {
@@ -1083,6 +1245,7 @@ export default function CareCirclePage() {
 
     setInviteContact('');
     setInviteCountry(DEFAULT_COUNTRY);
+    setInvitePermissions({ ...CARE_CIRCLE_DEFAULT_PERMISSIONS });
     setIsInviteOpen(false);
     setIsSavingInvite(false);
     await loadCareCircle();
@@ -1114,24 +1277,27 @@ export default function CareCirclePage() {
     await handleRespondToInvite(linkId, 'declined');
   };
 
-  const handleUpdateRole = async (member: CareCircleMember, role: CareCircleRole) => {
-    if (!member.linkId || role === member.role) return;
-    setRoleUpdatingLinkId(member.linkId);
-    setRoleError(null);
-    const response = await fetch('/api/care-circle/role', {
+  const handleUpdatePermissions = async (
+    member: CareCircleMember,
+    nextPermissions: CareCirclePermissions
+  ) => {
+    if (!member.linkId || permissionsEqual(nextPermissions, member.permissions)) return;
+    setPermissionsUpdatingLinkId(member.linkId);
+    setPermissionsError(null);
+    const response = await fetch('/api/care-circle/permissions', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ linkId: member.linkId, role }),
+      body: JSON.stringify({ linkId: member.linkId, permissions: nextPermissions }),
     });
 
     if (!response.ok) {
       const payload: { message?: string } = await response.json().catch(() => ({}));
-      setRoleError(payload.message ?? 'Unable to update member role.');
-      setRoleUpdatingLinkId(null);
+      setPermissionsError(payload.message ?? 'Unable to update member permissions.');
+      setPermissionsUpdatingLinkId(null);
       return;
     }
 
-    setRoleUpdatingLinkId(null);
+    setPermissionsUpdatingLinkId(null);
     await loadCareCircle();
   };
 
@@ -1897,7 +2063,15 @@ export default function CareCirclePage() {
 
   const handleViewMemberDetails = (member: CareCircleMember) => {
     setSelectedMember(member);
-    setMemberDetailsTab('personal');
+    const perms = member.permissions;
+    const firstTab: MemberDetailsTab = perms.personal_info
+      ? 'personal'
+      : perms.appointments
+      ? 'appointments'
+      : perms.medications
+      ? 'medications'
+      : 'vault';
+    setMemberDetailsTab(firstTab);
     setVaultCategory('all');
     setVaultSearchQuery('');
     setVaultFiles([]);
@@ -1978,12 +2152,68 @@ export default function CareCirclePage() {
     return map;
   }, [activeCirclesImIn]);
 
+  const selectedMemberAccepted =
+    Boolean(selectedMember) && selectedMember?.status === 'accepted';
   const canManageSelectedMemberVault =
-    Boolean(selectedMember) &&
-    selectedMember?.status === 'accepted' &&
-    isElevatedCareCircleRole(selectedMember.role);
-  const canManageSelectedMemberMedications = canManageSelectedMemberVault;
-  const canManageSelectedMemberAppointments = canManageSelectedMemberVault;
+    selectedMemberAccepted && Boolean(selectedMember?.permissions.vault);
+  const canManageSelectedMemberMedications =
+    selectedMemberAccepted && Boolean(selectedMember?.permissions.medications);
+  const canManageSelectedMemberAppointments =
+    selectedMemberAccepted && Boolean(selectedMember?.permissions.appointments);
+  const canViewSelectedMemberPersonalInfo =
+    selectedMemberAccepted && Boolean(selectedMember?.permissions.personal_info);
+
+  const memberModalTabs = useMemo<MemberDetailsTab[]>(() => {
+    if (!selectedMember) return [];
+    const perms = selectedMember.permissions;
+    const tabs: MemberDetailsTab[] = [];
+    if (perms.personal_info) tabs.push('personal');
+    if (perms.appointments) tabs.push('appointments');
+    if (perms.medications) tabs.push('medications');
+    if (perms.vault) tabs.push('vault');
+    return tabs;
+  }, [selectedMember]);
+
+  useEffect(() => {
+    if (!selectedMember) return;
+    if (memberModalTabs.length === 0) return;
+    if (!memberModalTabs.includes(memberDetailsTab)) {
+      setMemberDetailsTab(memberModalTabs[0]);
+    }
+  }, [selectedMember, memberModalTabs, memberDetailsTab]);
+
+  // Keep the currently open member modal in sync with the latest circle data
+  // so permission changes (granted or revoked) reflect live in the UI.
+  useEffect(() => {
+    if (!selectedMember) return;
+    const allMembers = [
+      ...circleData.circlesImIn,
+      ...circleData.myCircleMembers,
+    ];
+    const fresh = allMembers.find((m) => m.linkId === selectedMember.linkId);
+
+    // Link disappeared (removed/declined) or was downgraded to non-accepted —
+    // close the modal so the user isn't interacting with stale access.
+    if (!fresh || fresh.status !== 'accepted') {
+      closeMemberDetailsModal();
+      return;
+    }
+
+    // If every data-access permission was revoked, there's nothing to show —
+    // close the modal so the UI matches the new access level.
+    if (!hasDataAccess(fresh.permissions)) {
+      closeMemberDetailsModal();
+      return;
+    }
+
+    // Re-assign only if something meaningful changed to avoid needless renders.
+    const permsChanged = !permissionsEqual(fresh.permissions, selectedMember.permissions);
+    const statusChanged = fresh.status !== selectedMember.status;
+    const nameChanged = fresh.name !== selectedMember.name;
+    if (permsChanged || statusChanged || nameChanged) {
+      setSelectedMember(fresh);
+    }
+  }, [circleData.circlesImIn, circleData.myCircleMembers, selectedMember]);
 
   const sortedMemberMedications = useMemo(() => {
     const medications = memberDetails?.medications || [];
@@ -2099,7 +2329,7 @@ export default function CareCirclePage() {
 
         {isEmergencyOpen && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-6"
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4 py-6"
             onClick={() => {
               setIsEmergencyOpen(false);
               setIsEmergencyEditing(false);
@@ -2513,7 +2743,7 @@ export default function CareCirclePage() {
                 <SectionHelpButton
                   id="my-care-circle-help"
                   label="About My Care Circle"
-                  description="Members you invited to support this profile. You can check pending invites, update access role, or remove someone."
+                  description="Members you invited to support this profile. You can check pending invites, update access permissions, or remove someone."
                 />
               </div>
               <p className="text-slate-500 text-sm">
@@ -2555,57 +2785,80 @@ export default function CareCirclePage() {
                       No members have accepted your invite yet.
                     </p>
                   ) : (
-                    activeMembers.map((member) => (
-                      <div
-                        key={member.linkId}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-medium text-slate-900">{member.name}</p>
-                            <p className="text-xs text-slate-500">
-                              Current role: {roleLabels[member.role]}
-                            </p>
+                    activeMembers.map((member) => {
+                      const isUpdating = permissionsUpdatingLinkId === member.linkId;
+                      const canEdit = member.ownerProfileIsPrimary && !isUpdating;
+                      return (
+                        <div
+                          key={member.linkId}
+                          className="group relative overflow-hidden rounded-lg border border-slate-200 bg-white pl-4 pr-4 py-3.5 text-sm text-slate-700 transition-colors duration-150 hover:border-slate-300"
+                        >
+                          <span
+                            aria-hidden
+                            className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-gradient-to-b from-teal-400 to-emerald-500"
+                          />
+                          <div className="flex items-baseline gap-3">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-slate-900 truncate leading-tight">{member.name}</p>
+                              <p className="mt-0.5 text-[11px] text-slate-500 truncate">
+                                {formatAccessSummary(member.permissions)}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemove(member)}
+                              aria-label={`Remove ${member.name}`}
+                              title="Remove member"
+                              className="shrink-0 inline-flex items-center justify-center rounded-md border border-transparent p-1.5 text-slate-400 opacity-0 transition-all duration-150 hover:border-rose-200 hover:text-rose-600 hover:bg-rose-50 group-hover:opacity-100 focus-visible:opacity-100"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemove(member)}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-white px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Remove
-                          </button>
+                          <div className="mt-3 flex flex-wrap gap-1.5">
+                            {CARE_CIRCLE_PERMISSION_KEYS.map((key) => {
+                              const checked = Boolean(member.permissions[key]);
+                              const Icon = PERMISSION_META[key].icon;
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  disabled={!canEdit}
+                                  onClick={() =>
+                                    handleUpdatePermissions(member, {
+                                      ...member.permissions,
+                                      [key]: !checked,
+                                    })
+                                  }
+                                  title={CARE_CIRCLE_PERMISSION_DESCRIPTIONS[key]}
+                                  aria-pressed={checked}
+                                  className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors duration-150 ${
+                                    checked
+                                      ? 'border-teal-600 bg-teal-600 text-white'
+                                      : 'border-slate-200 bg-white text-slate-500'
+                                  } ${canEdit ? 'hover:border-teal-500 hover:text-teal-700 ' + (checked ? '' : '') : 'cursor-not-allowed opacity-60'}`}
+                                >
+                                  <Icon
+                                    className={`h-3 w-3 ${checked ? 'text-white' : 'text-slate-400'}`}
+                                    aria-hidden
+                                  />
+                                  {PERMISSION_META[key].short}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {!member.ownerProfileIsPrimary ? (
+                            <p className="mt-3 flex items-center gap-1.5 text-[11px] text-amber-700">
+                              <ShieldCheck className="h-3 w-3" aria-hidden />
+                              Switch to your primary profile to change access.
+                            </p>
+                          ) : null}
                         </div>
-                        <div className="mt-3 flex items-center gap-2">
-                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            Access role
-                          </span>
-                          <select
-                            value={member.role}
-                            disabled={roleUpdatingLinkId === member.linkId || !member.ownerProfileIsPrimary}
-                            onChange={(event) =>
-                              handleUpdateRole(
-                                member,
-                                normalizeCareCircleRole(event.target.value)
-                              )
-                            }
-                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            <option value="family">Family</option>
-                            <option value="friend">Friend</option>
-                          </select>
-                        </div>
-                        {!member.ownerProfileIsPrimary ? (
-                          <p className="mt-2 text-xs text-amber-700">
-                            Switch to your primary profile to change access role.
-                          </p>
-                        ) : null}
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
-                {roleError ? (
-                  <p className="mt-3 text-sm text-rose-600">{roleError}</p>
+                {permissionsError ? (
+                  <p className="mt-3 text-sm text-rose-600">{permissionsError}</p>
                 ) : null}
               </div>
             </div>
@@ -2661,45 +2914,91 @@ export default function CareCirclePage() {
                     </p>
                   ) : (
                     activeCirclesImIn.map((member) => {
-                      const canView = isElevatedCareCircleRole(member.role)
-                        ? true
-                        : member.ownerProfileIsPrimary;
+                      const hasExtraAccess = hasDataAccess(member.permissions);
+                      const canView = hasExtraAccess ? true : member.ownerProfileIsPrimary;
                       const primaryProfileName =
                         primaryProfileNameByMemberId.get(member.id) || member.name;
+                      const grantedKeys = CARE_CIRCLE_PERMISSION_KEYS.filter(
+                        (key) => member.permissions[key]
+                      );
+                      const visibleChips = grantedKeys.slice(0, 4);
+                      const overflow = grantedKeys.length - visibleChips.length;
 
                       return (
                         <div
                           key={member.linkId}
-                          className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                          className="group relative overflow-hidden rounded-lg border border-slate-200 bg-white pl-4 pr-4 py-3.5 text-sm text-slate-700 transition-colors duration-150 hover:border-slate-300"
                         >
-                          <div>
-                            <p className="font-medium text-slate-900">{member.name}</p>
-                            <p className="text-xs text-slate-500">
-                              Role: {roleLabels[member.role]}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {member.ownerProfileIsPrimary
-                                ? 'Primary profile'
-                                : `Dependent of ${primaryProfileName}`}
-                            </p>
+                          <span
+                            aria-hidden
+                            className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-gradient-to-b from-indigo-400 to-sky-500"
+                          />
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-slate-900 truncate leading-tight">{member.name}</p>
+                              <p className="mt-0.5 text-[11px] uppercase tracking-[0.08em] text-slate-400 truncate">
+                                {member.ownerProfileIsPrimary
+                                  ? 'Primary profile'
+                                  : `Dependent · ${primaryProfileName}`}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                hasExtraAccess
+                                  ? handleViewMemberDetails(member)
+                                  : handleViewMemberEmergencyCard(member)
+                              }
+                              disabled={!canView}
+                              data-tour="care-view-access"
+                              className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors duration-150 ${
+                                canView
+                                  ? hasExtraAccess
+                                    ? 'bg-slate-900 text-white hover:bg-slate-800'
+                                    : 'border border-teal-200 bg-white text-teal-700 hover:bg-teal-50'
+                                  : 'border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                              }`}
+                            >
+                              {hasExtraAccess ? (
+                                <>
+                                  Open
+                                  <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                                </>
+                              ) : (
+                                <>
+                                  <HeartPulse className="h-3.5 w-3.5" aria-hidden />
+                                  Emergency
+                                </>
+                              )}
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              isElevatedCareCircleRole(member.role)
-                                ? handleViewMemberDetails(member)
-                                : handleViewMemberEmergencyCard(member)
-                            }
-                            disabled={!canView}
-                            data-tour="care-view-access"
-                            className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-semibold ${
-                              canView
-                                ? 'border-teal-200 bg-white text-teal-700 hover:bg-teal-50'
-                                : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
-                            }`}
-                          >
-                            {isElevatedCareCircleRole(member.role) ? 'View details' : 'View card'}
-                          </button>
+                          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                            {visibleChips.length === 0 ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-500">
+                                <HeartPulse className="h-3 w-3" aria-hidden />
+                                Emergency only
+                              </span>
+                            ) : (
+                              visibleChips.map((key) => {
+                                const Icon = PERMISSION_META[key].icon;
+                                return (
+                                  <span
+                                    key={key}
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-700"
+                                    title={CARE_CIRCLE_PERMISSION_DESCRIPTIONS[key]}
+                                  >
+                                    <Icon className="h-3 w-3 text-slate-500" aria-hidden />
+                                    {PERMISSION_META[key].short}
+                                  </span>
+                                );
+                              })
+                            )}
+                            {overflow > 0 ? (
+                              <span className="inline-flex items-center rounded-md px-1.5 py-1 text-[11px] font-medium text-slate-500">
+                                +{overflow} more
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       );
                     })
@@ -2712,49 +3011,197 @@ export default function CareCirclePage() {
       </main>
 
       {selectedMember ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 px-4 py-8">
-          <div className="bg-white w-full max-w-3xl rounded-2xl p-6 relative h-[85vh] overflow-hidden flex flex-col min-h-0">
-            <button
-              onClick={closeMemberDetailsModal}
-              className="absolute top-4 right-4 text-gray-500 hover:text-black"
-              aria-label="Close member details"
-            >
-              ✕
-            </button>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4 py-8">
+          <div className="bg-white w-full max-w-3xl rounded-2xl relative h-[88vh] overflow-hidden flex flex-col min-h-0 shadow-[0_30px_80px_-15px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/5">
+            <div
+              aria-hidden
+              className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-slate-50/80 via-white to-white pointer-events-none"
+            />
 
-            <div className="flex flex-col flex-1 min-h-0 pt-1">
-              <h2 className="text-xl font-semibold text-slate-900 pr-8 shrink-0">
-                {selectedMember.name}&apos;s Details
-              </h2>
+            <div className="relative shrink-0 px-8 pt-7 pb-5 border-b border-slate-200/70">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      aria-hidden
+                      className="inline-block h-2 w-2 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 ring-4 ring-emerald-500/10"
+                    />
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                      Shared care file
+                    </span>
+                  </div>
+                  <h2 className="mt-2 text-2xl font-semibold text-slate-900 leading-tight tracking-tight truncate">
+                    {selectedMember.name}
+                  </h2>
+                  <div className="mt-1.5 flex items-center gap-1.5 min-w-0">
+                    <p className="min-w-0 text-[13px] text-slate-500 truncate">
+                      {formatAccessSummaryForViewer(selectedMember.permissions)}
+                    </p>
+                    <SectionHelpButton
+                      id="member-modal-access-help"
+                      label="What each section contains"
+                      eyebrow="What you can see"
+                      size="sm"
+                    >
+                      {CARE_CIRCLE_PERMISSION_KEYS.filter(
+                        (key) => selectedMember.permissions[key]
+                      ).length === 0 ? (
+                        <p className="mt-1 text-xs text-slate-500">
+                          This person hasn't shared any sections with you yet.
+                        </p>
+                      ) : null}
+                      <ul className="mt-0.5 space-y-2">
+                        {CARE_CIRCLE_PERMISSION_KEYS.filter(
+                          (key) => selectedMember.permissions[key]
+                        ).map((key) => {
+                          const Icon = PERMISSION_META[key].icon;
+                          return (
+                            <li key={key} className="flex items-start gap-2">
+                              <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+                                <Icon className="h-3 w-3" aria-hidden />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[11px] font-semibold text-slate-900">
+                                  {CARE_CIRCLE_PERMISSION_LABELS[key]}
+                                </p>
+                                <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
+                                  {CARE_CIRCLE_PERMISSION_DESCRIPTIONS[key]}
+                                </p>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </SectionHelpButton>
+                  </div>
+                </div>
 
-              <div className="flex rounded-xl border border-slate-200 p-1.5 bg-slate-100/80 shrink-0 mt-4">
-                {(['personal', 'appointments', 'medications', 'vault'] as const).map((tab) => (
+                <div className="flex items-center gap-2 shrink-0">
+                  {selectedMember.permissions.emergency_card ? (
+                    <button
+                      type="button"
+                      onClick={() => handleViewMemberEmergencyCard(selectedMember)}
+                      className="group inline-flex items-center gap-1.5 rounded-lg border border-rose-200/70 bg-white px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 hover:border-rose-300 active:scale-[0.98] transition-all shadow-sm"
+                      title="View emergency card"
+                    >
+                      <span className="relative flex h-2 w-2">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-60" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-rose-500" />
+                      </span>
+                      Emergency card
+                    </button>
+                  ) : null}
                   <button
-                    key={tab}
-                    type="button"
-                    onClick={() => setMemberDetailsTab(tab)}
-                    className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-200 ease-out focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 active:scale-[0.98] ${
-                      memberDetailsTab === tab
-                        ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/60'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                    }`}
+                    onClick={closeMemberDetailsModal}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+                    aria-label="Close member details"
                   >
-                    {tab === 'personal'
-                      ? 'Personal'
-                      : tab === 'appointments'
-                      ? 'Appointments'
-                      : tab === 'medications'
-                      ? 'Medications'
-                      : 'Vault'}
+                    <X className="h-4 w-4" />
                   </button>
-                ))}
+                </div>
               </div>
 
-              <div className="mt-4 min-h-[280px] flex-1 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/50 shadow-inner">
+              {memberModalTabs.length > 1 ? (
+                <div className="mt-5 flex items-center gap-2">
+                  <div
+                    role="tablist"
+                    className="flex flex-1 items-center gap-1 overflow-x-auto -mx-1 px-1"
+                  >
+                    {memberModalTabs.map((tab) => {
+                    const metaKey: CareCirclePermissionKey =
+                      tab === 'personal' ? 'personal_info' : tab === 'vault' ? 'vault' : tab;
+                    const Icon = PERMISSION_META[metaKey].icon;
+                    const label =
+                      tab === 'personal'
+                        ? 'Personal'
+                        : tab === 'appointments'
+                        ? 'Appointments'
+                        : tab === 'medications'
+                        ? 'Medications'
+                        : 'Vault';
+                    const count =
+                      tab === 'appointments'
+                        ? memberDetails?.appointments?.length ?? null
+                        : tab === 'medications'
+                        ? memberDetails?.medications?.length ?? null
+                        : tab === 'vault'
+                        ? vaultFiles.length
+                        : null;
+                    const isActive = memberDetailsTab === tab;
+                    return (
+                      <button
+                        key={tab}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        onClick={() => setMemberDetailsTab(tab)}
+                        className={`group inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 ${
+                          isActive
+                            ? 'bg-slate-900 text-white shadow-sm shadow-slate-900/20'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Icon
+                          className={`h-4 w-4 ${
+                            isActive ? 'text-teal-300' : 'text-slate-400 group-hover:text-slate-600'
+                          }`}
+                          aria-hidden
+                        />
+                        <span>{label}</span>
+                        {count !== null ? (
+                          <span
+                            className={`inline-flex items-center justify-center min-w-[20px] rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
+                              isActive
+                                ? 'bg-white/10 text-white'
+                                : 'bg-slate-200/70 text-slate-600'
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                  </div>
+                  <SectionHelpButton
+                    id="member-modal-tabs-help"
+                    label="What each tab shows"
+                    eyebrow="Browsing guide"
+                  >
+                    <ul className="mt-0.5 space-y-2">
+                      {memberModalTabs.map((tab) => {
+                        const meta = MEMBER_TAB_DESCRIPTIONS[tab];
+                        const metaKey: CareCirclePermissionKey =
+                          tab === 'personal' ? 'personal_info' : tab === 'vault' ? 'vault' : tab;
+                        const Icon = PERMISSION_META[metaKey].icon;
+                        return (
+                          <li key={tab} className="flex items-start gap-2">
+                            <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+                              <Icon className="h-3 w-3" aria-hidden />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[11px] font-semibold text-slate-900">
+                                {meta.label}
+                              </p>
+                              <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
+                                {meta.description}
+                              </p>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </SectionHelpButton>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex flex-col flex-1 min-h-0 px-8 pb-7">
+              <div className="min-h-[280px] flex-1 overflow-y-auto -mx-1 px-1">
                 {memberDetailsTab === 'vault' ? (
                   <div
-                    className={`relative space-y-4 p-4 ${
-                      canManageSelectedMemberVault ? 'pt-14' : ''
+                    className={`relative space-y-4 py-4 ${
+                      canManageSelectedMemberVault ? 'pt-12' : ''
                     }`}
                   >
                     {canManageSelectedMemberVault ? (
@@ -2764,23 +3211,23 @@ export default function CareCirclePage() {
                           setVaultUploadError(null);
                           setShowVaultUploadModal(true);
                         }}
-                        className="absolute right-4 top-4 rounded-full border border-teal-200 bg-white px-3 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-50"
+                        className="absolute right-0 top-3 inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
                       >
                         Upload document
                       </button>
                     ) : null}
                     <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex flex-wrap gap-2">
+                      <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100 p-1">
                         {(['all', 'reports', 'prescriptions', 'insurance', 'bills'] as const).map(
                           (category) => (
                             <button
                               key={category}
                               type="button"
                               onClick={() => setVaultCategory(category)}
-                              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                                 vaultCategory === category
-                                  ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/60'
-                                  : 'bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-white/70'
+                                  ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
+                                  : 'text-slate-600 hover:text-slate-900'
                               }`}
                             >
                               {vaultCategoryLabels[category]}
@@ -2788,13 +3235,13 @@ export default function CareCirclePage() {
                           )
                         )}
                       </div>
-                      <div className="ml-auto w-full sm:w-56">
+                      <div className="ml-auto w-full sm:w-60">
                         <input
                           type="text"
                           value={vaultSearchQuery}
                           onChange={(event) => setVaultSearchQuery(event.target.value)}
-                          placeholder="Search files"
-                          className="w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 placeholder:text-slate-400 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-200"
+                          placeholder="Search files…"
+                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 placeholder:text-slate-400 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
                         />
                       </div>
                     </div>
@@ -2806,29 +3253,56 @@ export default function CareCirclePage() {
                     ) : vaultError ? (
                       <p className="text-sm text-rose-600">{vaultError}</p>
                     ) : filteredVaultFiles.length === 0 ? (
-                      <p className="text-sm text-slate-500">No files in this vault.</p>
+                      <div className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center">
+                        <FolderOpen className="mx-auto h-5 w-5 text-slate-300" aria-hidden />
+                        <p className="mt-2 text-sm text-slate-500">No files in this vault.</p>
+                      </div>
                     ) : (
                       <ul className="space-y-2">
                         {filteredVaultFiles.map((file) => {
                           const fileKey = vaultFileKey(file);
                           const isRenaming = vaultRenamingKey === fileKey;
                           const isDeleting = vaultDeletingKey === fileKey;
+                          const isImage = isVaultImageFile(file.name);
+                          const isPdf = isVaultPdfFile(file.name);
+                          const FileIcon = isImage ? ImageIcon : FileText;
+                          const iconColor = isImage
+                            ? 'text-violet-500'
+                            : isPdf
+                            ? 'text-rose-500'
+                            : 'text-slate-500';
                           return (
                             <li
                               key={`${file.folder}:${file.name}`}
-                              className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+                              className="group relative flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-colors duration-150 hover:border-slate-300"
                             >
-                              <div>
-                                <p className="font-medium text-slate-800">{file.name}</p>
-                                <p className="text-xs text-slate-500">
-                                  {vaultCategoryLabels[file.folder]} · {formatVaultDate(file.created_at)}
+                              <button
+                                type="button"
+                                onClick={() => handleVaultPreview(file)}
+                                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-50 ring-1 ring-slate-200 transition-colors hover:bg-slate-100"
+                                aria-label={`Preview ${file.name}`}
+                              >
+                                <FileIcon className={`h-5 w-5 ${iconColor}`} aria-hidden />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleVaultPreview(file)}
+                                className="min-w-0 flex-1 text-left"
+                              >
+                                <p className="font-medium text-slate-900 truncate">{file.name}</p>
+                                <p className="mt-0.5 text-[11px] text-slate-500 truncate">
+                                  <span className="font-medium uppercase tracking-wide text-slate-400 text-[10px]">
+                                    {vaultCategoryLabels[file.folder]}
+                                  </span>
+                                  <span className="mx-1.5 text-slate-300">·</span>
+                                  <span className="tabular-nums">{formatVaultDate(file.created_at)}</span>
                                 </p>
-                              </div>
-                              <div className="flex items-center gap-2">
+                              </button>
+                              <div className="flex items-center gap-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                                 <button
                                   type="button"
                                   onClick={() => handleVaultPreview(file)}
-                                  className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                                 >
                                   Open
                                 </button>
@@ -2837,9 +3311,9 @@ export default function CareCirclePage() {
                                     type="button"
                                     onClick={() => handleVaultRename(file)}
                                     disabled={isRenaming || isDeleting}
-                                    className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
-                                    {isRenaming ? 'Renaming…' : 'Rename'}
+                                    {isRenaming ? '…' : 'Rename'}
                                   </button>
                                 ) : null}
                                 {canManageSelectedMemberVault ? (
@@ -2847,9 +3321,9 @@ export default function CareCirclePage() {
                                     type="button"
                                     onClick={() => handleVaultDelete(file)}
                                     disabled={isDeleting || isRenaming}
-                                    className="rounded-md border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:border-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
-                                    {isDeleting ? 'Deleting…' : 'Delete'}
+                                    {isDeleting ? '…' : 'Delete'}
                                   </button>
                                 ) : null}
                               </div>
@@ -2868,42 +3342,30 @@ export default function CareCirclePage() {
                     <p className="text-sm text-rose-600">{memberDetailsError}</p>
                   </div>
                 ) : memberDetailsTab === 'personal' && memberDetails ? (
-                  <div className="p-4 space-y-4">
-                    <dl className="grid gap-3 text-sm">
-                      <div>
-                        <dt className="text-slate-500 font-medium">Name</dt>
-                        <dd className="text-slate-900 mt-0.5">
-                          {memberDetails.personal?.display_name?.trim() || '—'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-slate-500 font-medium">Number</dt>
-                        <dd className="text-slate-900 mt-0.5">
-                          {memberDetails.personal?.phone?.trim() || '—'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-slate-500 font-medium">Age</dt>
-                        <dd className="text-slate-900 mt-0.5">
-                          {memberDetails.health?.age != null ? String(memberDetails.health.age) : '—'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-slate-500 font-medium">Blood Group</dt>
-                        <dd className="text-slate-900 mt-0.5">
-                          {memberDetails.health?.blood_group?.trim() || '—'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-slate-500 font-medium">BMI</dt>
-                        <dd className="text-slate-900 mt-0.5">
-                          {memberDetails.health?.bmi != null ? String(memberDetails.health.bmi) : '—'}
-                        </dd>
-                      </div>
+                  <div className="py-4 space-y-6">
+                    <dl className="grid grid-cols-2 gap-px rounded-lg border border-slate-200 bg-slate-200 overflow-hidden sm:grid-cols-5 text-sm">
+                      {[
+                        { label: 'Name', value: memberDetails.personal?.display_name?.trim() || '—', mono: false },
+                        { label: 'Number', value: memberDetails.personal?.phone?.trim() || '—', mono: true },
+                        { label: 'Age', value: memberDetails.health?.age != null ? String(memberDetails.health.age) : '—', mono: true },
+                        { label: 'Blood', value: memberDetails.health?.blood_group?.trim() || '—', mono: true },
+                        { label: 'BMI', value: memberDetails.health?.bmi != null ? String(memberDetails.health.bmi) : '—', mono: true },
+                      ].map((item) => (
+                        <div key={item.label} className="bg-white px-3 py-2.5">
+                          <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            {item.label}
+                          </dt>
+                          <dd className={`mt-1 font-semibold text-slate-900 truncate ${item.mono ? 'tabular-nums' : ''}`}>
+                            {item.value}
+                          </dd>
+                        </div>
+                      ))}
                     </dl>
                     <div>
-                      <h3 className="text-sm font-semibold text-slate-700 mb-2">
-                        Current medical status
+                      <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-3">
+                        <span className="h-px flex-1 bg-slate-200" aria-hidden />
+                        <span>Current medical status</span>
+                        <span className="h-px flex-1 bg-slate-200" aria-hidden />
                       </h3>
                       <div className="space-y-2 text-sm">
                         {memberDetails.health?.current_diagnosed_condition?.length ? (
@@ -2932,8 +3394,10 @@ export default function CareCirclePage() {
                       </div>
                     </div>
                     <div>
-                      <h3 className="text-sm font-semibold text-slate-700 mb-2">
-                        Past medical history
+                      <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-3">
+                        <span className="h-px flex-1 bg-slate-200" aria-hidden />
+                        <span>Past medical history</span>
+                        <span className="h-px flex-1 bg-slate-200" aria-hidden />
                       </h3>
                       <div className="space-y-2 text-sm">
                         {memberDetails.health?.previous_diagnosed_conditions?.length ? (
@@ -2972,14 +3436,14 @@ export default function CareCirclePage() {
                     </div>
                   </div>
                 ) : memberDetailsTab === 'appointments' && memberDetails ? (
-                  <div className="p-4 space-y-4">
+                  <div className="py-4 space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <h3 className="text-sm font-semibold text-slate-700">Appointments</h3>
+                      <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Appointments</h3>
                       {canManageSelectedMemberAppointments ? (
                         <button
                           type="button"
                           onClick={openAddAppointmentModal}
-                          className="rounded-full border border-teal-200 bg-white px-3 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-50"
+                          className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
                         >
                           Add appointment
                         </button>
@@ -2993,55 +3457,77 @@ export default function CareCirclePage() {
                         Upcoming appointments
                       </h4>
                       {upcomingMemberAppointments.length === 0 ? (
-                        <p className="text-sm text-slate-500">No upcoming appointments.</p>
+                        <div className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center">
+                          <Calendar className="mx-auto h-5 w-5 text-slate-300" aria-hidden />
+                          <p className="mt-2 text-sm text-slate-500">No upcoming appointments.</p>
+                        </div>
                       ) : (
-                        <ul className="space-y-3">
+                        <ul className="space-y-2">
                           {upcomingMemberAppointments.map((apt) => {
                             const isDeletingAppointment = appointmentDeletingId === apt.id;
                             const detailFields =
                               appointmentTypeFields[apt.type as keyof typeof appointmentTypeFields] ?? [];
+                            const tile = parseDateTile(apt.date);
+                            const extra = detailFields
+                              .filter((field) => Boolean(apt[field.name]))
+                              .map((field) => apt[field.name])
+                              .join(' · ');
                             return (
                               <li
                                 key={apt.id}
-                                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+                                className="group relative flex items-stretch gap-4 rounded-xl border border-slate-200 bg-white p-3 pr-4 text-sm transition-colors duration-150 hover:border-slate-300"
                               >
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div>
-                                    <p className="font-semibold text-slate-800">{apt.title || '—'}</p>
-                                    <p className="text-slate-600 mt-1">
-                                      {normalizeAppointmentDate(apt.date) || apt.date || '—'} at{' '}
-                                      {formatAppointmentTime(apt.time)}
-                                    </p>
-                                    <p className="text-slate-500 mt-1">Type: {apt.type || '—'}</p>
-                                    {detailFields
-                                      .filter((field) => Boolean(apt[field.name]))
-                                      .map((field) => (
-                                        <p key={field.name} className="text-slate-500">
-                                          {field.label}: {apt[field.name]}
-                                        </p>
-                                      ))}
-                                  </div>
-                                  {canManageSelectedMemberAppointments ? (
-                                    <div className="flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => openEditAppointmentModal(apt)}
-                                        disabled={isDeletingAppointment}
-                                        className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
-                                      >
-                                        Edit
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleAppointmentDelete(apt)}
-                                        disabled={isDeletingAppointment}
-                                        className="rounded-md border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:border-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
-                                      >
-                                        {isDeletingAppointment ? 'Deleting…' : 'Delete'}
-                                      </button>
-                                    </div>
+                                <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-lg bg-gradient-to-br from-teal-50 to-emerald-50 ring-1 ring-teal-100/70">
+                                  {tile ? (
+                                    <>
+                                      <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-teal-700">
+                                        {tile.month}
+                                      </span>
+                                      <span className="text-xl font-bold tabular-nums text-slate-900 leading-none mt-0.5">
+                                        {tile.day}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <Calendar className="h-5 w-5 text-slate-400" aria-hidden />
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="font-semibold text-slate-900 truncate">
+                                    {apt.title || '—'}
+                                  </p>
+                                  <p className="mt-0.5 text-xs text-slate-500 truncate">
+                                    <span className="tabular-nums">{formatAppointmentTime(apt.time)}</span>
+                                    {apt.type ? (
+                                      <>
+                                        <span className="mx-1.5 text-slate-300">·</span>
+                                        {apt.type}
+                                      </>
+                                    ) : null}
+                                  </p>
+                                  {extra ? (
+                                    <p className="mt-0.5 text-xs text-slate-400 truncate">{extra}</p>
                                   ) : null}
                                 </div>
+                                {canManageSelectedMemberAppointments ? (
+                                  <div className="flex items-center gap-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditAppointmentModal(apt)}
+                                      disabled={isDeletingAppointment}
+                                      className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAppointmentDelete(apt)}
+                                      disabled={isDeletingAppointment}
+                                      className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {isDeletingAppointment ? '…' : 'Delete'}
+                                    </button>
+                                  </div>
+                                ) : null}
                               </li>
                             );
                           })}
@@ -3049,37 +3535,56 @@ export default function CareCirclePage() {
                       )}
                     </div>
                     <div>
-                      <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                      <h4 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-2">
                         Past appointments
                       </h4>
                       {pastMemberAppointments.length === 0 ? (
                         <p className="text-sm text-slate-500">No past appointments.</p>
                       ) : (
-                        <ul className="space-y-3">
+                        <ul className="space-y-2">
                           {pastMemberAppointments.map((apt) => {
                             const detailFields =
                               appointmentTypeFields[apt.type as keyof typeof appointmentTypeFields] ?? [];
+                            const tile = parseDateTile(apt.date);
+                            const extra = detailFields
+                              .filter((field) => Boolean(apt[field.name]))
+                              .map((field) => apt[field.name])
+                              .join(' · ');
                             return (
                               <li
                                 key={apt.id}
-                                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+                                className="flex items-stretch gap-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm opacity-80"
                               >
-                                <div>
-                                  <div>
-                                    <p className="font-semibold text-slate-800">{apt.title || '—'}</p>
-                                    <p className="text-slate-600 mt-1">
-                                      {normalizeAppointmentDate(apt.date) || apt.date || '—'} at{' '}
-                                      {formatAppointmentTime(apt.time)}
-                                    </p>
-                                    <p className="text-slate-500 mt-1">Type: {apt.type || '—'}</p>
-                                    {detailFields
-                                      .filter((field) => Boolean(apt[field.name]))
-                                      .map((field) => (
-                                        <p key={field.name} className="text-slate-500">
-                                          {field.label}: {apt[field.name]}
-                                        </p>
-                                      ))}
-                                  </div>
+                                <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-lg bg-white ring-1 ring-slate-200">
+                                  {tile ? (
+                                    <>
+                                      <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                                        {tile.month}
+                                      </span>
+                                      <span className="text-xl font-bold tabular-nums text-slate-600 leading-none mt-0.5">
+                                        {tile.day}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <Calendar className="h-5 w-5 text-slate-400" aria-hidden />
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="font-semibold text-slate-700 truncate">
+                                    {apt.title || '—'}
+                                  </p>
+                                  <p className="mt-0.5 text-xs text-slate-500 truncate">
+                                    <span className="tabular-nums">{formatAppointmentTime(apt.time)}</span>
+                                    {apt.type ? (
+                                      <>
+                                        <span className="mx-1.5 text-slate-300">·</span>
+                                        {apt.type}
+                                      </>
+                                    ) : null}
+                                  </p>
+                                  {extra ? (
+                                    <p className="mt-0.5 text-xs text-slate-400 truncate">{extra}</p>
+                                  ) : null}
                                 </div>
                               </li>
                             );
@@ -3089,56 +3594,63 @@ export default function CareCirclePage() {
                     </div>
                     {undatedMemberAppointments.length > 0 ? (
                       <div>
-                        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                        <h4 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-2">
                           Other appointments
                         </h4>
-                        <ul className="space-y-3">
+                        <ul className="space-y-2">
                           {undatedMemberAppointments.map((apt) => {
                             const isDeletingAppointment = appointmentDeletingId === apt.id;
                             const detailFields =
                               appointmentTypeFields[apt.type as keyof typeof appointmentTypeFields] ?? [];
+                            const extra = detailFields
+                              .filter((field) => Boolean(apt[field.name]))
+                              .map((field) => apt[field.name])
+                              .join(' · ');
                             return (
                               <li
                                 key={apt.id}
-                                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+                                className="group relative flex items-stretch gap-4 rounded-xl border border-dashed border-slate-300 bg-white p-3 pr-4 text-sm"
                               >
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div>
-                                    <p className="font-semibold text-slate-800">{apt.title || '—'}</p>
-                                    <p className="text-slate-600 mt-1">
-                                      {normalizeAppointmentDate(apt.date) || apt.date || '—'} at{' '}
-                                      {formatAppointmentTime(apt.time)}
-                                    </p>
-                                    <p className="text-slate-500 mt-1">Type: {apt.type || '—'}</p>
-                                    {detailFields
-                                      .filter((field) => Boolean(apt[field.name]))
-                                      .map((field) => (
-                                        <p key={field.name} className="text-slate-500">
-                                          {field.label}: {apt[field.name]}
-                                        </p>
-                                      ))}
-                                  </div>
-                                  {canManageSelectedMemberAppointments ? (
-                                    <div className="flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => openEditAppointmentModal(apt)}
-                                        disabled={isDeletingAppointment}
-                                        className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
-                                      >
-                                        Edit
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleAppointmentDelete(apt)}
-                                        disabled={isDeletingAppointment}
-                                        className="rounded-md border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:border-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
-                                      >
-                                        {isDeletingAppointment ? 'Deleting…' : 'Delete'}
-                                      </button>
-                                    </div>
+                                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-slate-50 ring-1 ring-slate-200">
+                                  <Calendar className="h-5 w-5 text-slate-400" aria-hidden />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="font-semibold text-slate-900 truncate">
+                                    {apt.title || '—'}
+                                  </p>
+                                  <p className="mt-0.5 text-xs text-slate-500 truncate">
+                                    <span className="italic">No date set</span>
+                                    {apt.type ? (
+                                      <>
+                                        <span className="mx-1.5 text-slate-300">·</span>
+                                        {apt.type}
+                                      </>
+                                    ) : null}
+                                  </p>
+                                  {extra ? (
+                                    <p className="mt-0.5 text-xs text-slate-400 truncate">{extra}</p>
                                   ) : null}
                                 </div>
+                                {canManageSelectedMemberAppointments ? (
+                                  <div className="flex items-center gap-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditAppointmentModal(apt)}
+                                      disabled={isDeletingAppointment}
+                                      className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAppointmentDelete(apt)}
+                                      disabled={isDeletingAppointment}
+                                      className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {isDeletingAppointment ? '…' : 'Delete'}
+                                    </button>
+                                  </div>
+                                ) : null}
                               </li>
                             );
                           })}
@@ -3147,14 +3659,14 @@ export default function CareCirclePage() {
                     ) : null}
                   </div>
                 ) : memberDetailsTab === 'medications' && memberDetails ? (
-                  <div className="p-4 space-y-4">
+                  <div className="py-4 space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <h3 className="text-sm font-semibold text-slate-700">Medications</h3>
+                      <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Medications</h3>
                       {canManageSelectedMemberMedications ? (
                         <button
                           type="button"
                           onClick={openAddMedicationModal}
-                          className="rounded-full border border-teal-200 bg-white px-3 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-50"
+                          className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
                         >
                           Add medication
                         </button>
@@ -3164,9 +3676,12 @@ export default function CareCirclePage() {
                       <p className="text-sm text-rose-600">{medicationActionError}</p>
                     ) : null}
                     {sortedMemberMedications.length === 0 ? (
-                      <p className="text-sm text-slate-500">No medications recorded.</p>
+                      <div className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center">
+                        <Pill className="mx-auto h-5 w-5 text-slate-300" aria-hidden />
+                        <p className="mt-2 text-sm text-slate-500">No medications recorded.</p>
+                      </div>
                     ) : (
-                      <ul className="space-y-3">
+                      <ul className="space-y-2">
                         {sortedMemberMedications.map((med) => {
                           const isDeletingMedication = medicationDeletingId === med.id;
                           const endDate = med.endDate ? new Date(med.endDate) : null;
@@ -3174,64 +3689,90 @@ export default function CareCirclePage() {
                             !endDate ||
                             Number.isNaN(endDate.getTime()) ||
                             new Date().getTime() <= endDate.getTime();
+                          const dosage = formatMedicationDosage(med.dosage);
+                          const schedule = formatMedicationFrequencyLabel(med.frequency, med.mealTiming);
                           return (
                             <li
                               key={med.id}
-                              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+                              className={`group relative flex items-stretch gap-4 rounded-xl border bg-white p-3 pr-4 text-sm transition-colors duration-150 hover:border-slate-300 ${
+                                isActive ? 'border-slate-200' : 'border-slate-200 opacity-75'
+                              }`}
                             >
-                              <div className="flex flex-wrap items-start justify-between gap-2">
-                                <div>
-                                  <p className="font-semibold text-slate-800">{med.name || '—'}</p>
-                                  <p className="text-slate-600 mt-1">
-                                    Dosage: {formatMedicationDosage(med.dosage) || '—'}
-                                  </p>
-                                  <p className="text-slate-600">
-                                    Schedule: {formatMedicationFrequencyLabel(med.frequency, med.mealTiming) || '—'}
-                                  </p>
-                                  {med.timesPerDay !== undefined && med.timesPerDay !== null ? (
-                                    <p className="text-slate-600">Times/day: {String(med.timesPerDay)}</p>
-                                  ) : null}
-                                  {med.startDate ? (
-                                    <p className="text-slate-500 mt-1">Start: {med.startDate}</p>
-                                  ) : null}
-                                  {med.endDate ? (
-                                    <p className="text-slate-500">End: {med.endDate}</p>
-                                  ) : null}
-                                  {med.purpose ? (
-                                    <p className="text-slate-500 mt-1">Purpose: {med.purpose}</p>
+                              <div
+                                className={`relative flex h-14 w-14 shrink-0 items-center justify-center rounded-lg ring-1 ${
+                                  isActive
+                                    ? 'bg-gradient-to-br from-indigo-50 to-violet-50 ring-indigo-100/80'
+                                    : 'bg-slate-50 ring-slate-200'
+                                }`}
+                              >
+                                <Pill
+                                  className={`h-6 w-6 ${isActive ? 'text-indigo-500' : 'text-slate-400'}`}
+                                  aria-hidden
+                                />
+                                {isActive ? (
+                                  <span
+                                    aria-hidden
+                                    className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"
+                                  />
+                                ) : null}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-baseline gap-x-2">
+                                  <p className="font-semibold text-slate-900 truncate">{med.name || '—'}</p>
+                                  {dosage ? (
+                                    <span className="text-xs font-semibold tabular-nums text-indigo-600">
+                                      {dosage}
+                                    </span>
                                   ) : null}
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                      isActive
-                                        ? 'bg-emerald-100 text-emerald-700'
-                                        : 'bg-slate-200 text-slate-600'
-                                    }`}
-                                  >
-                                    {isActive ? 'Active' : 'Completed'}
+                                <p className="mt-0.5 text-xs text-slate-500 truncate">
+                                  {schedule || '—'}
+                                  {med.timesPerDay ? (
+                                    <>
+                                      <span className="mx-1.5 text-slate-300">·</span>
+                                      <span className="tabular-nums">{String(med.timesPerDay)}×</span> per day
+                                    </>
+                                  ) : null}
+                                </p>
+                                {(med.startDate || med.endDate) ? (
+                                  <p className="mt-0.5 text-[11px] text-slate-400 tabular-nums">
+                                    {med.startDate || '—'}
+                                    <span className="mx-1 text-slate-300">→</span>
+                                    {med.endDate || 'ongoing'}
+                                  </p>
+                                ) : null}
+                                {med.purpose ? (
+                                  <p className="mt-0.5 text-xs italic text-slate-500 truncate">
+                                    “{med.purpose}”
+                                  </p>
+                                ) : null}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {!isActive ? (
+                                  <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                    Done
                                   </span>
-                                  {canManageSelectedMemberMedications ? (
+                                ) : null}
+                                {canManageSelectedMemberMedications ? (
+                                  <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                                     <button
                                       type="button"
                                       onClick={() => openEditMedicationModal(med)}
                                       disabled={isDeletingMedication}
-                                      className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                                      className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                       Edit
                                     </button>
-                                  ) : null}
-                                  {canManageSelectedMemberMedications ? (
                                     <button
                                       type="button"
                                       onClick={() => handleMedicationDelete(med)}
                                       disabled={isDeletingMedication}
-                                      className="rounded-md border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:border-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
+                                      className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                                     >
-                                      {isDeletingMedication ? 'Deleting…' : 'Delete'}
+                                      {isDeletingMedication ? '…' : 'Delete'}
                                     </button>
-                                  ) : null}
-                                </div>
+                                  </div>
+                                ) : null}
                               </div>
                             </li>
                           );
@@ -3904,7 +4445,7 @@ export default function CareCirclePage() {
 
       {isInviteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-slate-900">
                 Invite to your care circle
@@ -3915,6 +4456,7 @@ export default function CareCirclePage() {
                   setIsInviteOpen(false);
                   setInviteContact('');
                   setInviteCountry(DEFAULT_COUNTRY);
+                  setInvitePermissions({ ...CARE_CIRCLE_DEFAULT_PERMISSIONS });
                   setInviteError(null);
                 }}
                 className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
@@ -3987,6 +4529,84 @@ export default function CareCirclePage() {
                     placeholder="e.g., 9876543210"
                     className="flex-1 min-w-0 px-3 py-2 text-sm text-slate-700 outline-none border-0 bg-white rounded-r-xl"
                   />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">
+                  What can this member access?
+                </label>
+                <p className="mt-1 text-xs text-slate-500">
+                  Emergency card is always shared. Pick anything else you want to give
+                  them access to — you can change this later.
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {CARE_CIRCLE_PERMISSION_KEYS.map((key) => {
+                    const checked = Boolean(invitePermissions[key]);
+                    const isEmergency = key === 'emergency_card';
+                    const Icon = PERMISSION_META[key].icon;
+                    return (
+                      <label
+                        key={key}
+                        className={`group relative flex items-start gap-2.5 rounded-xl border px-3 py-2.5 text-xs transition-all duration-150 ${
+                          checked
+                            ? 'border-teal-300 bg-gradient-to-br from-teal-50 to-emerald-50/60 shadow-sm ring-1 ring-teal-100'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                        } ${isEmergency ? 'cursor-not-allowed opacity-90' : 'cursor-pointer hover:-translate-y-0.5 hover:shadow-sm'}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={isEmergency}
+                          onChange={(event) =>
+                            setInvitePermissions((prev) => ({
+                              ...prev,
+                              [key]: event.target.checked,
+                            }))
+                          }
+                          className="sr-only"
+                        />
+                        <span
+                          className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                            checked
+                              ? 'bg-gradient-to-br from-teal-500 to-emerald-500 text-white shadow-sm'
+                              : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
+                          }`}
+                          aria-hidden
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="flex items-center gap-1.5 font-semibold text-slate-800">
+                            {CARE_CIRCLE_PERMISSION_LABELS[key]}
+                            {isEmergency ? (
+                              <span className="rounded-full bg-teal-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-teal-700">
+                                Always
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="text-[11px] leading-snug text-slate-500">
+                            {CARE_CIRCLE_PERMISSION_DESCRIPTIONS[key]}
+                          </span>
+                        </span>
+                        {!isEmergency ? (
+                          <span
+                            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-all ${
+                              checked
+                                ? 'border-teal-500 bg-teal-500'
+                                : 'border-slate-300 bg-white group-hover:border-slate-400'
+                            }`}
+                            aria-hidden
+                          >
+                            {checked ? (
+                              <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="2.5 6.5 5 9 9.5 3.5" />
+                              </svg>
+                            ) : null}
+                          </span>
+                        ) : null}
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
               {inviteError && (

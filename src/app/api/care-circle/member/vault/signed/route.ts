@@ -2,30 +2,10 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { isValidFileName } from '@/lib/validation';
+import { authorizeCareCircleMemberAccess } from '@/lib/careCirclePermissions';
 
 const CARE_CIRCLE_FOLDERS = ['reports', 'prescriptions', 'insurance', 'bills'] as const;
 type CareCircleFolder = (typeof CARE_CIRCLE_FOLDERS)[number];
-type CareCircleRole = 'family' | 'friend';
-
-type LinkRow = {
-  id: string;
-  requester_id: string;
-  recipient_id: string;
-  status: 'pending' | 'accepted' | 'declined';
-  relationship: string | null;
-  profile_id: string | null;
-};
-
-const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRole => {
-  const normalized = (value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[-\s]+/g, '_');
-  if (normalized === 'family') return 'family';
-  return 'friend';
-};
-
-const canReadMedicalData = (role: CareCircleRole) => role === 'family';
 
 export async function GET(request: Request) {
   try {
@@ -61,34 +41,18 @@ export async function GET(request: Request) {
       { auth: { persistSession: false } }
     );
 
-    const { data: linkRow, error: linkError } = await adminClient
-      .from('care_circle_links')
-      .select('id, requester_id, recipient_id, status, relationship, profile_id')
-      .eq('id', linkId)
-      .maybeSingle();
+    const authResult = await authorizeCareCircleMemberAccess({
+      adminClient,
+      user,
+      linkId,
+      requiredPermission: 'vault',
+    });
 
-    if (linkError && linkError.code !== 'PGRST116') {
-      return NextResponse.json({ message: linkError.message }, { status: 500 });
+    if (!authResult.ok) {
+      return NextResponse.json({ message: authResult.message }, { status: authResult.status });
     }
 
-    const link = linkRow as LinkRow | null;
-    if (!link) {
-      return NextResponse.json({ message: 'Care circle link not found.' }, { status: 404 });
-    }
-
-    const role = normalizeCareCircleRole(link.relationship);
-    const isAuthorizedRecipient =
-      link.recipient_id === user.id && link.status === 'accepted' && canReadMedicalData(role);
-
-    if (!isAuthorizedRecipient) {
-      return NextResponse.json({ message: 'Not allowed for this care circle member.' }, { status: 403 });
-    }
-
-    if (!link.profile_id) {
-      return NextResponse.json({ message: 'Owner profile is not available.' }, { status: 404 });
-    }
-
-    const path = `${link.profile_id}/${folder}/${name}`;
+    const path = `${authResult.access.ownerProfileId}/${folder}/${name}`;
     const { data, error } = await adminClient.storage.from('medical-vault').createSignedUrl(path, 60);
 
     if (error || !data?.signedUrl) {

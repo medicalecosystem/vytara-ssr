@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getAuthenticatedUser } from '@/lib/auth';
+import {
+  CARE_CIRCLE_DEFAULT_PERMISSIONS,
+  PERMISSION_ROW_COLUMNS,
+  rowToPermissions,
+  type CareCirclePermissions,
+} from '@/lib/careCirclePermissions';
 
 const getDisplayName = (displayName: string | null, phone: string | null) => {
   const trimmed = displayName?.trim() ?? '';
@@ -18,7 +24,6 @@ type LinkRow = {
   requester_id: string;
   recipient_id: string;
   status: LinkStatus;
-  relationship: string | null;
   created_at: string;
   updated_at: string | null;
   profile_id: string | null;
@@ -33,7 +38,16 @@ type ProfileLookupRow = {
   created_at: string | null;
 };
 
-type CareCircleRole = 'family' | 'friend';
+type PermissionsRow = {
+  owner_user_id: string;
+  recipient_id: string;
+  perm_emergency_card: boolean;
+  perm_appointments: boolean;
+  perm_medications: boolean;
+  perm_vault: boolean;
+  perm_personal_info: boolean;
+  perm_activity_log: boolean;
+};
 
 const parseDate = (value: string | null) => {
   if (!value) return Number.MAX_SAFE_INTEGER;
@@ -64,15 +78,6 @@ const pickPrimaryOwnerProfileLink = (
   profilesById: Map<string, ProfileLookupRow>
 ) => sortLinksByOwnerProfilePriority(links, profilesById)[0] ?? null;
 
-const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRole => {
-  const normalized = (value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[-\s]+/g, '_');
-  if (normalized === 'family') return 'family';
-  return 'friend';
-};
-
 const groupLinksByPair = (links: LinkRow[]) => {
   const byPair = new Map<string, LinkRow[]>();
   links.forEach((link) => {
@@ -83,6 +88,9 @@ const groupLinksByPair = (links: LinkRow[]) => {
   });
   return byPair;
 };
+
+const hasAnyGrantedPermission = (perms: CareCirclePermissions): boolean =>
+  Object.values(perms).some(Boolean);
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -146,7 +154,7 @@ export async function GET(request: Request) {
 
   let outgoingQuery = adminClient
     .from('care_circle_links')
-    .select('id, requester_id, recipient_id, status, relationship, created_at, updated_at, profile_id')
+    .select('id, requester_id, recipient_id, status, created_at, updated_at, profile_id')
     .eq('requester_id', user.id);
 
   if (requestedProfileId) {
@@ -155,7 +163,7 @@ export async function GET(request: Request) {
 
   const incomingQuery = adminClient
     .from('care_circle_links')
-    .select('id, requester_id, recipient_id, status, relationship, created_at, updated_at, profile_id')
+    .select('id, requester_id, recipient_id, status, created_at, updated_at, profile_id')
     .eq('recipient_id', user.id);
 
   const [{ data: outgoingLinks, error: outgoingError }, { data: incomingLinks, error: incomingError }] =
@@ -253,6 +261,66 @@ export async function GET(request: Request) {
     });
   }
 
+  // Fetch permissions for every relevant (owner, recipient) pair in a single round-trip.
+  const pairSet = new Set<string>();
+  const outgoingPairs: Array<{ owner_user_id: string; recipient_id: string }> = [];
+  const incomingPairs: Array<{ owner_user_id: string; recipient_id: string }> = [];
+
+  ((outgoingLinks ?? []) as LinkRow[]).forEach((row) => {
+    const key = `${user.id}:${row.recipient_id}`;
+    if (!pairSet.has(key)) {
+      pairSet.add(key);
+      outgoingPairs.push({ owner_user_id: user.id, recipient_id: row.recipient_id });
+    }
+  });
+  ((incomingLinks ?? []) as LinkRow[]).forEach((row) => {
+    const key = `${row.requester_id}:${user.id}`;
+    if (!pairSet.has(key)) {
+      pairSet.add(key);
+      incomingPairs.push({ owner_user_id: row.requester_id, recipient_id: user.id });
+    }
+  });
+
+  const permissionsByPair = new Map<string, CareCirclePermissions>();
+
+  const loadPermissions = async (ownerIds: string[], recipientIds: string[], scope: 'outgoing' | 'incoming') => {
+    if (!ownerIds.length || !recipientIds.length) return;
+    let query = adminClient
+      .from('care_circle_permissions')
+      .select(`owner_user_id, recipient_id, ${PERMISSION_ROW_COLUMNS}`);
+    if (scope === 'outgoing') {
+      query = query.eq('owner_user_id', user.id).in('recipient_id', recipientIds);
+    } else {
+      query = query.eq('recipient_id', user.id).in('owner_user_id', ownerIds);
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+    ((data ?? []) as PermissionsRow[]).forEach((row) => {
+      permissionsByPair.set(`${row.owner_user_id}:${row.recipient_id}`, rowToPermissions(row));
+    });
+  };
+
+  try {
+    await Promise.all([
+      loadPermissions(
+        [user.id],
+        outgoingPairs.map((p) => p.recipient_id),
+        'outgoing'
+      ),
+      loadPermissions(
+        incomingPairs.map((p) => p.owner_user_id),
+        [user.id],
+        'incoming'
+      ),
+    ]);
+  } catch (permsError) {
+    const message = permsError instanceof Error ? permsError.message : 'Failed to load permissions.';
+    return NextResponse.json({ message }, { status: 500 });
+  }
+
+  const getPermissionsForPair = (ownerUserId: string, recipientId: string): CareCirclePermissions =>
+    permissionsByPair.get(`${ownerUserId}:${recipientId}`) ?? { ...CARE_CIRCLE_DEFAULT_PERMISSIONS };
+
   const resolveDisplayName = (profile: ProfileLookupRow | null) =>
     profile?.display_name?.trim() ||
     profile?.name?.trim() ||
@@ -270,6 +338,7 @@ export async function GET(request: Request) {
       const memberUserId = link.recipient_id;
       const memberProfile = pickPreferredProfile(profilesByUserId.get(memberUserId) ?? []);
       const ownerProfile = link.profile_id ? profilesById.get(link.profile_id) ?? null : null;
+      const permissions = getPermissionsForPair(link.requester_id, link.recipient_id);
 
       return {
         id: link.id,
@@ -278,7 +347,7 @@ export async function GET(request: Request) {
         profileId: link.profile_id,
         ownerProfileIsPrimary: Boolean(ownerProfile?.is_primary),
         status: link.status,
-        role: normalizeCareCircleRole(link.relationship),
+        permissions,
         displayName: resolveDisplayName(memberProfile),
         createdAt: link.created_at,
         updatedAt: link.updated_at,
@@ -297,8 +366,15 @@ export async function GET(request: Request) {
 
       if (acceptedRows.length > 0) {
         const representative = pickPrimaryOwnerProfileLink(acceptedRows, profilesById) ?? acceptedRows[0];
-        const pairRole = normalizeCareCircleRole(representative?.relationship);
-        if (pairRole === 'family') {
+        const permissions = getPermissionsForPair(representative.requester_id, representative.recipient_id);
+        // Fan out per profile when the recipient has been granted any data-access permission beyond the emergency card.
+        const grantsDataAccess =
+          permissions.appointments ||
+          permissions.medications ||
+          permissions.vault ||
+          permissions.personal_info ||
+          permissions.activity_log;
+        if (grantsDataAccess) {
           shaped.push(...sortLinksByOwnerProfilePriority(acceptedRows, profilesById));
         } else {
           shaped.push(representative);
@@ -321,6 +397,7 @@ export async function GET(request: Request) {
       const linkedProfile = link.profile_id ? profilesById.get(link.profile_id) ?? null : null;
       const fallbackProfile = pickPreferredProfile(profilesByUserId.get(memberUserId) ?? []);
       const memberProfile = linkedProfile ?? fallbackProfile;
+      const permissions = getPermissionsForPair(link.requester_id, link.recipient_id);
 
       return {
         id: link.id,
@@ -329,7 +406,8 @@ export async function GET(request: Request) {
         profileId: link.profile_id,
         ownerProfileIsPrimary: Boolean(linkedProfile?.is_primary),
         status: link.status,
-        role: normalizeCareCircleRole(link.relationship),
+        permissions,
+        hasAnyAccess: link.status === 'accepted' ? hasAnyGrantedPermission(permissions) : false,
         displayName: resolveDisplayName(memberProfile),
         createdAt: link.created_at,
         updatedAt: link.updated_at,

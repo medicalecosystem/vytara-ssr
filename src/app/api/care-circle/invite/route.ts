@@ -2,10 +2,16 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { isValidUUID } from '@/lib/validation';
+import {
+  sanitizePermissionInput,
+  upsertCareCirclePermissions,
+  CARE_CIRCLE_DEFAULT_PERMISSIONS,
+} from '@/lib/careCirclePermissions';
 
 type InvitePayload = {
   contact?: string;
   profileId?: string;
+  permissions?: Record<string, unknown>;
 };
 
 type ProfileRow = {
@@ -221,13 +227,14 @@ export async function POST(request: Request) {
 
   const nowIso = new Date().toISOString();
 
+  const requestedPermissions = sanitizePermissionInput(payload.permissions);
+
   // Re-open previously declined/archived rows instead of creating new ones.
   if ((existingPairRows ?? []).length > 0) {
     const { error: reactivateError } = await adminClient
       .from('care_circle_links')
       .update({
         status: 'pending',
-        relationship: 'friend',
         updated_at: nowIso,
       })
       .eq('requester_id', user.id)
@@ -235,6 +242,16 @@ export async function POST(request: Request) {
 
     if (reactivateError) {
       return NextResponse.json({ message: reactivateError.message }, { status: 500 });
+    }
+
+    try {
+      await upsertCareCirclePermissions(adminClient, user.id, recipientId, {
+        ...CARE_CIRCLE_DEFAULT_PERMISSIONS,
+        ...requestedPermissions,
+      });
+    } catch (permError) {
+      const message = permError instanceof Error ? permError.message : 'Failed to save permissions.';
+      return NextResponse.json({ message }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -281,7 +298,6 @@ export async function POST(request: Request) {
     recipient_id: recipientId,
     profile_id: profile.id,
     status: 'pending' as const,
-    relationship: 'friend',
     updated_at: nowIso,
   }));
 
@@ -298,6 +314,15 @@ export async function POST(request: Request) {
         .upsert([primaryInviteRow], { onConflict: 'requester_id,recipient_id,profile_id' });
 
       if (!fallbackInviteError) {
+        try {
+          await upsertCareCirclePermissions(adminClient, user.id, recipientId, {
+            ...CARE_CIRCLE_DEFAULT_PERMISSIONS,
+            ...requestedPermissions,
+          });
+        } catch (permError) {
+          const message = permError instanceof Error ? permError.message : 'Failed to save permissions.';
+          return NextResponse.json({ message }, { status: 500 });
+        }
         return NextResponse.json({
           recipientId,
           invitedProfilesCount: 1,
@@ -310,6 +335,16 @@ export async function POST(request: Request) {
       ? 'An invite already exists for this member.'
       : inviteError.message;
     return NextResponse.json({ message }, { status: 409 });
+  }
+
+  try {
+    await upsertCareCirclePermissions(adminClient, user.id, recipientId, {
+      ...CARE_CIRCLE_DEFAULT_PERMISSIONS,
+      ...requestedPermissions,
+    });
+  } catch (permError) {
+    const message = permError instanceof Error ? permError.message : 'Failed to save permissions.';
+    return NextResponse.json({ message }, { status: 500 });
   }
 
   return NextResponse.json({ recipientId, invitedProfilesCount: inviteRows.length });

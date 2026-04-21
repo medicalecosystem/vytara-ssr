@@ -1,28 +1,18 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getAuthenticatedUser } from '@/lib/auth';
-
-type CareCircleRole = 'family' | 'friend';
+import {
+  fetchCareCirclePermissions,
+  type CareCirclePermissions,
+} from '@/lib/careCirclePermissions';
 
 type LinkRow = {
   id: string;
   requester_id: string;
   recipient_id: string;
   status: 'pending' | 'accepted' | 'declined';
-  relationship: string | null;
   profile_id: string | null;
 };
-
-const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRole => {
-  const normalized = (value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[-\s]+/g, '_');
-  if (normalized === 'family') return 'family';
-  return 'friend';
-};
-
-const canReadMedicalData = (role: CareCircleRole) => role === 'family';
 
 const parseJsonArray = (value: unknown, fallbackKey: string) => {
   if (Array.isArray(value)) return value;
@@ -69,7 +59,7 @@ export async function GET(request: Request) {
 
     const { data: linkRow, error: linkError } = await adminClient
       .from('care_circle_links')
-      .select('id, requester_id, recipient_id, status, relationship, profile_id')
+      .select('id, requester_id, recipient_id, status, profile_id')
       .eq('id', linkId)
       .maybeSingle();
 
@@ -82,11 +72,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: 'Care circle link not found.' }, { status: 404 });
     }
 
-    const role = normalizeCareCircleRole(link.relationship);
-    const isAuthorizedRecipient =
-      link.recipient_id === user.id && link.status === 'accepted' && canReadMedicalData(role);
-
-    if (!isAuthorizedRecipient) {
+    if (link.recipient_id !== user.id || link.status !== 'accepted') {
       return NextResponse.json({ message: 'Not allowed for this care circle member.' }, { status: 403 });
     }
 
@@ -94,64 +80,99 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: 'Owner profile is not available.' }, { status: 404 });
     }
 
-    const { data: targetProfile, error: profileError } = await adminClient
-      .from('profiles')
-      .select('id, display_name, name, phone, gender, address')
-      .eq('id', link.profile_id)
-      .maybeSingle();
-
-    if (profileError && profileError.code !== 'PGRST116') {
-      return NextResponse.json({ message: profileError.message }, { status: 500 });
+    let permissions: CareCirclePermissions;
+    try {
+      permissions = await fetchCareCirclePermissions(adminClient, link.requester_id, link.recipient_id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load permissions.';
+      return NextResponse.json({ message }, { status: 500 });
     }
 
-    if (!targetProfile?.id) {
-      return NextResponse.json({ message: 'Member profile not found.' }, { status: 404 });
+    const ownerProfileId = link.profile_id;
+
+    let personal: unknown = null;
+    let health: unknown = null;
+    let medicalTeam: unknown[] = [];
+    let appointments: unknown[] = [];
+    let medications: unknown[] = [];
+
+    if (permissions.personal_info) {
+      const { data: targetProfile, error: profileError } = await adminClient
+        .from('profiles')
+        .select('id, display_name, name, phone, gender, address')
+        .eq('id', ownerProfileId)
+        .maybeSingle();
+
+      if (profileError && profileError.code !== 'PGRST116') {
+        return NextResponse.json({ message: profileError.message }, { status: 500 });
+      }
+
+      if (targetProfile?.id) {
+        personal = {
+          display_name: targetProfile.display_name?.trim() || targetProfile.name?.trim() || null,
+          phone: targetProfile.phone ?? null,
+          gender: targetProfile.gender ?? null,
+          address: targetProfile.address ?? null,
+        };
+      }
+
+      const [healthRes, medicalTeamRes] = await Promise.all([
+        adminClient
+          .from('health')
+          .select(
+            'date_of_birth, blood_group, bmi, age, current_diagnosed_condition, allergies, ongoing_treatments, current_medication, previous_diagnosed_conditions, past_surgeries, childhood_illness, long_term_treatments'
+          )
+          .eq('profile_id', ownerProfileId)
+          .maybeSingle(),
+        adminClient
+          .from('user_medical_team')
+          .select('doctors')
+          .eq('profile_id', ownerProfileId)
+          .maybeSingle(),
+      ]);
+
+      if (healthRes.error && healthRes.error.code !== 'PGRST116') {
+        return NextResponse.json({ message: healthRes.error.message }, { status: 500 });
+      }
+      if (medicalTeamRes.error && medicalTeamRes.error.code !== 'PGRST116') {
+        return NextResponse.json({ message: medicalTeamRes.error.message }, { status: 500 });
+      }
+
+      health = healthRes.data ?? null;
+      medicalTeam = parseJsonArray(medicalTeamRes.data?.doctors, 'doctors');
     }
 
-    const [healthRes, appointmentsRes, medicationsRes] = await Promise.all([
-      adminClient
-        .from('health')
-        .select(
-          'date_of_birth, blood_group, bmi, age, current_diagnosed_condition, allergies, ongoing_treatments, current_medication, previous_diagnosed_conditions, past_surgeries, childhood_illness, long_term_treatments'
-        )
-        .eq('profile_id', targetProfile.id)
-        .maybeSingle(),
-      adminClient
+    if (permissions.appointments) {
+      const { data: appointmentsData, error: appointmentsError } = await adminClient
         .from('user_appointments')
         .select('appointments')
-        .eq('profile_id', targetProfile.id)
-        .maybeSingle(),
-      adminClient
+        .eq('profile_id', ownerProfileId)
+        .maybeSingle();
+
+      if (appointmentsError && appointmentsError.code !== 'PGRST116') {
+        return NextResponse.json({ message: appointmentsError.message }, { status: 500 });
+      }
+      appointments = parseJsonArray(appointmentsData?.appointments, 'appointments');
+    }
+
+    if (permissions.medications) {
+      const { data: medicationsData, error: medicationsError } = await adminClient
         .from('user_medications')
         .select('medications')
-        .eq('profile_id', targetProfile.id)
-        .maybeSingle(),
-    ]);
+        .eq('profile_id', ownerProfileId)
+        .maybeSingle();
 
-    if (healthRes.error) {
-      return NextResponse.json({ message: healthRes.error.message }, { status: 500 });
+      if (medicationsError && medicationsError.code !== 'PGRST116') {
+        return NextResponse.json({ message: medicationsError.message }, { status: 500 });
+      }
+      medications = parseJsonArray(medicationsData?.medications, 'medications');
     }
-    if (appointmentsRes.error) {
-      return NextResponse.json({ message: appointmentsRes.error.message }, { status: 500 });
-    }
-    if (medicationsRes.error) {
-      return NextResponse.json({ message: medicationsRes.error.message }, { status: 500 });
-    }
-
-    const personal = {
-      display_name: targetProfile.display_name?.trim() || targetProfile.name?.trim() || null,
-      phone: targetProfile.phone ?? null,
-      gender: targetProfile.gender ?? null,
-      address: targetProfile.address ?? null,
-    };
-
-    const health = healthRes.data ?? null;
-    const appointments = parseJsonArray(appointmentsRes.data?.appointments, 'appointments');
-    const medications = parseJsonArray(medicationsRes.data?.medications, 'medications');
 
     return NextResponse.json({
+      permissions,
       personal,
       health,
+      medicalTeam,
       appointments,
       medications,
     });

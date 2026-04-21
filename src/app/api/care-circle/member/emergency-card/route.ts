@@ -1,28 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getAuthenticatedUser } from '@/lib/auth';
-
-type CareCircleRole = 'family' | 'friend';
-
-type LinkRow = {
-  id: string;
-  requester_id: string;
-  recipient_id: string;
-  status: 'pending' | 'accepted' | 'declined';
-  relationship: string | null;
-  profile_id: string | null;
-};
-
-const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRole => {
-  const normalized = (value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[-\s]+/g, '_');
-  if (normalized === 'family') return 'family';
-  return 'friend';
-};
-
-const canReadEmergencyCard = (role: CareCircleRole) => role === 'family' || role === 'friend';
+import { authorizeCareCircleMemberAccess } from '@/lib/careCirclePermissions';
 
 export async function GET(request: Request) {
   try {
@@ -48,35 +27,18 @@ export async function GET(request: Request) {
       { auth: { persistSession: false } }
     );
 
-    const { data: linkRow, error: linkError } = await adminClient
-      .from('care_circle_links')
-      .select('id, requester_id, recipient_id, status, relationship, profile_id')
-      .eq('id', linkId)
-      .maybeSingle();
+    const authResult = await authorizeCareCircleMemberAccess({
+      adminClient,
+      user,
+      linkId,
+      requiredPermission: 'emergency_card',
+    });
 
-    if (linkError && linkError.code !== 'PGRST116') {
-      return NextResponse.json({ message: linkError.message }, { status: 500 });
+    if (!authResult.ok) {
+      return NextResponse.json({ message: authResult.message }, { status: authResult.status });
     }
 
-    const link = linkRow as LinkRow | null;
-    if (!link) {
-      return NextResponse.json({ message: 'Care circle link not found.' }, { status: 404 });
-    }
-
-    const role = normalizeCareCircleRole(link.relationship);
-    const isAuthorizedRecipient =
-      link.recipient_id === user.id && link.status === 'accepted' && canReadEmergencyCard(role);
-
-    if (!isAuthorizedRecipient) {
-      return NextResponse.json(
-        { message: 'Not allowed for this care circle member.' },
-        { status: 403 }
-      );
-    }
-
-    if (!link.profile_id) {
-      return NextResponse.json({ message: 'Owner profile is not available.' }, { status: 404 });
-    }
+    const ownerProfileId = authResult.access.ownerProfileId;
 
     const { data: emergencyCard, error: emergencyCardError } = await adminClient
       .from('care_emergency_cards')
@@ -101,7 +63,7 @@ export async function GET(request: Request) {
           'emergency_instructions',
         ].join(',')
       )
-      .eq('profile_id', link.profile_id)
+      .eq('profile_id', ownerProfileId)
       .maybeSingle();
 
     if (emergencyCardError && emergencyCardError.code !== 'PGRST116') {
@@ -110,7 +72,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       card: emergencyCard ?? null,
-      profileId: link.profile_id,
+      profileId: ownerProfileId,
     });
   } catch (error) {
     console.error('Error fetching care circle emergency card:', error);

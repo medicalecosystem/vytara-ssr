@@ -151,6 +151,17 @@
   animation: sosPulse 1.8s ease-in-out infinite;
 }
 
+@keyframes helpPopIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .wg-default .wgcurrent a,
 .wg-default .wglist a {
   text-decoration: none;

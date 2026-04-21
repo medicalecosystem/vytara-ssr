@@ -47,7 +47,6 @@ import { toast } from '@/lib/toast';
 import { TourAnchor, useOnboardingTour } from '@/providers/OnboardingTourProvider';
 import {
   careCircleApi,
-  type CareCircleRole,
   type CareCircleLink,
   type MemberDetailsAppointment,
   type MemberDetailsMedication,
@@ -56,6 +55,18 @@ import {
   type VaultCategory,
   type VaultFolder,
 } from '@/api/modules/carecircle';
+import {
+  CARE_CIRCLE_DEFAULT_PERMISSIONS,
+  CARE_CIRCLE_PERMISSION_DESCRIPTIONS,
+  CARE_CIRCLE_PERMISSION_KEYS,
+  CARE_CIRCLE_PERMISSION_LABELS,
+  formatPermissionsSummary,
+  hasDataAccess,
+  permissionsEqual,
+  sanitizePermissions,
+  type CareCirclePermissionKey,
+  type CareCirclePermissions,
+} from '@/lib/careCirclePermissions';
 import {
   COUNTRIES,
   DEFAULT_COUNTRY,
@@ -82,18 +93,8 @@ import { supabase } from '@/lib/supabase';
 type CircleView = 'my-circle' | 'circles-in';
 type MemberDetailsTab = 'personal' | 'appointments' | 'medications' | 'vault';
 
-const normalizeCareCircleRole = (value: string | null | undefined): CareCircleRole => {
-  const normalized = (value ?? '').trim().toLowerCase().replace(/[-\s]+/g, '_');
-  if (normalized === 'family') return 'family';
-  return 'friend';
-};
-
-const isElevatedCareCircleRole = (role: CareCircleRole) => role === 'family';
-
-const roleLabels: Record<CareCircleRole, string> = {
-  family: 'Family',
-  friend: 'Friend',
-};
+const memberPermissions = (member: CareCircleLink): CareCirclePermissions =>
+  sanitizePermissions(member.permissions);
 
 type EmergencyCardData = {
   name: string;
@@ -528,10 +529,15 @@ export default function CareCircleScreen() {
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const [pendingActionType, setPendingActionType] = useState<'accept' | 'decline' | null>(null);
   const [pendingModalOpen, setPendingModalOpen] = useState(false);
-  const [roleUpdatingLinkId, setRoleUpdatingLinkId] = useState<string | null>(null);
-  const [roleError, setRoleError] = useState<string | null>(null);
-  const [roleEditorMember, setRoleEditorMember] = useState<CareCircleLink | null>(null);
-  const [roleEditorValue, setRoleEditorValue] = useState<CareCircleRole>('friend');
+  const [permissionsUpdatingLinkId, setPermissionsUpdatingLinkId] = useState<string | null>(null);
+  const [permissionsError, setPermissionsError] = useState<string | null>(null);
+  const [permissionsEditorMember, setPermissionsEditorMember] = useState<CareCircleLink | null>(null);
+  const [permissionsEditorValue, setPermissionsEditorValue] = useState<CareCirclePermissions>({
+    ...CARE_CIRCLE_DEFAULT_PERMISSIONS,
+  });
+  const [invitePermissions, setInvitePermissions] = useState<CareCirclePermissions>({
+    ...CARE_CIRCLE_DEFAULT_PERMISSIONS,
+  });
   const [selectedMember, setSelectedMember] = useState<CareCircleLink | null>(null);
   const [memberDetailsOpen, setMemberDetailsOpen] = useState(false);
   const [memberDetails, setMemberDetails] = useState<MemberDetailsPayload | null>(null);
@@ -800,11 +806,12 @@ export default function CareCircleScreen() {
     const fullContact = `${inviteCountry.dialCode}${digitsOnly}`;
     setInviting(true);
     try {
-      await careCircleApi.inviteByContact(fullContact, profileId);
+      await careCircleApi.inviteByContact(fullContact, profileId, invitePermissions);
       toast.success('Success', 'Invitation sent successfully!');
       setInviteModalOpen(false);
       setInviteContact('');
       setInviteCountry(DEFAULT_COUNTRY);
+      setInvitePermissions({ ...CARE_CIRCLE_DEFAULT_PERMISSIONS });
       await fetchLinks();
     } catch (err: any) {
       console.error('Failed to send invitation:', err);
@@ -888,65 +895,80 @@ export default function CareCircleScreen() {
     }
   };
 
-  const handleUpdateRole = useCallback(async (member: CareCircleLink, role: CareCircleRole) => {
-    const currentRole = normalizeCareCircleRole(member.role);
-    if (role === currentRole) return true;
-    setRoleUpdatingLinkId(member.id);
-    setRoleError(null);
-    try {
-      await careCircleApi.updateRole(member.id, role);
-      await fetchLinks(false);
-      return true;
-    } catch (err: any) {
-      console.error('Failed to update role:', err);
-      setRoleError(err?.message || 'Unable to update role.');
-      return false;
-    } finally {
-      setRoleUpdatingLinkId(null);
-    }
-  }, [fetchLinks]);
+  const handleUpdatePermissions = useCallback(
+    async (member: CareCircleLink, nextPermissions: CareCirclePermissions) => {
+      const currentPermissions = memberPermissions(member);
+      if (permissionsEqual(nextPermissions, currentPermissions)) return true;
+      setPermissionsUpdatingLinkId(member.id);
+      setPermissionsError(null);
+      try {
+        await careCircleApi.updatePermissions(member.id, nextPermissions);
+        await fetchLinks(false);
+        return true;
+      } catch (err: any) {
+        console.error('Failed to update permissions:', err);
+        setPermissionsError(err?.message || 'Unable to update permissions.');
+        return false;
+      } finally {
+        setPermissionsUpdatingLinkId(null);
+      }
+    },
+    [fetchLinks]
+  );
 
-  const openRoleEditor = useCallback(
+  const openPermissionsEditor = useCallback(
     (member: CareCircleLink) => {
       if (!isSelectedProfilePrimary || !(member.ownerProfileIsPrimary ?? false)) return;
-      setRoleError(null);
-      setRoleEditorMember(member);
-      setRoleEditorValue(normalizeCareCircleRole(member.role));
+      setPermissionsError(null);
+      setPermissionsEditorMember(member);
+      setPermissionsEditorValue(memberPermissions(member));
     },
     [isSelectedProfilePrimary]
   );
 
-  const closeRoleEditor = useCallback(() => {
-    if (roleEditorMember && roleUpdatingLinkId === roleEditorMember.id) return;
-    setRoleEditorMember(null);
-    setRoleError(null);
-  }, [roleEditorMember, roleUpdatingLinkId]);
+  const closePermissionsEditor = useCallback(() => {
+    if (permissionsEditorMember && permissionsUpdatingLinkId === permissionsEditorMember.id) return;
+    setPermissionsEditorMember(null);
+    setPermissionsError(null);
+  }, [permissionsEditorMember, permissionsUpdatingLinkId]);
 
-  const submitRoleEditor = useCallback(() => {
-    if (!roleEditorMember) return;
-    const currentRole = normalizeCareCircleRole(roleEditorMember.role);
-    const targetRole = roleEditorValue;
-    if (targetRole === currentRole) {
-      closeRoleEditor();
+  const togglePermissionsEditorKey = useCallback((key: CareCirclePermissionKey) => {
+    if (key === 'emergency_card') return;
+    setPermissionsEditorValue((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  const submitPermissionsEditor = useCallback(() => {
+    if (!permissionsEditorMember) return;
+    const currentPermissions = memberPermissions(permissionsEditorMember);
+    if (permissionsEqual(permissionsEditorValue, currentPermissions)) {
+      closePermissionsEditor();
       return;
     }
     Alert.alert(
-      'Change role?',
-      `Change "${roleEditorMember.displayName}" from ${roleLabels[currentRole]} to ${roleLabels[targetRole]}?`,
+      'Update access?',
+      `Save permissions for "${permissionsEditorMember.displayName}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Change',
+          text: 'Save',
           onPress: async () => {
-            const updated = await handleUpdateRole(roleEditorMember, targetRole);
+            const updated = await handleUpdatePermissions(
+              permissionsEditorMember,
+              permissionsEditorValue
+            );
             if (updated) {
-              setRoleEditorMember(null);
+              setPermissionsEditorMember(null);
             }
           },
         },
       ]
     );
-  }, [closeRoleEditor, handleUpdateRole, roleEditorMember, roleEditorValue]);
+  }, [
+    closePermissionsEditor,
+    handleUpdatePermissions,
+    permissionsEditorMember,
+    permissionsEditorValue,
+  ]);
 
   const handleViewMemberDetails = useCallback(
     async (member: CareCircleLink) => {
@@ -1007,14 +1029,23 @@ export default function CareCircleScreen() {
     fetchVaultFiles(selectedMember.id, vaultCategory);
   }, [fetchVaultFiles, memberDetailsTab, selectedMember, vaultCategory]);
 
-  const canManageSelectedMemberMedicalData = useMemo(() => {
-    if (!selectedMember) return false;
-    return isElevatedCareCircleRole(normalizeCareCircleRole(selectedMember.role));
-  }, [selectedMember]);
-  const canManageSelectedMemberVault = canManageSelectedMemberMedicalData;
-  const roleEditorSaving = roleEditorMember ? roleUpdatingLinkId === roleEditorMember.id : false;
-  const roleEditorCurrentRole = roleEditorMember ? normalizeCareCircleRole(roleEditorMember.role) : null;
-  const roleEditorHasChanges = roleEditorMember ? roleEditorCurrentRole !== roleEditorValue : false;
+  const selectedMemberPermissions = useMemo<CareCirclePermissions>(
+    () => (selectedMember ? memberPermissions(selectedMember) : { ...CARE_CIRCLE_DEFAULT_PERMISSIONS }),
+    [selectedMember]
+  );
+  const canViewSelectedMemberPersonalInfo = Boolean(selectedMemberPermissions.personal_info);
+  const canManageSelectedMemberAppointments = Boolean(selectedMemberPermissions.appointments);
+  const canManageSelectedMemberMedications = Boolean(selectedMemberPermissions.medications);
+  const canManageSelectedMemberVault = Boolean(selectedMemberPermissions.vault);
+  const permissionsEditorSaving = permissionsEditorMember
+    ? permissionsUpdatingLinkId === permissionsEditorMember.id
+    : false;
+  const permissionsEditorCurrentValue = permissionsEditorMember
+    ? memberPermissions(permissionsEditorMember)
+    : null;
+  const permissionsEditorHasChanges = permissionsEditorCurrentValue
+    ? !permissionsEqual(permissionsEditorCurrentValue, permissionsEditorValue)
+    : false;
 
   const openVaultActionMenu = useCallback((file: MemberVaultFile) => {
     if (!canManageSelectedMemberVault) return;
@@ -1240,7 +1271,7 @@ export default function CareCircleScreen() {
   }, []);
 
   const openAddAppointmentEditor = useCallback(() => {
-    if (!canManageSelectedMemberMedicalData) return;
+    if (!canManageSelectedMemberAppointments) return;
     setAppointmentEditorMode('add');
     setAppointmentEditorDraft({
       ...emptyAppointmentEditorDraft,
@@ -1251,11 +1282,11 @@ export default function CareCircleScreen() {
     setAppointmentTypePickerOpen(false);
     setAppointmentEditorError(null);
     setAppointmentEditorOpen(true);
-  }, [canManageSelectedMemberMedicalData, todayIso]);
+  }, [canManageSelectedMemberAppointments, todayIso]);
 
   const openEditAppointmentEditor = useCallback(
     (appointment: MemberDetailsAppointment) => {
-      if (!canManageSelectedMemberMedicalData) return;
+      if (!canManageSelectedMemberAppointments) return;
       const normalizedTime = normalizeTime24h(appointment.time || '') || appointment.time || '';
       const typeFields = getAppointmentTypeFields(appointment.type || '');
       const extras = typeFields.reduce<Record<string, string>>((acc, field) => {
@@ -1277,7 +1308,7 @@ export default function CareCircleScreen() {
       setAppointmentEditorError(null);
       setAppointmentEditorOpen(true);
     },
-    [canManageSelectedMemberMedicalData, todayIso]
+    [canManageSelectedMemberAppointments, todayIso]
   );
 
   const closeAppointmentEditor = useCallback(() => {
@@ -1327,7 +1358,7 @@ export default function CareCircleScreen() {
 
   const handleSaveMemberAppointment = useCallback(
     async (appointment: MemberDetailsAppointment) => {
-      if (!selectedMember || !canManageSelectedMemberMedicalData) {
+      if (!selectedMember || !canManageSelectedMemberAppointments) {
         throw new Error('You are not allowed to edit this member.');
       }
 
@@ -1357,7 +1388,7 @@ export default function CareCircleScreen() {
       }
     },
     [
-      canManageSelectedMemberMedicalData,
+      canManageSelectedMemberAppointments,
       memberDetails?.appointments,
       profileId,
       selectedMember,
@@ -1367,7 +1398,7 @@ export default function CareCircleScreen() {
 
   const handleDeleteMemberAppointment = useCallback(
     async (appointmentId: string) => {
-      if (!selectedMember || !canManageSelectedMemberMedicalData) {
+      if (!selectedMember || !canManageSelectedMemberAppointments) {
         throw new Error('You are not allowed to edit this member.');
       }
 
@@ -1385,7 +1416,7 @@ export default function CareCircleScreen() {
       updateMemberAppointments(current.filter((row) => row.id !== appointmentId));
     },
     [
-      canManageSelectedMemberMedicalData,
+      canManageSelectedMemberAppointments,
       memberDetails?.appointments,
       profileId,
       selectedMember,
@@ -1460,7 +1491,7 @@ export default function CareCircleScreen() {
   );
 
   const openAddMedicationEditor = useCallback(() => {
-    if (!canManageSelectedMemberMedicalData) return;
+    if (!canManageSelectedMemberMedications) return;
     setMedicationEditorMode('add');
     setMedicationEditorDraft({
       ...emptyMedicationEditorDraft,
@@ -1470,11 +1501,11 @@ export default function CareCircleScreen() {
     setMedicationEndPickerOpen(false);
     setMedicationEditorError(null);
     setMedicationEditorOpen(true);
-  }, [canManageSelectedMemberMedicalData, todayIso]);
+  }, [canManageSelectedMemberMedications, todayIso]);
 
   const openEditMedicationEditor = useCallback(
     (medication: MemberDetailsMedication) => {
-      if (!canManageSelectedMemberMedicalData) return;
+      if (!canManageSelectedMemberMedications) return;
       const normalizedMealTiming = deriveMedicationMealTiming(
         medication.mealTiming,
         medication.frequency
@@ -1496,7 +1527,7 @@ export default function CareCircleScreen() {
       setMedicationEditorError(null);
       setMedicationEditorOpen(true);
     },
-    [canManageSelectedMemberMedicalData]
+    [canManageSelectedMemberMedications]
   );
 
   const closeMedicationEditor = useCallback(() => {
@@ -1548,7 +1579,7 @@ export default function CareCircleScreen() {
 
   const handleAddMemberMedication = useCallback(
     async (medication: MemberDetailsMedication) => {
-      if (!selectedMember || !canManageSelectedMemberMedicalData) {
+      if (!selectedMember || !canManageSelectedMemberMedications) {
         throw new Error('You are not allowed to edit this member.');
       }
 
@@ -1570,7 +1601,7 @@ export default function CareCircleScreen() {
       ]);
     },
     [
-      canManageSelectedMemberMedicalData,
+      canManageSelectedMemberMedications,
       memberDetails?.medications,
       profileId,
       selectedMember,
@@ -1580,7 +1611,7 @@ export default function CareCircleScreen() {
 
   const handleUpdateMemberMedication = useCallback(
     async (medication: MemberDetailsMedication) => {
-      if (!selectedMember || !canManageSelectedMemberMedicalData) {
+      if (!selectedMember || !canManageSelectedMemberMedications) {
         throw new Error('You are not allowed to edit this member.');
       }
 
@@ -1600,7 +1631,7 @@ export default function CareCircleScreen() {
       );
     },
     [
-      canManageSelectedMemberMedicalData,
+      canManageSelectedMemberMedications,
       memberDetails?.medications,
       profileId,
       selectedMember,
@@ -1610,7 +1641,7 @@ export default function CareCircleScreen() {
 
   const handleDeleteMemberMedication = useCallback(
     async (medicationId: string) => {
-      if (!selectedMember || !canManageSelectedMemberMedicalData) {
+      if (!selectedMember || !canManageSelectedMemberMedications) {
         throw new Error('You are not allowed to edit this member.');
       }
 
@@ -1628,7 +1659,7 @@ export default function CareCircleScreen() {
       updateMemberMedications(current.filter((row) => row.id !== medicationId));
     },
     [
-      canManageSelectedMemberMedicalData,
+      canManageSelectedMemberMedications,
       memberDetails?.medications,
       profileId,
       selectedMember,
@@ -1833,8 +1864,7 @@ export default function CareCircleScreen() {
   const tourViewAccessLinkId = useMemo(() => {
     return (
       circlesIn.find((member) => {
-        const memberRole = normalizeCareCircleRole(member.role);
-        return isElevatedCareCircleRole(memberRole) || (member.ownerProfileIsPrimary ?? false);
+        return hasDataAccess(memberPermissions(member)) || (member.ownerProfileIsPrimary ?? false);
       })?.id ?? null
     );
   }, [circlesIn]);
@@ -2107,12 +2137,13 @@ export default function CareCircleScreen() {
           ) : (
             <View style={styles.memberList}>
               {currentMembers.map((member) => {
-                const memberRole = normalizeCareCircleRole(member.role);
-                const isFamily = isElevatedCareCircleRole(memberRole);
-                const canView = isFamily || (member.ownerProfileIsPrimary ?? false);
+                const perms = memberPermissions(member);
+                const hasExtraAccess = hasDataAccess(perms);
+                const canView = hasExtraAccess || (member.ownerProfileIsPrimary ?? false);
                 const isTourViewAccessTarget =
                   circleView === 'circles-in' && member.id === tourViewAccessLinkId;
                 const primaryName = primaryProfileNameByMemberId.get(member.memberId);
+                const accessSummary = formatPermissionsSummary(perms);
 
                 return (
                   <View key={member.id} style={styles.memberCard}>
@@ -2134,29 +2165,29 @@ export default function CareCircleScreen() {
                       </Text>
                       {circleView === 'my-circle' ? (
                         <View style={styles.roleRow}>
-                          <Text style={styles.roleLabel}>Role: {roleLabels[memberRole]}</Text>
+                          <Text style={styles.roleLabel}>Access: {accessSummary}</Text>
                           {(member.ownerProfileIsPrimary ?? false) && isSelectedProfilePrimary ? (
                             <Pressable
-                              onPress={() => openRoleEditor(member)}
-                              disabled={roleUpdatingLinkId === member.id}
+                              onPress={() => openPermissionsEditor(member)}
+                              disabled={permissionsUpdatingLinkId === member.id}
                               style={[
                                 styles.roleEditButton,
-                                roleUpdatingLinkId === member.id && styles.buttonDisabled,
+                                permissionsUpdatingLinkId === member.id && styles.buttonDisabled,
                               ]}
                             >
                               <Text style={styles.roleEditButtonText}>
-                                {roleUpdatingLinkId === member.id ? 'Updating...' : 'Edit role'}
+                                {permissionsUpdatingLinkId === member.id ? 'Updating...' : 'Edit access'}
                               </Text>
                             </Pressable>
                           ) : !isSelectedProfilePrimary ? (
-                            <Text style={styles.rolePrimaryHint}>Switch to primary profile to change role</Text>
+                            <Text style={styles.rolePrimaryHint}>Switch to primary profile to change access</Text>
                           ) : (
-                            <Text style={styles.roleSublabel}>Role can only be changed by the owner primary profile</Text>
+                            <Text style={styles.roleSublabel}>Access can only be changed by the owner primary profile</Text>
                           )}
                         </View>
                       ) : (
                         <View style={styles.roleRow}>
-                          <Text style={styles.roleLabel}>Role: {roleLabels[memberRole]}</Text>
+                          <Text style={styles.roleLabel}>Access: {accessSummary}</Text>
                           <Text style={styles.roleSublabel}>
                             {member.ownerProfileIsPrimary
                               ? 'Primary profile'
@@ -2180,7 +2211,7 @@ export default function CareCircleScreen() {
                         <TourAnchor tourId="care-view-access">
                           <AnimatedButton
                             onPress={() =>
-                              isFamily
+                              hasExtraAccess
                                 ? handleViewMemberDetails(member)
                                 : handleViewMemberEmergencyCard(member)
                             }
@@ -2188,14 +2219,14 @@ export default function CareCircleScreen() {
                             style={[styles.viewButton, !canView && styles.buttonDisabled]}
                           >
                             <Text style={styles.viewButtonText}>
-                              {isFamily ? 'View details' : 'View card'}
+                              {hasExtraAccess ? 'View details' : 'View card'}
                             </Text>
                           </AnimatedButton>
                         </TourAnchor>
                       ) : (
                         <AnimatedButton
                           onPress={() =>
-                            isFamily
+                            hasExtraAccess
                               ? handleViewMemberDetails(member)
                               : handleViewMemberEmergencyCard(member)
                           }
@@ -2203,7 +2234,7 @@ export default function CareCircleScreen() {
                           style={[styles.viewButton, !canView && styles.buttonDisabled]}
                         >
                           <Text style={styles.viewButtonText}>
-                            {isFamily ? 'View details' : 'View card'}
+                            {hasExtraAccess ? 'View details' : 'View card'}
                           </Text>
                         </AnimatedButton>
                       )
@@ -2440,6 +2471,45 @@ export default function CareCircleScreen() {
                   </View>
                 </View>
               </Modal>
+              <Text style={[styles.sheetSubtitle, { marginTop: 12 }]}>
+                What can this member access?
+              </Text>
+              <ScrollView
+                style={{ maxHeight: Math.min(height * 0.4, 320) }}
+                contentContainerStyle={styles.roleEditorOptions}
+                showsVerticalScrollIndicator
+              >
+                {CARE_CIRCLE_PERMISSION_KEYS.map((key) => {
+                  const checked = Boolean(invitePermissions[key]);
+                  const isEmergency = key === 'emergency_card';
+                  return (
+                    <Pressable
+                      key={key}
+                      onPress={() => {
+                        if (isEmergency) return;
+                        setInvitePermissions((prev) => ({ ...prev, [key]: !prev[key] }));
+                      }}
+                      disabled={isEmergency}
+                      style={[styles.roleEditorOption, checked && styles.roleEditorOptionActive]}
+                    >
+                      <View style={styles.roleEditorOptionCopy}>
+                        <Text style={styles.roleEditorOptionTitle}>
+                          {CARE_CIRCLE_PERMISSION_LABELS[key]}
+                          {isEmergency ? ' (always on)' : ''}
+                        </Text>
+                        <Text style={styles.roleEditorOptionDescription}>
+                          {CARE_CIRCLE_PERMISSION_DESCRIPTIONS[key]}
+                        </Text>
+                      </View>
+                      <MaterialCommunityIcons
+                        name={checked ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                        size={20}
+                        color={checked ? '#2f565f' : '#94a3b8'}
+                      />
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
               <View style={styles.sheetActions}>
                 <AnimatedButton
                   style={styles.secondaryButton}
@@ -2447,6 +2517,7 @@ export default function CareCircleScreen() {
                     setInviteModalOpen(false);
                     setInviteContact('');
                     setInviteCountry(DEFAULT_COUNTRY);
+                    setInvitePermissions({ ...CARE_CIRCLE_DEFAULT_PERMISSIONS });
                   }}
                 >
                   <Text style={styles.secondaryButtonText}>Cancel</Text>
@@ -2467,74 +2538,76 @@ export default function CareCircleScreen() {
 
       <Modal
         transparent
-        visible={Boolean(roleEditorMember)}
+        visible={Boolean(permissionsEditorMember)}
         animationType="fade"
-        onRequestClose={closeRoleEditor}
+        onRequestClose={closePermissionsEditor}
       >
         <Animated.View entering={FadeIn} style={styles.modalOverlayCentered}>
           <Pressable
             style={StyleSheet.absoluteFill}
             onPress={() => {
-              if (!roleEditorSaving) closeRoleEditor();
+              if (!permissionsEditorSaving) closePermissionsEditor();
             }}
           />
           <Animated.View entering={FadeIn.duration(200)} style={[styles.roleEditorSheet, styles.modalCardCentered]}>
             <View style={styles.inviteHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.sheetTitle}>Edit Role</Text>
+                <Text style={styles.sheetTitle}>Edit Access</Text>
                 <Text style={styles.sheetSubtitle} numberOfLines={2}>
-                  {roleEditorMember ? roleEditorMember.displayName : ''}
+                  {permissionsEditorMember ? permissionsEditorMember.displayName : ''}
                 </Text>
               </View>
-              <Pressable style={styles.closeButton} onPress={closeRoleEditor} disabled={roleEditorSaving}>
+              <Pressable style={styles.closeButton} onPress={closePermissionsEditor} disabled={permissionsEditorSaving}>
                 <MaterialCommunityIcons name="close" size={18} color="#475569" />
               </Pressable>
             </View>
 
             <View style={styles.roleEditorOptions}>
-              {(['family', 'friend'] as const).map((role) => {
-                const selected = roleEditorValue === role;
+              {CARE_CIRCLE_PERMISSION_KEYS.map((key) => {
+                const checked = Boolean(permissionsEditorValue[key]);
+                const isEmergency = key === 'emergency_card';
                 return (
                   <Pressable
-                    key={role}
-                    onPress={() => setRoleEditorValue(role)}
-                    disabled={roleEditorSaving}
-                    style={[styles.roleEditorOption, selected && styles.roleEditorOptionActive]}
+                    key={key}
+                    onPress={() => togglePermissionsEditorKey(key)}
+                    disabled={permissionsEditorSaving || isEmergency}
+                    style={[styles.roleEditorOption, checked && styles.roleEditorOptionActive]}
                   >
                     <View style={styles.roleEditorOptionCopy}>
-                      <Text style={styles.roleEditorOptionTitle}>{roleLabels[role]}</Text>
+                      <Text style={styles.roleEditorOptionTitle}>
+                        {CARE_CIRCLE_PERMISSION_LABELS[key]}
+                        {isEmergency ? ' (always on)' : ''}
+                      </Text>
                       <Text style={styles.roleEditorOptionDescription}>
-                        {role === 'family'
-                          ? 'Can view full details and manage shared medical items.'
-                          : 'Limited to emergency card visibility.'}
+                        {CARE_CIRCLE_PERMISSION_DESCRIPTIONS[key]}
                       </Text>
                     </View>
                     <MaterialCommunityIcons
-                      name={selected ? 'radiobox-marked' : 'radiobox-blank'}
+                      name={checked ? 'checkbox-marked' : 'checkbox-blank-outline'}
                       size={20}
-                      color={selected ? '#2f565f' : '#94a3b8'}
+                      color={checked ? '#2f565f' : '#94a3b8'}
                     />
                   </Pressable>
                 );
               })}
             </View>
 
-            {roleError ? <Text style={styles.formError}>{roleError}</Text> : null}
+            {permissionsError ? <Text style={styles.formError}>{permissionsError}</Text> : null}
 
             <View style={styles.sheetActions}>
               <AnimatedButton
                 style={styles.secondaryButton}
-                onPress={closeRoleEditor}
-                disabled={roleEditorSaving}
+                onPress={closePermissionsEditor}
+                disabled={permissionsEditorSaving}
               >
                 <Text style={styles.secondaryButtonText}>Cancel</Text>
               </AnimatedButton>
               <AnimatedButton
-                style={[styles.primaryButton, (!roleEditorHasChanges || roleEditorSaving) && styles.buttonDisabled]}
-                onPress={submitRoleEditor}
-                disabled={!roleEditorHasChanges || roleEditorSaving}
+                style={[styles.primaryButton, (!permissionsEditorHasChanges || permissionsEditorSaving) && styles.buttonDisabled]}
+                onPress={submitPermissionsEditor}
+                disabled={!permissionsEditorHasChanges || permissionsEditorSaving}
               >
-                <Text style={styles.primaryButtonText}>{roleEditorSaving ? 'Saving...' : 'Save'}</Text>
+                <Text style={styles.primaryButtonText}>{permissionsEditorSaving ? 'Saving...' : 'Save'}</Text>
               </AnimatedButton>
             </View>
           </Animated.View>
@@ -3165,7 +3238,7 @@ export default function CareCircleScreen() {
                   <Animated.View entering={FadeIn} style={{ gap: 12 }}>
                     <View style={styles.memberSectionHeader}>
                       <Text style={styles.sectionHeading}>Appointments</Text>
-                      {canManageSelectedMemberMedicalData ? (
+                      {canManageSelectedMemberAppointments ? (
                         <AnimatedButton
                           onPress={openAddAppointmentEditor}
                           style={styles.memberManageButton}
@@ -3185,7 +3258,7 @@ export default function CareCircleScreen() {
                           <View key={appt.id} style={styles.formSection}>
                             <View style={styles.memberItemHeader}>
                               <Text style={styles.memberItemTitle}>{appt.title || appt.type || 'Appointment'}</Text>
-                              {canManageSelectedMemberMedicalData ? (
+                              {canManageSelectedMemberAppointments ? (
                                 <View style={styles.memberItemActions}>
                                   <AnimatedButton
                                     onPress={() => openEditAppointmentEditor(appt)}
@@ -3235,7 +3308,7 @@ export default function CareCircleScreen() {
                   <Animated.View entering={FadeIn} style={{ gap: 12 }}>
                     <View style={styles.memberSectionHeader}>
                       <Text style={styles.sectionHeading}>Medications</Text>
-                      {canManageSelectedMemberMedicalData ? (
+                      {canManageSelectedMemberMedications ? (
                         <AnimatedButton
                           onPress={openAddMedicationEditor}
                           style={styles.memberManageButton}
@@ -3253,7 +3326,7 @@ export default function CareCircleScreen() {
                         <View key={med.id} style={styles.formSection}>
                           <View style={styles.memberItemHeader}>
                             <Text style={styles.memberItemTitle}>{med.name}</Text>
-                            {canManageSelectedMemberMedicalData ? (
+                            {canManageSelectedMemberMedications ? (
                               <View style={styles.memberItemActions}>
                                 <AnimatedButton
                                   onPress={() => openEditMedicationEditor(med)}
